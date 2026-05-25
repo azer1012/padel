@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListReservations, useCancelReservation, useCreateReservation, useListTerrains, useListUsers, getListReservationsQueryKey } from "@workspace/api-client-react";
+import { useListReservations, useCancelReservation, useCreateReservation, useListTerrains, useListUsers, useGetMe, getListReservationsQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ import CourtCalendar from "@/components/court-calendar";
 export default function AdminReservations() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { data: me } = useGetMe();
   const [view, setView] = useState<"calendar" | "list">("calendar");
   const [date, setDate] = useState("");
   const [terrainFilter, setTerrainFilter] = useState("all");
@@ -159,7 +160,7 @@ export default function AdminReservations() {
 
         {/* Calendar view */}
         {view === "calendar" && (
-          <CourtCalendar isAdmin />
+          <CourtCalendar isAdmin currentUserId={me?.id ?? null} />
         )}
 
         {/* List view */}

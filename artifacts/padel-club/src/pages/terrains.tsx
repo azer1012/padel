@@ -1,13 +1,11 @@
-import { useUser } from "@clerk/react";
+import { useGetMe } from "@workspace/api-client-react";
 import { useI18n } from "@/lib/i18n";
 import CourtCalendar from "@/components/court-calendar";
 import { Calendar } from "lucide-react";
 
 export default function Terrains() {
-  const { user } = useUser();
+  const { data: me } = useGetMe();
   const { t } = useI18n();
-
-  const dbUserId = null; // Will use currentUserId from the calendar component directly if needed
 
   return (
     <div className="min-h-screen bg-background text-foreground py-10 px-4">
@@ -21,7 +19,7 @@ export default function Terrains() {
             Réservez un créneau sur nos terrains indoor et outdoor — court complet (4 tokens) ou votre place uniquement (1 token).
           </p>
         </div>
-        <CourtCalendar isAdmin={false} currentUserId={null} />
+        <CourtCalendar isAdmin={false} currentUserId={me?.id ?? null} />
       </div>
     </div>
   );

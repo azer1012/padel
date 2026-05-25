@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { db, terrainsTable, reservationsTable, reservationPlayersTable } from "@workspace/db";
 import { eq, and, gte, lte, inArray } from "drizzle-orm";
+import { loadUser } from "../lib/auth";
 
 const router = Router();
 
-router.get("/calendar", async (req, res) => {
+router.get("/calendar", loadUser, async (req, res) => {
   const { date, terrainIds } = req.query as Record<string, string>;
 
   if (!date) {
@@ -17,6 +18,10 @@ router.get("/calendar", async (req, res) => {
     res.status(400).json({ error: "Invalid date" });
     return;
   }
+
+  const dbUser = (req as any).dbUser as { id: number; role: string } | undefined;
+  const isAdmin = dbUser?.role === "admin";
+  const currentUserId = dbUser?.id ?? null;
 
   const allTerrains = await db.select().from(terrainsTable)
     .where(eq(terrainsTable.isActive, true));
@@ -77,26 +82,43 @@ router.get("/calendar", async (req, res) => {
       const isPast = cursor <= now;
 
       if (reservation) {
-        const filledSpots = reservation.players.length > 0 ? reservation.players.length : 1;
-        const openSpots = Math.max(0, reservation.totalSpots - filledSpots);
+        // Occupancy: full_court (or legacy null) = whole court booked; own_spot = per-player
+        const isOwnSpot = reservation.bookingMode === "own_spot";
+        const filledSpots = isOwnSpot
+          ? reservation.players.length
+          : (reservation.totalSpots ?? 4);
+        const openSpots = isOwnSpot
+          ? Math.max(0, (reservation.totalSpots ?? 4) - filledSpots)
+          : 0;
+
+        // Player data: admin sees everything; others only see names + their own userId
+        const players = reservation.players.map(p => {
+          const isOwn = p.userId === currentUserId;
+          return {
+            id: p.id,
+            name: p.user
+              ? `${p.user.firstName ?? ""} ${p.user.lastName ?? ""}`.trim() || p.user.email
+              : "Player",
+            // Only expose userId for admin (slot management) or the player themselves
+            userId: (isAdmin || isOwn) ? p.userId : null,
+            // Payment details: admin only
+            paymentType: isAdmin ? p.paymentType : null,
+            paymentStatus: isAdmin ? p.paymentStatus : null,
+          };
+        });
+
         slots.push({
           startTime: cursor.toISOString(),
           endTime: slotEnd.toISOString(),
           status: openSpots <= 0 ? "full" : "partial",
           reservationId: reservation.id,
           bookingMode: reservation.bookingMode,
-          totalSpots: reservation.totalSpots,
+          totalSpots: reservation.totalSpots ?? 4,
           filledSpots,
           openSpots,
           isPublic: reservation.isPublic,
           publicDescription: reservation.publicDescription,
-          players: reservation.players.map(p => ({
-            id: p.id,
-            userId: p.userId,
-            name: p.user ? `${p.user.firstName ?? ""} ${p.user.lastName ?? ""}`.trim() || p.user.email : "Player",
-            paymentType: p.paymentType,
-            paymentStatus: p.paymentStatus,
-          })),
+          players,
           creatorName: reservation.user
             ? `${reservation.user.firstName ?? ""} ${reservation.user.lastName ?? ""}`.trim() || reservation.user.email
             : reservation.guestName ?? "Guest",
