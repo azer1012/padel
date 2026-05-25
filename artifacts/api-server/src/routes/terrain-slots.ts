@@ -26,6 +26,7 @@ router.get("/terrain-slots", async (req, res) => {
   dayEnd.setHours(23, 59, 59, 999);
 
   const existingReservations = await db.select({
+    id: reservationsTable.id,
     startTime: reservationsTable.startTime,
   }).from(reservationsTable).where(
     and(
@@ -36,13 +37,15 @@ router.get("/terrain-slots", async (req, res) => {
     )
   );
 
-  const bookedSet = new Set(existingReservations.map(r => r.startTime.toISOString()));
+  const bookedMap = new Map(
+    existingReservations.map(r => [r.startTime.toISOString(), r.id])
+  );
 
   const [openH, openM] = terrain.openingTime.split(":").map(Number);
   const [closeH, closeM] = terrain.closingTime.split(":").map(Number);
 
   const now = new Date();
-  const slots: { startTime: string; endTime: string; isAvailable: boolean; isBooked: boolean }[] = [];
+  const slots: { startTime: string; endTime: string; available: boolean; reservationId: number | null }[] = [];
 
   const current = new Date(requestedDate);
   current.setHours(openH, openM, 0, 0);
@@ -52,14 +55,14 @@ router.get("/terrain-slots", async (req, res) => {
 
   while (current.getTime() + 90 * 60 * 1000 <= closing.getTime()) {
     const slotEnd = new Date(current.getTime() + 90 * 60 * 1000);
-    const isBooked = bookedSet.has(current.toISOString());
+    const reservationId = bookedMap.get(current.toISOString()) ?? null;
     const isPast = current <= now;
 
     slots.push({
       startTime: current.toISOString(),
       endTime: slotEnd.toISOString(),
-      isAvailable: !isBooked && !isPast,
-      isBooked,
+      available: reservationId === null && !isPast,
+      reservationId,
     });
 
     current.setTime(slotEnd.getTime());

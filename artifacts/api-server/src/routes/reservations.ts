@@ -63,10 +63,21 @@ router.post("/reservations", requireUser, async (req, res) => {
   const currentUser = (req as any).dbUser;
   const { terrainId, startTime, userId: bodyUserId, guestName, guestPhone, bookingType = "online", notes } = req.body;
 
-  const targetUserId = currentUser.role === "admin" && bodyUserId ? parseInt(bodyUserId) : currentUser.id;
-  const targetUser = targetUserId === currentUser.id
-    ? currentUser
-    : (await db.select().from(usersTable).where(eq(usersTable.id, targetUserId)))[0];
+  // Resolve who the reservation is for:
+  // - Admin with explicit userId → book for that member
+  // - Admin with no userId → guest/manual booking (no user account, no token deduction)
+  // - Regular player → always book for themselves
+  let targetUser: typeof currentUser | null;
+  if (currentUser.role === "admin") {
+    if (bodyUserId) {
+      const [found] = await db.select().from(usersTable).where(eq(usersTable.id, parseInt(bodyUserId)));
+      targetUser = found ?? null;
+    } else {
+      targetUser = null; // true guest booking
+    }
+  } else {
+    targetUser = currentUser;
+  }
 
   const [terrain] = await db.select().from(terrainsTable).where(eq(terrainsTable.id, parseInt(terrainId)));
   if (!terrain) {
@@ -78,6 +89,7 @@ router.post("/reservations", requireUser, async (req, res) => {
   const end = new Date(start.getTime() + 90 * 60 * 1000);
 
   const tokensNeeded = 1;
+  // Only check token balance for member bookings (not guest/manual)
   if (targetUser && targetUser.tokenBalance < tokensNeeded) {
     res.status(400).json({ error: "Insufficient tokens" });
     return;
