@@ -111,10 +111,10 @@ export default function AdminReservations() {
                     </SelectContent>
                   </Select>
                   <Input data-testid="input-start-time" type="datetime-local" value={newBooking.startTime} onChange={e => setNewBooking(b => ({ ...b, startTime: e.target.value }))} />
-                  <Select onValueChange={v => setNewBooking(b => ({ ...b, userId: v }))}>
+                  <Select onValueChange={v => setNewBooking(b => ({ ...b, userId: v === "guest" ? "" : v }))}>
                     <SelectTrigger data-testid="select-user"><SelectValue placeholder="Select member (optional)" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">No member (guest)</SelectItem>
+                      <SelectItem value="guest">No member (guest)</SelectItem>
                       {usersData?.data?.map(u => <SelectItem key={u.id} value={String(u.id)}>{u.email}</SelectItem>)}
                     </SelectContent>
                   </Select>

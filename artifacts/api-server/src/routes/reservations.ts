@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, reservationsTable, terrainsTable, usersTable, tokenTransactionsTable, notificationsTable, activityTable } from "@workspace/db";
-import { eq, and, gte, lt, lte, desc, count, sql } from "drizzle-orm";
+import { eq, and, gte, gt, lt, lte, desc, count, sql } from "drizzle-orm";
 import { requireUser, requireAdmin } from "../lib/auth";
 
 const router = Router();
@@ -90,7 +90,7 @@ router.post("/reservations", requireUser, async (req, res) => {
           eq(reservationsTable.terrainId, terrain.id),
           eq(reservationsTable.status, "confirmed" as any),
           lt(reservationsTable.startTime, end),
-          gte(reservationsTable.endTime, start)
+          gt(reservationsTable.endTime, start)
         )
       );
       if (conflict.length > 0) {
