@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, reservationsTable, terrainsTable, usersTable, tokenTransactionsTable, notificationsTable, activityTable, reservationPlayersTable } from "@workspace/db";
-import { eq, and, gte, gt, lt, lte, desc, count, sql } from "drizzle-orm";
+import { eq, and, gte, gt, lt, lte, desc, count, inArray, or, sql } from "drizzle-orm";
 import { requireUser, requireAdmin } from "../lib/auth";
 
 const router = Router();
@@ -8,13 +8,24 @@ const router = Router();
 router.get("/reservations/upcoming", requireUser, async (req, res) => {
   const user = (req as any).dbUser;
   const now = new Date();
+
+  // Include sessions where user is the creator OR a joined player
+  const playerRows = await db.select({ reservationId: reservationPlayersTable.reservationId })
+    .from(reservationPlayersTable)
+    .where(eq(reservationPlayersTable.userId, user.id));
+  const joinedIds = playerRows.map(r => r.reservationId);
+
+  const whereClause = and(
+    gte(reservationsTable.startTime, now),
+    eq(reservationsTable.status, "confirmed" as any),
+    joinedIds.length > 0
+      ? or(eq(reservationsTable.userId, user.id), inArray(reservationsTable.id, joinedIds))
+      : eq(reservationsTable.userId, user.id),
+  );
+
   const reservations = await db.query.reservationsTable.findMany({
-    where: and(
-      eq(reservationsTable.userId, user.id),
-      gte(reservationsTable.startTime, now),
-      eq(reservationsTable.status, "confirmed" as any)
-    ),
-    with: { terrain: true, user: true },
+    where: whereClause,
+    with: { terrain: true, user: true, players: { with: { user: true } } },
     orderBy: [reservationsTable.startTime],
     limit: 10,
   });
@@ -29,11 +40,25 @@ router.get("/reservations", requireUser, async (req, res) => {
   const offset = (pageNum - 1) * limitNum;
 
   const conditions: any[] = [];
+
   if (user.role !== "admin") {
-    conditions.push(eq(reservationsTable.userId, user.id));
+    // Include sessions where user is the creator OR a joined player
+    const playerRows = await db.select({ reservationId: reservationPlayersTable.reservationId })
+      .from(reservationPlayersTable)
+      .where(eq(reservationPlayersTable.userId, user.id));
+    const joinedIds = playerRows.map(r => r.reservationId);
+
+    if (joinedIds.length > 0) {
+      conditions.push(
+        or(eq(reservationsTable.userId, user.id), inArray(reservationsTable.id, joinedIds))
+      );
+    } else {
+      conditions.push(eq(reservationsTable.userId, user.id));
+    }
   } else if (queryUserId) {
     conditions.push(eq(reservationsTable.userId, parseInt(queryUserId)));
   }
+
   if (date) {
     const d = new Date(date);
     const start = new Date(d); start.setHours(0,0,0,0);
@@ -50,7 +75,7 @@ router.get("/reservations", requireUser, async (req, res) => {
 
   const data = await db.query.reservationsTable.findMany({
     where: whereClause,
-    with: { terrain: true, user: true },
+    with: { terrain: true, user: true, players: { with: { user: true } } },
     orderBy: [desc(reservationsTable.createdAt)],
     limit: limitNum,
     offset,
@@ -135,7 +160,7 @@ router.post("/reservations", requireUser, async (req, res) => {
           notes,
         }).returning();
 
-        // Create a reservation_players row for the creator
+        // Creator row in reservation_players (source of truth for refunds)
         await tx.insert(reservationPlayersTable).values({
           reservationId: reservation.id,
           userId: freshUser.id,
@@ -170,7 +195,7 @@ router.post("/reservations", requireUser, async (req, res) => {
 
         return reservation;
       } else {
-        // Guest/admin manual booking
+        // Guest/admin manual booking (no token charge)
         const [reservation] = await tx.insert(reservationsTable).values({
           terrainId: terrain.id,
           userId: null,
@@ -219,13 +244,15 @@ router.get("/reservations/:id", requireUser, async (req, res) => {
   const user = (req as any).dbUser;
   const reservation = await db.query.reservationsTable.findFirst({
     where: eq(reservationsTable.id, id),
-    with: { terrain: true, user: true },
+    with: { terrain: true, user: true, players: { with: { user: true } } },
   });
   if (!reservation) {
     res.status(404).json({ error: "Not found" });
     return;
   }
-  if (user.role !== "admin" && reservation.userId !== user.id) {
+  // Allow creator, any joined player, or admin to view
+  const isPlayer = reservation.players.some((p: any) => p.userId === user.id);
+  if (user.role !== "admin" && reservation.userId !== user.id && !isPlayer) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
@@ -253,12 +280,13 @@ router.post("/reservations/:id/cancel", requireUser, async (req, res) => {
   // Pre-fetch to validate access before entering transaction
   const check = await db.query.reservationsTable.findFirst({
     where: eq(reservationsTable.id, id),
-    with: { terrain: true, user: true },
+    with: { terrain: true, user: true, players: true },
   });
   if (!check) {
     res.status(404).json({ error: "Not found" });
     return;
   }
+  // Only creator or admin can cancel
   if (user.role !== "admin" && check.userId !== user.id) {
     res.status(403).json({ error: "Forbidden" });
     return;
@@ -266,7 +294,7 @@ router.post("/reservations/:id/cancel", requireUser, async (req, res) => {
 
   try {
     const result = await db.transaction(async (tx) => {
-      // Lock the row and atomically transition status only if still confirmed
+      // Lock and transition status
       const [locked] = await tx.select().from(reservationsTable)
         .where(and(eq(reservationsTable.id, id), eq(reservationsTable.status, "confirmed" as any)))
         .for("update");
@@ -280,7 +308,46 @@ router.post("/reservations/:id/cancel", requireUser, async (req, res) => {
         .where(eq(reservationsTable.id, id))
         .returning();
 
-      if (locked.userId) {
+      // Refund ALL players who paid tokens (player-row-driven accounting)
+      const paidPlayers = await tx.select().from(reservationPlayersTable)
+        .where(
+          and(
+            eq(reservationPlayersTable.reservationId, id),
+            eq(reservationPlayersTable.paymentStatus, "paid"),
+            eq(reservationPlayersTable.paymentType, "token"),
+          )
+        ).for("update");
+
+      if (paidPlayers.length > 0) {
+        // Refund each player who paid
+        for (const playerRow of paidPlayers) {
+          if (!playerRow.userId || playerRow.tokensCharged <= 0) continue;
+          const [targetUser] = await tx.select().from(usersTable)
+            .where(eq(usersTable.id, playerRow.userId)).for("update");
+          if (!targetUser) continue;
+
+          const newBalance = targetUser.tokenBalance + playerRow.tokensCharged;
+          await tx.update(usersTable).set({ tokenBalance: newBalance }).where(eq(usersTable.id, targetUser.id));
+          await tx.update(reservationPlayersTable)
+            .set({ paymentStatus: "refunded" as any })
+            .where(eq(reservationPlayersTable.id, playerRow.id));
+          await tx.insert(tokenTransactionsTable).values({
+            userId: targetUser.id,
+            reservationId: id,
+            type: "credit",
+            amount: playerRow.tokensCharged,
+            balanceAfter: newBalance,
+            description: `Cancellation refund: ${check.terrain?.name ?? "terrain"}`,
+          });
+          await tx.insert(notificationsTable).values({
+            userId: targetUser.id,
+            type: "booking_cancelled",
+            title: "Reservation Cancelled",
+            message: `Your booking has been cancelled. ${playerRow.tokensCharged} token(s) refunded.`,
+          });
+        }
+      } else if (locked.userId && locked.tokensCharged > 0) {
+        // Legacy reservation without player rows — fall back to reservation-level refund
         const [targetUser] = await tx.select().from(usersTable)
           .where(eq(usersTable.id, locked.userId)).for("update");
         if (targetUser) {

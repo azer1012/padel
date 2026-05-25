@@ -23,7 +23,7 @@ router.post("/reservations/:id/join", requireUser, async (req, res) => {
     res.status(400).json({ error: "Reservation is not active" });
     return;
   }
-  if (reservation.bookingMode === "full_court") {
+  if (reservation.bookingMode === "full_court" || reservation.bookingMode === null) {
     res.status(400).json({ error: "This court is fully reserved — no open spots" });
     return;
   }
@@ -31,12 +31,6 @@ router.post("/reservations/:id/join", requireUser, async (req, res) => {
   const alreadyJoined = reservation.players.find(p => p.userId === currentUser.id);
   if (alreadyJoined) {
     res.status(409).json({ error: "You already have a spot in this session" });
-    return;
-  }
-
-  const filledSpots = reservation.players.length > 0 ? reservation.players.length : 1;
-  if (filledSpots >= reservation.totalSpots) {
-    res.status(409).json({ error: "No open spots left in this session" });
     return;
   }
 
@@ -53,8 +47,8 @@ router.post("/reservations/:id/join", requireUser, async (req, res) => {
       // Re-check capacity inside transaction
       const [{ c }] = await tx.select({ c: count() }).from(reservationPlayersTable)
         .where(eq(reservationPlayersTable.reservationId, id));
-      const currentFilled = Number(c) > 0 ? Number(c) : 1; // session creator counts as 1
-      if (currentFilled >= reservation.totalSpots) {
+      const currentFilled = Number(c);
+      if (currentFilled >= (reservation.totalSpots ?? 4)) {
         throw new Error("NO_SPOTS");
       }
 
@@ -116,8 +110,18 @@ router.delete("/reservations/:id/leave", requireUser, async (req, res) => {
     return;
   }
 
+  const reservation = playerRow.reservation;
+
+  // Creator of a full_court booking cannot "leave" — they must cancel the reservation
+  const isCreator = reservation.userId === currentUser.id;
+  const isFullCourt = reservation.bookingMode === "full_court" || reservation.bookingMode === null;
+  if (isCreator && isFullCourt) {
+    res.status(400).json({ error: "Court creator cannot leave — please cancel the reservation instead" });
+    return;
+  }
+
   const now = new Date();
-  if (playerRow.reservation.startTime <= now) {
+  if (reservation.startTime <= now) {
     res.status(400).json({ error: "Cannot leave a session that has already started" });
     return;
   }
@@ -138,7 +142,7 @@ router.delete("/reservations/:id/leave", requireUser, async (req, res) => {
           type: "credit",
           amount: playerRow.tokensCharged,
           balanceAfter: newBalance,
-          description: `Left session: ${playerRow.reservation.terrain?.name ?? "court"}`,
+          description: `Left session: ${reservation.terrain?.name ?? "court"}`,
         });
         await tx.insert(notificationsTable).values({
           userId: freshUser.id,
@@ -229,8 +233,8 @@ router.get("/invites/:token", async (req, res) => {
     return;
   }
 
-  const filledSpots = invite.reservation.players.length > 0 ? invite.reservation.players.length : 1;
-  const openSpots = Math.max(0, invite.reservation.totalSpots - filledSpots);
+  const filledSpots = invite.reservation.players.length;
+  const openSpots = Math.max(0, (invite.reservation.totalSpots ?? 4) - filledSpots);
 
   res.json({
     invite: {
@@ -246,7 +250,7 @@ router.get("/invites/:token", async (req, res) => {
       terrainName: invite.reservation.terrain?.name,
       startTime: invite.reservation.startTime,
       endTime: invite.reservation.endTime,
-      totalSpots: invite.reservation.totalSpots,
+      totalSpots: invite.reservation.totalSpots ?? 4,
       filledSpots,
       openSpots,
     },
@@ -260,7 +264,7 @@ router.post("/invites/:token/accept", requireUser, async (req, res) => {
 
   const invite = await db.query.playerInvitesTable.findFirst({
     where: eq(playerInvitesTable.inviteToken, token),
-    with: { reservation: { with: { terrain: true, players: true } } },
+    with: { reservation: { with: { terrain: true } } },
   });
 
   if (!invite) {
@@ -281,26 +285,33 @@ router.post("/invites/:token/accept", requireUser, async (req, res) => {
     return;
   }
 
-  const alreadyJoined = invite.reservation.players.find(p => p.userId === currentUser.id);
-  if (alreadyJoined) {
-    res.status(409).json({ error: "You already have a spot in this session" });
-    return;
-  }
-
-  const filledSpots = invite.reservation.players.length > 0 ? invite.reservation.players.length : 1;
-  if (filledSpots >= invite.reservation.totalSpots) {
-    res.status(409).json({ error: "No open spots left in this session" });
-    return;
-  }
-
   const tokensNeeded = 1;
 
   try {
     await db.transaction(async (tx) => {
+      // Lock user row and check tokens
       const [freshUser] = await tx.select().from(usersTable)
         .where(eq(usersTable.id, currentUser.id)).for("update");
       if (!freshUser || freshUser.tokenBalance < tokensNeeded) {
         throw new Error("INSUFFICIENT_TOKENS");
+      }
+
+      // Transactional capacity re-check (prevents concurrent overbooking)
+      const [{ c: existingCount }] = await tx.select({ c: count() })
+        .from(reservationPlayersTable)
+        .where(eq(reservationPlayersTable.reservationId, invite.reservation.id));
+      if (Number(existingCount) >= (invite.reservation.totalSpots ?? 4)) {
+        throw new Error("NO_SPOTS");
+      }
+
+      // Check not already joined
+      const [alreadyIn] = await tx.select().from(reservationPlayersTable)
+        .where(and(
+          eq(reservationPlayersTable.reservationId, invite.reservation.id),
+          eq(reservationPlayersTable.userId, currentUser.id),
+        ));
+      if (alreadyIn) {
+        throw new Error("ALREADY_JOINED");
       }
 
       const newBalance = freshUser.tokenBalance - tokensNeeded;
@@ -339,6 +350,10 @@ router.post("/invites/:token/accept", requireUser, async (req, res) => {
   } catch (err: any) {
     if (err.message === "INSUFFICIENT_TOKENS") {
       res.status(400).json({ error: "Insufficient tokens" });
+    } else if (err.message === "NO_SPOTS") {
+      res.status(409).json({ error: "No open spots left in this session" });
+    } else if (err.message === "ALREADY_JOINED") {
+      res.status(409).json({ error: "You already have a spot in this session" });
     } else {
       throw err;
     }
@@ -372,7 +387,7 @@ router.patch("/reservations/:id/players/:playerId", requireAdmin, async (req, re
   res.json(updated);
 });
 
-// ─── Open matches (public sessions) ──────────────────────────────────────────
+// ─── Open matches (public sessions with open spots) ───────────────────────────
 router.get("/open-matches", async (req, res) => {
   const now = new Date();
 
@@ -394,20 +409,22 @@ router.get("/open-matches", async (req, res) => {
   const openMatches = sessions
     .filter(s => s.startTime > now)
     .map(s => {
-      const filledSpots = s.players.length > 0 ? s.players.length : 1;
-      const openSpots = Math.max(0, s.totalSpots - filledSpots);
+      const filledSpots = s.players.length;
+      const openSpots = Math.max(0, (s.totalSpots ?? 4) - filledSpots);
       return {
         reservationId: s.id,
         terrain: s.terrain,
         startTime: s.startTime,
         endTime: s.endTime,
-        totalSpots: s.totalSpots,
+        totalSpots: s.totalSpots ?? 4,
         filledSpots,
         openSpots,
         publicDescription: s.publicDescription,
+        // Public-safe: names only, no payment details
         players: s.players.map(p => ({
-          name: p.user ? `${p.user.firstName ?? ""} ${p.user.lastName ?? ""}`.trim() || "Player" : "Player",
-          paymentStatus: p.paymentStatus,
+          name: p.user
+            ? `${p.user.firstName ?? ""} ${p.user.lastName ?? ""}`.trim() || "Player"
+            : "Player",
         })),
       };
     })
