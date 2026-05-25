@@ -232,60 +232,78 @@ router.patch("/reservations/:id", requireAdmin, async (req, res) => {
 router.post("/reservations/:id/cancel", requireUser, async (req, res) => {
   const id = parseInt(req.params.id as string);
   const user = (req as any).dbUser;
-  const reservation = await db.query.reservationsTable.findFirst({
+
+  // Pre-fetch to validate access before entering transaction
+  const check = await db.query.reservationsTable.findFirst({
     where: eq(reservationsTable.id, id),
     with: { terrain: true, user: true },
   });
-  if (!reservation) {
+  if (!check) {
     res.status(404).json({ error: "Not found" });
     return;
   }
-  if (user.role !== "admin" && reservation.userId !== user.id) {
+  if (user.role !== "admin" && check.userId !== user.id) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
-  if (reservation.status === "cancelled") {
-    res.status(400).json({ error: "Already cancelled" });
-    return;
-  }
 
-  const [updated] = await db.update(reservationsTable)
-    .set({ status: "cancelled" })
-    .where(eq(reservationsTable.id, id))
-    .returning();
+  try {
+    const result = await db.transaction(async (tx) => {
+      // Lock the row and atomically transition status only if still confirmed
+      const [locked] = await tx.select().from(reservationsTable)
+        .where(and(eq(reservationsTable.id, id), eq(reservationsTable.status, "confirmed" as any)))
+        .for("update");
 
-  if (reservation.userId) {
-    const [targetUser] = await db.select().from(usersTable).where(eq(usersTable.id, reservation.userId));
-    if (targetUser) {
-      const newBalance = targetUser.tokenBalance + reservation.tokensCharged;
-      await db.update(usersTable).set({ tokenBalance: newBalance }).where(eq(usersTable.id, targetUser.id));
-      await db.insert(tokenTransactionsTable).values({
-        userId: targetUser.id,
-        reservationId: id,
-        type: "credit",
-        amount: reservation.tokensCharged,
-        balanceAfter: newBalance,
-        description: `Cancellation refund: ${reservation.terrain?.name ?? "terrain"}`,
-      });
-      await db.insert(notificationsTable).values({
-        userId: targetUser.id,
-        type: "booking_cancelled",
-        title: "Reservation Cancelled",
-        message: `Your booking has been cancelled. ${reservation.tokensCharged} token(s) refunded.`,
-      });
+      if (!locked) {
+        throw new Error("ALREADY_CANCELLED");
+      }
+
+      const [updated] = await tx.update(reservationsTable)
+        .set({ status: "cancelled" })
+        .where(eq(reservationsTable.id, id))
+        .returning();
+
+      if (locked.userId) {
+        const [targetUser] = await tx.select().from(usersTable)
+          .where(eq(usersTable.id, locked.userId)).for("update");
+        if (targetUser) {
+          const newBalance = targetUser.tokenBalance + locked.tokensCharged;
+          await tx.update(usersTable).set({ tokenBalance: newBalance }).where(eq(usersTable.id, targetUser.id));
+          await tx.insert(tokenTransactionsTable).values({
+            userId: targetUser.id,
+            reservationId: id,
+            type: "credit",
+            amount: locked.tokensCharged,
+            balanceAfter: newBalance,
+            description: `Cancellation refund: ${check.terrain?.name ?? "terrain"}`,
+          });
+          await tx.insert(notificationsTable).values({
+            userId: targetUser.id,
+            type: "booking_cancelled",
+            title: "Reservation Cancelled",
+            message: `Your booking has been cancelled. ${locked.tokensCharged} token(s) refunded.`,
+          });
+        }
+      }
+
+      return { updated, userName: check.user ? `${check.user.firstName ?? ""} ${check.user.lastName ?? ""}`.trim() || check.user.email : null };
+    });
+
+    await db.insert(activityTable).values({
+      type: "reservation_cancelled",
+      message: `Reservation cancelled for ${check.terrain?.name ?? "terrain"}`,
+      userId: check.userId,
+      userName: result.userName,
+    });
+
+    res.json(result.updated);
+  } catch (err: any) {
+    if (err.message === "ALREADY_CANCELLED") {
+      res.status(400).json({ error: "Already cancelled" });
+    } else {
+      throw err;
     }
   }
-
-  await db.insert(activityTable).values({
-    type: "reservation_cancelled",
-    message: `Reservation cancelled for ${reservation.terrain?.name ?? "terrain"}`,
-    userId: reservation.userId,
-    userName: reservation.user
-      ? `${reservation.user.firstName ?? ""} ${reservation.user.lastName ?? ""}`.trim() || reservation.user.email
-      : null,
-  });
-
-  res.json(updated);
 });
 
 export default router;

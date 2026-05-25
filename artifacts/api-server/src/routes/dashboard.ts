@@ -36,8 +36,8 @@ router.get("/dashboard/stats", requireAdmin, async (req, res) => {
     totalTokensIssued: Number(tokensIssued),
     occupancyRateToday: Number(occupancyRate.toFixed(1)),
     upcomingReservations: Number(upcoming),
-    revenueEquivalentToday: Number(todayCount) * 25,
-    revenueEquivalentMonth: Number(monthCount) * 25,
+    revenueEquivalentToday: Number(todayCount) * 100,
+    revenueEquivalentMonth: Number(monthCount) * 100,
   });
 });
 

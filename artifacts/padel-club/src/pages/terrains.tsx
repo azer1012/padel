@@ -190,7 +190,7 @@ export default function Terrains() {
               {t("bookCourt")} — {selectedTerrain?.name}
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              {t("selectDate")} and pick an available time slot (90 min, 1 token).
+              {t("selectDate")} and pick an available time slot (90 min, 4 tokens).
             </DialogDescription>
           </DialogHeader>
 
@@ -258,7 +258,7 @@ export default function Terrains() {
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Zap className="h-4 w-4 text-primary" />
-                <span>1 {t("tokensRequired")} will be deducted from your wallet.</span>
+                <span>4 {t("tokensRequired")} will be deducted from your wallet.</span>
               </div>
               <div className="flex gap-3">
                 <Button variant="outline" className="flex-1" onClick={() => setPendingSlot(null)}>

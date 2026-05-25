@@ -1,0 +1,214 @@
+NEW RESERVATION UX FLOW (VERY IMPORTANT)
+
+The reservation system must completely change to a PROFESSIONAL CALENDAR / PLANNING VIEW similar to:
+
+* Playtomic
+* Padel reservation systems
+* The screenshot provided
+
+BOOKING UI REQUIREMENTS:
+
+1. COURT CALENDAR VIEW
+
+* Display courts as columns:
+
+  * Court A
+  * Court B
+  * Court C
+  * etc.
+* Display time slots vertically:
+
+  * 08:00
+  * 09:30
+  * 11:00
+  * 12:30
+  * etc.
+* One reservation block = 90 minutes
+* Real-time availability
+* Color-coded slots:
+
+  * Green = available
+  * Red = fully booked
+  * Orange = partially pending
+  * Blue = user's booking
+
+2. INTERACTIVE RESERVATION EXPERIENCE
+   When user clicks an available slot:
+
+* Open reservation modal
+* Show:
+
+  * selected court
+  * date
+  * time
+  * duration
+  * token cost
+
+3. IMPORTANT PAYMENT LOGIC
+
+The app must ask:
+
+"How do you want to reserve this court?"
+
+OPTION A:
+"Reserve for all 4 players"
+
+* Cost = 4 tokens
+* User pays for entire terrain
+* User can invite partners
+* Partners join for free
+
+OPTION B:
+"Reserve only for me"
+
+* Cost = 1 token
+* Remaining 3 spots stay unpaid
+  User can invite partners  
+* Other players can:
+
+  * pay cash in club
+  * pay their token when accepting invitation
+
+4. TEAM / PLAYER MANAGEMENT
+
+If user reserves full court:
+
+* User can:
+
+  * invite 3 friends
+  * add players manually
+  * share invitation link
+  * generate QR invitation
+
+If user reserves only his spot:
+
+* System creates:
+
+  * 1/4 occupied
+  * 3 remaining spots
+* Other players can join later
+
+5. SPLIT PAYMENT SYSTEM
+
+Support:
+
+* Full payment by one player
+* Split payment between players
+* Mixed payment:
+
+  * some players use tokens
+  * some pay cash in club
+
+6. RESERVATION STATES
+
+Each booking must have:
+
+* total spots = 4
+* paid spots
+* unpaid spots
+* invited players
+* confirmed players
+* pending players
+
+Example:
+Court A
+18:30 - 20:00
+
+Player 1 -> paid token
+Player 2 -> pending
+Player 3 -> cash at club
+Player 4 -> empty slot
+
+7. VISUAL DISPLAY IN CALENDAR
+
+The booking block must visually show:
+
+* occupancy count:
+
+  * 1/4
+  * 2/4
+  * 4/4
+* different colors depending on status
+* hover tooltip with players
+
+8. OPEN MATCH SYSTEM
+
+Allow users to create:
+"Open Match"
+
+Meaning:
+
+* Other players can join available spots
+* Users can request to join
+* Creator accepts/rejects
+
+9. ADMIN FEATURES
+
+Admin can:
+
+* manually assign players
+* mark cash payments
+* convert unpaid player to paid
+* force-confirm reservations
+* block slots
+* create maintenance slots
+
+10. MOBILE UX
+
+Mobile app must support:
+
+* horizontal swipe between courts
+* vertical time scroll
+* sticky hour labels
+* responsive planning grid
+* smooth animations
+
+11. DATABASE STRUCTURE
+
+Create tables:
+
+* reservations
+* reservation_players
+* reservation_payments
+* player_invites
+* open_matches
+
+reservation_players table:
+
+* reservation_id
+* user_id
+* payment_type
+* payment_status
+* joined_at
+* invite_status
+
+12. PAYMENT TYPES
+
+Supported values:
+
+* token
+* cash_club
+* invited_free
+* pending
+
+13. NOTIFICATIONS
+
+Send notifications:
+
+* invite received
+* player joined
+* reservation completed
+* missing payment reminder
+* open spot available
+
+14. IMPORTANT BUSINESS RULE
+
+A court reservation is NOT necessarily fully paid immediately.
+
+The system must support:
+
+* partial payment
+* partial occupancy
+* collaborative reservation flow
+
+This is one of the main core features of the app.
