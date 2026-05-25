@@ -1,0 +1,26 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "qWOYHlBzDDQQrGZIUoIhT"
+uri = "file://artifacts/padel-club/src/assets/images/hero-padel.png"
+type = "image"
+title = "Hero background padel court"
+
+[[generated]]
+id = "KiEEoJnxbKzip1y9RJBHc"
+uri = "file://artifacts/padel-club/src/assets/images/terrain-indoor.png"
+type = "image"
+title = "Indoor padel terrain"
+
+[[generated]]
+id = "xaEqBVvBPsXL-Q2dvBSfY"
+uri = "file://artifacts/padel-club/src/assets/images/terrain-outdoor.png"
+type = "image"
+title = "Outdoor padel terrain"
+
+[[generated]]
+id = "-YW7RWnTFvaZyM_wgX-lo"
+uri = "file://artifacts/padel-club/src/assets/images/tournament.png"
+type = "image"
+title = "Padel tournament image"

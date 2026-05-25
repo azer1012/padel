@@ -1,0 +1,6 @@
+<svg width="400" height="100" viewBox="0 0 400 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="100" fill="transparent"/>
+  <path d="M40 30L60 70H80L60 30H40Z" fill="#39FF14"/>
+  <path d="M85 30L105 70H125L105 30H85Z" fill="#39FF14"/>
+  <text fill="white" font-family="Inter, sans-serif" font-size="36" font-weight="900" letter-spacing="-1" x="140" y="65">PADEL <tspan fill="#39FF14">CLUB</tspan></text>
+</svg>

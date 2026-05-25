@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Padel Club Platform"
+version = "1.0.0"
+id = "artifacts/padel-club"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 26201
+
+[services.development]
+run = "pnpm --filter @workspace/padel-club run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/padel-club", "run", "build" ]
+publicDir = "artifacts/padel-club/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "26201"
+BASE_PATH = "/"

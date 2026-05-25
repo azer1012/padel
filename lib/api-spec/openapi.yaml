@@ -3,13 +3,30 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Padel Club Platform API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: users
+    description: User management
+  - name: terrains
+    description: Padel terrain management
+  - name: reservations
+    description: Booking and reservation management
+  - name: tokens
+    description: Token credit system
+  - name: news
+    description: News and events
+  - name: tournaments
+    description: Tournament management
+  - name: dashboard
+    description: Admin analytics and stats
+  - name: notifications
+    description: In-app notifications
+
 paths:
   /healthz:
     get:
@@ -24,6 +41,784 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ─── Users ───────────────────────────────────────────────────────────
+  /users/me:
+    get:
+      operationId: getMe
+      tags: [users]
+      summary: Get current user profile
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+    patch:
+      operationId: updateMe
+      tags: [users]
+      summary: Update current user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List all users (admin)
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Users list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserListResponse"
+
+  /users/{id}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get user by ID (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: Not found
+
+  # ─── Terrains ─────────────────────────────────────────────────────────
+  /terrains:
+    get:
+      operationId: listTerrains
+      tags: [terrains]
+      summary: List all terrains
+      responses:
+        "200":
+          description: Terrains list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Terrain"
+    post:
+      operationId: createTerrain
+      tags: [terrains]
+      summary: Create a terrain (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TerrainInput"
+      responses:
+        "201":
+          description: Created terrain
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Terrain"
+
+  /terrains/{id}:
+    get:
+      operationId: getTerrain
+      tags: [terrains]
+      summary: Get terrain by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Terrain
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Terrain"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateTerrain
+      tags: [terrains]
+      summary: Update terrain (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TerrainUpdate"
+      responses:
+        "200":
+          description: Updated terrain
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Terrain"
+    delete:
+      operationId: deleteTerrain
+      tags: [terrains]
+      summary: Delete terrain (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /terrain-slots:
+    get:
+      operationId: getTerrainSlots
+      tags: [terrains]
+      summary: Get available slots for a terrain on a date
+      parameters:
+        - name: terrainId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Available time slots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimeSlot"
+
+  # ─── Reservations ─────────────────────────────────────────────────────
+  /reservations:
+    get:
+      operationId: listReservations
+      tags: [reservations]
+      summary: List reservations (admin sees all, user sees own)
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: terrainId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [confirmed, cancelled, pending]
+        - name: userId
+          in: query
+          schema:
+            type: integer
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Reservations list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationListResponse"
+    post:
+      operationId: createReservation
+      tags: [reservations]
+      summary: Create a reservation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReservationInput"
+      responses:
+        "201":
+          description: Created reservation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+        "400":
+          description: Slot not available or insufficient tokens
+        "409":
+          description: Conflict - slot already booked
+
+  /reservations/upcoming:
+    get:
+      operationId: listUpcomingReservations
+      tags: [reservations]
+      summary: List upcoming reservations for current user
+      responses:
+        "200":
+          description: Upcoming reservations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Reservation"
+
+  /reservations/{id}:
+    get:
+      operationId: getReservation
+      tags: [reservations]
+      summary: Get reservation by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Reservation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateReservation
+      tags: [reservations]
+      summary: Update reservation (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReservationUpdate"
+      responses:
+        "200":
+          description: Updated reservation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+
+  /reservations/{id}/cancel:
+    post:
+      operationId: cancelReservation
+      tags: [reservations]
+      summary: Cancel a reservation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cancelled reservation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+
+  # ─── Tokens ───────────────────────────────────────────────────────────
+  /tokens/balance:
+    get:
+      operationId: getTokenBalance
+      tags: [tokens]
+      summary: Get current user token balance
+      responses:
+        "200":
+          description: Token balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenBalance"
+
+  /tokens/transactions:
+    get:
+      operationId: listTokenTransactions
+      tags: [tokens]
+      summary: List token transactions for current user
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Token transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenTransactionListResponse"
+
+  /tokens/admin/adjust:
+    post:
+      operationId: adjustUserTokens
+      tags: [tokens]
+      summary: Admin adjust tokens for a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenAdjustment"
+      responses:
+        "200":
+          description: Token transaction record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenTransaction"
+
+  /tokens/admin/transactions:
+    get:
+      operationId: listAllTokenTransactions
+      tags: [tokens]
+      summary: Admin view all token transactions
+      parameters:
+        - name: userId
+          in: query
+          schema:
+            type: integer
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [credit, debit, adjustment]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: All token transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenTransactionListResponse"
+
+  # ─── News ─────────────────────────────────────────────────────────────
+  /news:
+    get:
+      operationId: listNews
+      tags: [news]
+      summary: List news articles
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: News list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsListResponse"
+    post:
+      operationId: createNews
+      tags: [news]
+      summary: Create news article (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewsInput"
+      responses:
+        "201":
+          description: Created article
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsArticle"
+
+  /news/{id}:
+    get:
+      operationId: getNews
+      tags: [news]
+      summary: Get news article by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: News article
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsArticle"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateNews
+      tags: [news]
+      summary: Update news article (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewsUpdate"
+      responses:
+        "200":
+          description: Updated article
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsArticle"
+    delete:
+      operationId: deleteNews
+      tags: [news]
+      summary: Delete news article (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ─── Tournaments ───────────────────────────────────────────────────────
+  /tournaments:
+    get:
+      operationId: listTournaments
+      tags: [tournaments]
+      summary: List tournaments
+      responses:
+        "200":
+          description: Tournaments list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tournament"
+    post:
+      operationId: createTournament
+      tags: [tournaments]
+      summary: Create tournament (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TournamentInput"
+      responses:
+        "201":
+          description: Created tournament
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tournament"
+
+  /tournaments/{id}:
+    get:
+      operationId: getTournament
+      tags: [tournaments]
+      summary: Get tournament by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Tournament
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tournament"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateTournament
+      tags: [tournaments]
+      summary: Update tournament (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TournamentUpdate"
+      responses:
+        "200":
+          description: Updated tournament
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tournament"
+
+  /tournaments/{id}/register:
+    post:
+      operationId: registerForTournament
+      tags: [tournaments]
+      summary: Register for a tournament
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Registration confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TournamentRegistration"
+
+  # ─── Dashboard ────────────────────────────────────────────────────────
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [dashboard]
+      summary: Get admin dashboard stats
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /dashboard/peak-hours:
+    get:
+      operationId: getPeakHours
+      tags: [dashboard]
+      summary: Get peak hour analytics
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Peak hours data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PeakHourData"
+
+  /dashboard/activity:
+    get:
+      operationId: getRecentActivity
+      tags: [dashboard]
+      summary: Get recent activity feed
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Recent activity
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+
+  /dashboard/occupancy:
+    get:
+      operationId: getOccupancyStats
+      tags: [dashboard]
+      summary: Get terrain occupancy stats by day
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Occupancy stats
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OccupancyDay"
+
+  # ─── Notifications ─────────────────────────────────────────────────────
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: List notifications for current user
+      parameters:
+        - name: unreadOnly
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+
+  /notifications/{id}/read:
+    post:
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark notification as read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated notification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+
+  /notifications/read-all:
+    post:
+      operationId: markAllNotificationsRead
+      tags: [notifications]
+      summary: Mark all notifications as read
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    type: integer
+                required:
+                  - updated
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +829,588 @@ components:
       required:
         - status
 
+    # ─── Users ────────────────────────────────────────────────────────
+    User:
+      type: object
+      required: [id, clerkId, email, role, createdAt]
+      properties:
+        id:
+          type: integer
+        clerkId:
+          type: string
+        email:
+          type: string
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        role:
+          type: string
+          enum: [admin, player]
+        avatarUrl:
+          type: ["string", "null"]
+        tokenBalance:
+          type: integer
+          default: 0
+        language:
+          type: string
+          enum: [fr, ar, en]
+          default: fr
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    UserUpdate:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phone:
+          type: string
+        language:
+          type: string
+          enum: [fr, ar, en]
+
+    UserListResponse:
+      type: object
+      required: [data, total, page, limit]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    # ─── Terrains ─────────────────────────────────────────────────────
+    Terrain:
+      type: object
+      required: [id, name, type, isActive, pricePerPerson, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        type:
+          type: string
+          enum: [indoor, outdoor]
+        isActive:
+          type: boolean
+        pricePerPerson:
+          type: number
+        capacity:
+          type: integer
+          default: 4
+        openingTime:
+          type: string
+        closingTime:
+          type: string
+        photos:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    TerrainInput:
+      type: object
+      required: [name, type, pricePerPerson]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+          enum: [indoor, outdoor]
+        pricePerPerson:
+          type: number
+        capacity:
+          type: integer
+          default: 4
+        openingTime:
+          type: string
+          default: "08:00"
+        closingTime:
+          type: string
+          default: "23:00"
+        photos:
+          type: array
+          items:
+            type: string
+
+    TerrainUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+          enum: [indoor, outdoor]
+        isActive:
+          type: boolean
+        pricePerPerson:
+          type: number
+        openingTime:
+          type: string
+        closingTime:
+          type: string
+        photos:
+          type: array
+          items:
+            type: string
+
+    TimeSlot:
+      type: object
+      required: [startTime, endTime, available]
+      properties:
+        startTime:
+          type: string
+        endTime:
+          type: string
+        available:
+          type: boolean
+        reservationId:
+          type: ["integer", "null"]
+
+    # ─── Reservations ─────────────────────────────────────────────────
+    Reservation:
+      type: object
+      required: [id, terrainId, userId, startTime, endTime, status, tokensCharged, bookingType, createdAt]
+      properties:
+        id:
+          type: integer
+        terrainId:
+          type: integer
+        userId:
+          type: integer
+        guestName:
+          type: ["string", "null"]
+        guestPhone:
+          type: ["string", "null"]
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [confirmed, cancelled, pending]
+        tokensCharged:
+          type: integer
+        bookingType:
+          type: string
+          enum: [online, phone, manual]
+        notes:
+          type: ["string", "null"]
+        terrain:
+          $ref: "#/components/schemas/Terrain"
+        user:
+          $ref: "#/components/schemas/User"
+        createdAt:
+          type: string
+          format: date-time
+
+    ReservationInput:
+      type: object
+      required: [terrainId, startTime]
+      properties:
+        terrainId:
+          type: integer
+        startTime:
+          type: string
+          format: date-time
+        userId:
+          type: integer
+        guestName:
+          type: string
+        guestPhone:
+          type: string
+        bookingType:
+          type: string
+          enum: [online, phone, manual]
+          default: online
+        notes:
+          type: string
+
+    ReservationUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [confirmed, cancelled, pending]
+        notes:
+          type: string
+
+    ReservationListResponse:
+      type: object
+      required: [data, total, page, limit]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Reservation"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    # ─── Tokens ───────────────────────────────────────────────────────
+    TokenBalance:
+      type: object
+      required: [balance, userId]
+      properties:
+        userId:
+          type: integer
+        balance:
+          type: integer
+        pendingExpiry:
+          type: ["integer", "null"]
+        nextExpiryDate:
+          type: ["string", "null"]
+          format: date-time
+
+    TokenTransaction:
+      type: object
+      required: [id, userId, type, amount, description, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        adminId:
+          type: ["integer", "null"]
+        reservationId:
+          type: ["integer", "null"]
+        type:
+          type: string
+          enum: [credit, debit, adjustment]
+        amount:
+          type: integer
+        balanceAfter:
+          type: integer
+        description:
+          type: string
+        notes:
+          type: ["string", "null"]
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+        user:
+          $ref: "#/components/schemas/User"
+        createdAt:
+          type: string
+          format: date-time
+
+    TokenAdjustment:
+      type: object
+      required: [userId, amount, type, description]
+      properties:
+        userId:
+          type: integer
+        amount:
+          type: integer
+        type:
+          type: string
+          enum: [credit, debit, adjustment]
+        description:
+          type: string
+        notes:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+
+    TokenTransactionListResponse:
+      type: object
+      required: [data, total, page, limit]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/TokenTransaction"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    # ─── News ─────────────────────────────────────────────────────────
+    NewsArticle:
+      type: object
+      required: [id, title, content, isPublished, createdAt]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        excerpt:
+          type: ["string", "null"]
+        content:
+          type: string
+        imageUrl:
+          type: ["string", "null"]
+        isPublished:
+          type: boolean
+        publishedAt:
+          type: ["string", "null"]
+          format: date-time
+        category:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    NewsInput:
+      type: object
+      required: [title, content]
+      properties:
+        title:
+          type: string
+        excerpt:
+          type: string
+        content:
+          type: string
+        imageUrl:
+          type: string
+        isPublished:
+          type: boolean
+          default: false
+        category:
+          type: string
+
+    NewsUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        excerpt:
+          type: string
+        content:
+          type: string
+        imageUrl:
+          type: string
+        isPublished:
+          type: boolean
+        category:
+          type: string
+
+    NewsListResponse:
+      type: object
+      required: [data, total, page, limit]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/NewsArticle"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    # ─── Tournaments ──────────────────────────────────────────────────
+    Tournament:
+      type: object
+      required: [id, name, status, startDate, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [upcoming, open, ongoing, completed, cancelled]
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: ["string", "null"]
+          format: date-time
+        maxTeams:
+          type: ["integer", "null"]
+        registeredTeams:
+          type: integer
+          default: 0
+        prizeInfo:
+          type: ["string", "null"]
+        imageUrl:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    TournamentInput:
+      type: object
+      required: [name, startDate, status]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        maxTeams:
+          type: integer
+        status:
+          type: string
+          enum: [upcoming, open, ongoing, completed, cancelled]
+          default: upcoming
+        prizeInfo:
+          type: string
+        imageUrl:
+          type: string
+
+    TournamentUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        maxTeams:
+          type: integer
+        status:
+          type: string
+          enum: [upcoming, open, ongoing, completed, cancelled]
+        prizeInfo:
+          type: string
+        imageUrl:
+          type: string
+
+    TournamentRegistration:
+      type: object
+      required: [id, tournamentId, userId, createdAt]
+      properties:
+        id:
+          type: integer
+        tournamentId:
+          type: integer
+        userId:
+          type: integer
+        teamName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    # ─── Dashboard ────────────────────────────────────────────────────
+    DashboardStats:
+      type: object
+      required: [totalReservationsToday, totalReservationsThisMonth, activeUsers, totalTokensIssued, occupancyRateToday, upcomingReservations]
+      properties:
+        totalReservationsToday:
+          type: integer
+        totalReservationsThisMonth:
+          type: integer
+        activeUsers:
+          type: integer
+        totalTokensIssued:
+          type: integer
+        occupancyRateToday:
+          type: number
+        upcomingReservations:
+          type: integer
+        revenueEquivalentToday:
+          type: number
+        revenueEquivalentMonth:
+          type: number
+
+    PeakHourData:
+      type: object
+      required: [hour, bookingCount, dayOfWeek]
+      properties:
+        hour:
+          type: integer
+        dayOfWeek:
+          type: integer
+        bookingCount:
+          type: integer
+
+    ActivityItem:
+      type: object
+      required: [id, type, message, createdAt]
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          enum: [reservation_created, reservation_cancelled, token_credited, token_debited, user_registered]
+        message:
+          type: string
+        userId:
+          type: ["integer", "null"]
+        userName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    OccupancyDay:
+      type: object
+      required: [date, totalSlots, bookedSlots, occupancyRate]
+      properties:
+        date:
+          type: string
+          format: date
+        totalSlots:
+          type: integer
+        bookedSlots:
+          type: integer
+        occupancyRate:
+          type: number
+
+    # ─── Notifications ─────────────────────────────────────────────────
+    Notification:
+      type: object
+      required: [id, userId, type, title, message, isRead, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        type:
+          type: string
+          enum: [booking_confirmed, booking_cancelled, tokens_added, reservation_reminder, announcement]
+        title:
+          type: string
+        message:
+          type: string
+        isRead:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
