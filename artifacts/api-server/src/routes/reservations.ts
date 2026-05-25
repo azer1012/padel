@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, reservationsTable, terrainsTable, usersTable, tokenTransactionsTable, notificationsTable, activityTable } from "@workspace/db";
+import { db, reservationsTable, terrainsTable, usersTable, tokenTransactionsTable, notificationsTable, activityTable, reservationPlayersTable } from "@workspace/db";
 import { eq, and, gte, gt, lt, lte, desc, count, sql } from "drizzle-orm";
 import { requireUser, requireAdmin } from "../lib/auth";
 
@@ -61,19 +61,19 @@ router.get("/reservations", requireUser, async (req, res) => {
 
 router.post("/reservations", requireUser, async (req, res) => {
   const currentUser = (req as any).dbUser;
-  const { terrainId, startTime, userId: bodyUserId, guestName, guestPhone, bookingType = "online", notes } = req.body;
+  const {
+    terrainId, startTime, userId: bodyUserId, guestName, guestPhone,
+    bookingType = "online", bookingMode = "full_court", notes, isPublic = false, publicDescription,
+  } = req.body;
 
-  // Resolve who the reservation is for:
-  // - Admin with explicit userId → book for that member
-  // - Admin with no userId → guest/manual booking (no user account, no token deduction)
-  // - Regular player → always book for themselves
+  // Resolve target user
   let targetUser: typeof currentUser | null;
   if (currentUser.role === "admin") {
     if (bodyUserId) {
       const [found] = await db.select().from(usersTable).where(eq(usersTable.id, parseInt(bodyUserId)));
       targetUser = found ?? null;
     } else {
-      targetUser = null; // true guest booking
+      targetUser = null;
     }
   } else {
     targetUser = currentUser;
@@ -88,9 +88,9 @@ router.post("/reservations", requireUser, async (req, res) => {
   const start = new Date(startTime);
   const end = new Date(start.getTime() + 90 * 60 * 1000);
 
-  // 4 tokens per 90-min court session (1 token per person, 4 players per court)
-  const tokensNeeded = 4;
-  // Only check token balance for member bookings (not guest/manual)
+  // full_court = 4 tokens, own_spot = 1 token
+  const tokensNeeded = bookingMode === "own_spot" ? 1 : 4;
+
   if (targetUser && targetUser.tokenBalance < tokensNeeded) {
     res.status(400).json({ error: "Insufficient tokens" });
     return;
@@ -128,8 +128,21 @@ router.post("/reservations", requireUser, async (req, res) => {
           status: "confirmed",
           tokensCharged: tokensNeeded,
           bookingType: bookingType as any,
+          bookingMode: bookingMode as any,
+          totalSpots: 4,
+          isPublic: bookingMode === "own_spot" ? (isPublic ?? false) : false,
+          publicDescription: bookingMode === "own_spot" ? (publicDescription ?? null) : null,
           notes,
         }).returning();
+
+        // Create a reservation_players row for the creator
+        await tx.insert(reservationPlayersTable).values({
+          reservationId: reservation.id,
+          userId: freshUser.id,
+          paymentType: "token",
+          paymentStatus: "paid",
+          tokensCharged: tokensNeeded,
+        });
 
         await tx.insert(tokenTransactionsTable).values({
           userId: freshUser.id,
@@ -138,7 +151,7 @@ router.post("/reservations", requireUser, async (req, res) => {
           type: "debit",
           amount: tokensNeeded,
           balanceAfter: newBalance,
-          description: `Reservation: ${terrain.name} on ${start.toLocaleDateString()}`,
+          description: `Reservation (${bookingMode === "own_spot" ? "own spot" : "full court"}): ${terrain.name} on ${start.toLocaleDateString()}`,
         });
 
         await tx.insert(notificationsTable).values({
@@ -157,6 +170,7 @@ router.post("/reservations", requireUser, async (req, res) => {
 
         return reservation;
       } else {
+        // Guest/admin manual booking
         const [reservation] = await tx.insert(reservationsTable).values({
           terrainId: terrain.id,
           userId: null,
@@ -167,6 +181,9 @@ router.post("/reservations", requireUser, async (req, res) => {
           status: "confirmed",
           tokensCharged: 0,
           bookingType: "manual" as any,
+          bookingMode: bookingMode as any,
+          totalSpots: 4,
+          isPublic: false,
           notes,
         }).returning();
 
@@ -183,7 +200,7 @@ router.post("/reservations", requireUser, async (req, res) => {
 
     const full = await db.query.reservationsTable.findFirst({
       where: eq(reservationsTable.id, result.id),
-      with: { terrain: true, user: true },
+      with: { terrain: true, user: true, players: { with: { user: true } } },
     });
     res.status(201).json(full);
   } catch (err: any) {

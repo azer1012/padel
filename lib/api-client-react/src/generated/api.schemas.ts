@@ -550,3 +550,156 @@ export type MarkAllNotificationsRead200 = {
   updated: number;
 };
 
+// ─── Calendar ─────────────────────────────────────────────────────────────────
+
+export type CalendarSlotStatus = typeof CalendarSlotStatus[keyof typeof CalendarSlotStatus];
+export const CalendarSlotStatus = {
+  available: 'available',
+  partial: 'partial',
+  full: 'full',
+  past: 'past',
+} as const;
+
+export type CalendarBookingMode = typeof CalendarBookingMode[keyof typeof CalendarBookingMode];
+export const CalendarBookingMode = {
+  full_court: 'full_court',
+  own_spot: 'own_spot',
+} as const;
+
+export interface CalendarSlotPlayer {
+  id: number;
+  userId: number;
+  name: string;
+  paymentType: 'token' | 'cash';
+  paymentStatus: 'paid' | 'pending' | 'refunded';
+}
+
+export interface CalendarSlot {
+  startTime: string;
+  endTime: string;
+  status: CalendarSlotStatus;
+  reservationId: number | null;
+  bookingMode: CalendarBookingMode | null;
+  totalSpots: number;
+  filledSpots: number;
+  openSpots: number;
+  isPublic: boolean;
+  publicDescription: string | null;
+  players: CalendarSlotPlayer[];
+  creatorName: string | null;
+}
+
+export interface CalendarTerrain {
+  terrain: {
+    id: number;
+    name: string;
+    type: string;
+    pricePerPerson: number;
+    openingTime: string;
+    closingTime: string;
+  };
+  slots: CalendarSlot[];
+}
+
+export interface CalendarResponse {
+  date: string;
+  terrains: CalendarTerrain[];
+}
+
+export type GetCalendarParams = {
+  date: string;
+  terrainIds?: string;
+};
+
+// ─── Reservation Players ──────────────────────────────────────────────────────
+
+export type PlayerPaymentType = typeof PlayerPaymentType[keyof typeof PlayerPaymentType];
+export const PlayerPaymentType = {
+  token: 'token',
+  cash: 'cash',
+} as const;
+
+export type PlayerPaymentStatus = typeof PlayerPaymentStatus[keyof typeof PlayerPaymentStatus];
+export const PlayerPaymentStatus = {
+  paid: 'paid',
+  pending: 'pending',
+  refunded: 'refunded',
+} as const;
+
+export interface ReservationPlayer {
+  id: number;
+  reservationId: number;
+  userId: number;
+  paymentType: PlayerPaymentType;
+  paymentStatus: PlayerPaymentStatus;
+  tokensCharged: number;
+  notes: string | null;
+  joinedAt: string;
+  user?: User;
+}
+
+// ─── Player Invites ───────────────────────────────────────────────────────────
+
+export type InviteStatus = typeof InviteStatus[keyof typeof InviteStatus];
+export const InviteStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  expired: 'expired',
+  cancelled: 'cancelled',
+} as const;
+
+export interface PlayerInvite {
+  id: number;
+  inviteToken: string;
+  reservationId: number;
+  invitedByUserId: number;
+  invitedEmail: string | null;
+  expiresAt: string;
+  status: InviteStatus;
+  createdAt: string;
+}
+
+export interface InviteResponse {
+  invite: {
+    id: number;
+    status: InviteStatus;
+    expiresAt: string;
+    invitedBy: string;
+  };
+  reservation: {
+    id: number;
+    terrainName: string;
+    startTime: string;
+    endTime: string;
+    totalSpots: number;
+    filledSpots: number;
+    openSpots: number;
+  };
+}
+
+export interface CreateInviteResponse {
+  invite: PlayerInvite;
+  inviteUrl: string;
+  token: string;
+}
+
+// ─── Open Matches ─────────────────────────────────────────────────────────────
+
+export interface OpenMatch {
+  reservationId: number;
+  terrain: Terrain;
+  startTime: string;
+  endTime: string;
+  totalSpots: number;
+  filledSpots: number;
+  openSpots: number;
+  publicDescription: string | null;
+  players: { name: string; paymentStatus: string }[];
+}
+
+export type ReservationBookingMode = typeof ReservationBookingMode[keyof typeof ReservationBookingMode];
+export const ReservationBookingMode = {
+  full_court: 'full_court',
+  own_spot: 'own_spot',
+} as const;
+

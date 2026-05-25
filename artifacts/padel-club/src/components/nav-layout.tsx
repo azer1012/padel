@@ -35,6 +35,7 @@ export function NavLayout({ children }: { children: React.ReactNode }) {
   const publicLinks = [
     { href: "/", label: t("home"), icon: Home },
     { href: "/terrains", label: t("courts"), icon: LayoutDashboard },
+    { href: "/open-matches", label: "Open Matches", icon: Globe },
     { href: "/tournaments", label: t("tournaments"), icon: Trophy },
     { href: "/news", label: t("news"), icon: Newspaper },
   ];

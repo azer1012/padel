@@ -21,13 +21,17 @@ import type {
 
 import type {
   ActivityItem,
+  CalendarResponse,
+  CreateInviteResponse,
   DashboardStats,
+  GetCalendarParams,
   GetDashboardStatsParams,
   GetOccupancyStatsParams,
   GetPeakHoursParams,
   GetRecentActivityParams,
   GetTerrainSlotsParams,
   HealthStatus,
+  InviteResponse,
   ListAllTokenTransactionsParams,
   ListNewsParams,
   ListNotificationsParams,
@@ -41,10 +45,12 @@ import type {
   NewsUpdate,
   Notification,
   OccupancyDay,
+  OpenMatch,
   PeakHourData,
   Reservation,
   ReservationInput,
   ReservationListResponse,
+  ReservationPlayer,
   ReservationUpdate,
   Terrain,
   TerrainInput,
@@ -2980,4 +2986,168 @@ export const useMarkAllNotificationsRead = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getMarkAllNotificationsReadMutationOptions(options));
     }
+
+// ─── Calendar ─────────────────────────────────────────────────────────────────
+
+export const getCalendarQueryKey = (params: GetCalendarParams) => ['calendar', params] as const;
+
+export const getCalendar = async (params: GetCalendarParams, options?: RequestInit): Promise<CalendarResponse> => {
+  const query = new URLSearchParams();
+  query.set('date', params.date);
+  if (params.terrainIds) query.set('terrainIds', params.terrainIds);
+  return customFetch<CalendarResponse>(`/api/calendar?${query.toString()}`, { ...options, method: 'GET' });
+};
+
+export const useGetCalendar = <TError = ErrorType<unknown>>(
+  params: GetCalendarParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getCalendar>>, TError, Awaited<ReturnType<typeof getCalendar>>, ReturnType<typeof getCalendarQueryKey>>, request?: SecondParameter<typeof customFetch> }
+): UseQueryResult<Awaited<ReturnType<typeof getCalendar>>, TError> & { queryKey: ReturnType<typeof getCalendarQueryKey> } => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+  const queryKey = queryOptions?.queryKey ?? getCalendarQueryKey(params);
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCalendar>>> = () => getCalendar(params, requestOptions);
+  const result = useQuery({ queryKey, queryFn, enabled: !!params.date, ...queryOptions }) as UseQueryResult<Awaited<ReturnType<typeof getCalendar>>, TError> & { queryKey: ReturnType<typeof getCalendarQueryKey> };
+  result.queryKey = queryKey;
+  return result;
+};
+
+// ─── Join session ─────────────────────────────────────────────────────────────
+
+export const joinSession = async (id: number, options?: RequestInit): Promise<{ message: string }> => {
+  return customFetch<{ message: string }>(`/api/reservations/${id}/join`, { ...options, method: 'POST' });
+};
+
+export const useJoinSession = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: { mutation?: UseMutationOptions<Awaited<ReturnType<typeof joinSession>>, TError, { id: number }, TContext>, request?: SecondParameter<typeof customFetch> }
+): UseMutationResult<Awaited<ReturnType<typeof joinSession>>, TError, { id: number }, TContext> => {
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof joinSession>>, { id: number }> = ({ id }) => joinSession(id, requestOptions);
+  return useMutation({ mutationFn, ...mutationOptions });
+};
+
+// ─── Leave session ────────────────────────────────────────────────────────────
+
+export const leaveSession = async (id: number, options?: RequestInit): Promise<{ message: string }> => {
+  return customFetch<{ message: string }>(`/api/reservations/${id}/leave`, { ...options, method: 'DELETE' });
+};
+
+export const useLeaveSession = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: { mutation?: UseMutationOptions<Awaited<ReturnType<typeof leaveSession>>, TError, { id: number }, TContext>, request?: SecondParameter<typeof customFetch> }
+): UseMutationResult<Awaited<ReturnType<typeof leaveSession>>, TError, { id: number }, TContext> => {
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof leaveSession>>, { id: number }> = ({ id }) => leaveSession(id, requestOptions);
+  return useMutation({ mutationFn, ...mutationOptions });
+};
+
+// ─── Generate invite ──────────────────────────────────────────────────────────
+
+export const createInvite = async (id: number, body?: { email?: string }, options?: RequestInit): Promise<CreateInviteResponse> => {
+  return customFetch<CreateInviteResponse>(`/api/reservations/${id}/invite`, {
+    ...options, method: 'POST',
+    body: JSON.stringify(body ?? {}),
+  });
+};
+
+export const useCreateInvite = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: { mutation?: UseMutationOptions<Awaited<ReturnType<typeof createInvite>>, TError, { id: number; email?: string }, TContext>, request?: SecondParameter<typeof customFetch> }
+): UseMutationResult<Awaited<ReturnType<typeof createInvite>>, TError, { id: number; email?: string }, TContext> => {
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof createInvite>>, { id: number; email?: string }> = ({ id, email }) => createInvite(id, { email }, requestOptions);
+  return useMutation({ mutationFn, ...mutationOptions });
+};
+
+// ─── Get invite ───────────────────────────────────────────────────────────────
+
+export const getInviteQueryKey = (token: string) => ['invite', token] as const;
+
+export const getInvite = async (token: string, options?: RequestInit): Promise<InviteResponse> => {
+  return customFetch<InviteResponse>(`/api/invites/${token}`, { ...options, method: 'GET' });
+};
+
+export const useGetInvite = <TError = ErrorType<unknown>>(
+  token: string,
+  options?: { query?: Omit<UseQueryOptions<Awaited<ReturnType<typeof getInvite>>, TError>, 'queryKey'> & { queryKey?: UseQueryOptions<Awaited<ReturnType<typeof getInvite>>, TError>['queryKey'] }, request?: SecondParameter<typeof customFetch> }
+): UseQueryResult<Awaited<ReturnType<typeof getInvite>>, TError> => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+  return useQuery({ queryKey: getInviteQueryKey(token), queryFn: () => getInvite(token, requestOptions), enabled: !!token, ...queryOptions });
+};
+
+// ─── Accept invite ────────────────────────────────────────────────────────────
+
+export const acceptInvite = async (token: string, options?: RequestInit): Promise<{ message: string }> => {
+  return customFetch<{ message: string }>(`/api/invites/${token}/accept`, { ...options, method: 'POST' });
+};
+
+export const useAcceptInvite = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: { mutation?: UseMutationOptions<Awaited<ReturnType<typeof acceptInvite>>, TError, { token: string }, TContext>, request?: SecondParameter<typeof customFetch> }
+): UseMutationResult<Awaited<ReturnType<typeof acceptInvite>>, TError, { token: string }, TContext> => {
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptInvite>>, { token: string }> = ({ token }) => acceptInvite(token, requestOptions);
+  return useMutation({ mutationFn, ...mutationOptions });
+};
+
+// ─── Open matches ─────────────────────────────────────────────────────────────
+
+export const getOpenMatchesQueryKey = () => ['open-matches'] as const;
+
+export const getOpenMatches = async (options?: RequestInit): Promise<OpenMatch[]> => {
+  return customFetch<OpenMatch[]>('/api/open-matches', { ...options, method: 'GET' });
+};
+
+export const useGetOpenMatches = <TError = ErrorType<unknown>>(
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getOpenMatches>>, TError>, request?: SecondParameter<typeof customFetch> }
+): UseQueryResult<Awaited<ReturnType<typeof getOpenMatches>>, TError> => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+  return useQuery({ queryKey: getOpenMatchesQueryKey(), queryFn: () => getOpenMatches(requestOptions), ...queryOptions });
+};
+
+// ─── Toggle open match ────────────────────────────────────────────────────────
+
+export const makeSessionPublic = async (id: number, body?: { publicDescription?: string }, options?: RequestInit): Promise<{ message: string }> => {
+  return customFetch<{ message: string }>(`/api/reservations/${id}/open-match`, {
+    ...options, method: 'POST',
+    body: JSON.stringify(body ?? {}),
+  });
+};
+
+export const useMakeSessionPublic = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: { mutation?: UseMutationOptions<Awaited<ReturnType<typeof makeSessionPublic>>, TError, { id: number; publicDescription?: string }, TContext>, request?: SecondParameter<typeof customFetch> }
+): UseMutationResult<Awaited<ReturnType<typeof makeSessionPublic>>, TError, { id: number; publicDescription?: string }, TContext> => {
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof makeSessionPublic>>, { id: number; publicDescription?: string }> = ({ id, publicDescription }) => makeSessionPublic(id, { publicDescription }, requestOptions);
+  return useMutation({ mutationFn, ...mutationOptions });
+};
+
+export const makeSessionPrivate = async (id: number, options?: RequestInit): Promise<{ message: string }> => {
+  return customFetch<{ message: string }>(`/api/reservations/${id}/open-match`, { ...options, method: 'DELETE' });
+};
+
+export const useMakeSessionPrivate = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: { mutation?: UseMutationOptions<Awaited<ReturnType<typeof makeSessionPrivate>>, TError, { id: number }, TContext>, request?: SecondParameter<typeof customFetch> }
+): UseMutationResult<Awaited<ReturnType<typeof makeSessionPrivate>>, TError, { id: number }, TContext> => {
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof makeSessionPrivate>>, { id: number }> = ({ id }) => makeSessionPrivate(id, requestOptions);
+  return useMutation({ mutationFn, ...mutationOptions });
+};
+
+// ─── Update player payment status (admin) ─────────────────────────────────────
+
+export const updatePlayerPayment = async (
+  reservationId: number,
+  playerId: number,
+  body: { paymentStatus?: string; paymentType?: string },
+  options?: RequestInit
+): Promise<ReservationPlayer> => {
+  return customFetch<ReservationPlayer>(`/api/reservations/${reservationId}/players/${playerId}`, {
+    ...options, method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+};
+
+export const useUpdatePlayerPayment = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: { mutation?: UseMutationOptions<Awaited<ReturnType<typeof updatePlayerPayment>>, TError, { reservationId: number; playerId: number; paymentStatus?: string; paymentType?: string }, TContext>, request?: SecondParameter<typeof customFetch> }
+): UseMutationResult<Awaited<ReturnType<typeof updatePlayerPayment>>, TError, { reservationId: number; playerId: number; paymentStatus?: string; paymentType?: string }, TContext> => {
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePlayerPayment>>, { reservationId: number; playerId: number; paymentStatus?: string; paymentType?: string }> = ({ reservationId, playerId, paymentStatus, paymentType }) => updatePlayerPayment(reservationId, playerId, { paymentStatus, paymentType }, requestOptions);
+  return useMutation({ mutationFn, ...mutationOptions });
+};
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useListReservations, useCancelReservation, useCreateReservation, useListTerrains, useListUsers, getListReservationsQueryKey } from "@workspace/api-client-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -10,12 +10,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ArrowLeft, Plus, X, CalendarDays } from "lucide-react";
+import { ArrowLeft, Plus, X, CalendarDays, LayoutGrid, List } from "lucide-react";
 import { format } from "date-fns";
+import CourtCalendar from "@/components/court-calendar";
 
 export default function AdminReservations() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [view, setView] = useState<"calendar" | "list">("calendar");
   const [date, setDate] = useState("");
   const [terrainFilter, setTerrainFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -86,13 +88,29 @@ export default function AdminReservations() {
   return (
     <div className="min-h-screen bg-background text-foreground p-6">
       <div className="max-w-7xl mx-auto space-y-6">
+        {/* Header */}
         <div className="flex items-center gap-4">
           <Link href="/admin"><Button variant="ghost" size="icon" data-testid="btn-back"><ArrowLeft className="h-4 w-4" /></Button></Link>
           <div>
             <h1 className="text-2xl font-bold uppercase text-primary">Reservations</h1>
             <p className="text-muted-foreground text-sm">Manage all court bookings</p>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            {/* View toggle */}
+            <div className="flex rounded-lg border border-border overflow-hidden">
+              <button
+                onClick={() => setView("calendar")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors ${view === "calendar" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground bg-transparent"}`}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" /> Calendar
+              </button>
+              <button
+                onClick={() => setView("list")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors ${view === "list" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground bg-transparent"}`}
+              >
+                <List className="h-3.5 w-3.5" /> List
+              </button>
+            </div>
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
               <DialogTrigger asChild>
                 <Button data-testid="btn-create-reservation" className="bg-primary text-primary-foreground font-bold">
@@ -139,96 +157,106 @@ export default function AdminReservations() {
           </div>
         </div>
 
-        <Card className="bg-card/50 border-border">
-          <CardContent className="pt-4">
-            <div className="flex flex-wrap gap-3">
-              <Input data-testid="input-date-filter" type="date" value={date} onChange={e => setDate(e.target.value)} className="w-40 bg-background" placeholder="Filter by date" />
-              <Select value={terrainFilter} onValueChange={setTerrainFilter}>
-                <SelectTrigger data-testid="select-terrain-filter" className="w-44 bg-background"><SelectValue placeholder="All terrains" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All terrains</SelectItem>
-                  {terrains?.map(t => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger data-testid="select-status-filter" className="w-36 bg-background"><SelectValue placeholder="All statuses" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="confirmed">Confirmed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                </SelectContent>
-              </Select>
-              {(date || terrainFilter !== "all" || statusFilter !== "all") && (
-                <Button variant="ghost" size="sm" onClick={() => { setDate(""); setTerrainFilter("all"); setStatusFilter("all"); }}>
-                  <X className="h-3 w-3 mr-1" /> Clear
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        {/* Calendar view */}
+        {view === "calendar" && (
+          <CourtCalendar isAdmin />
+        )}
 
-        {isLoading ? (
-          <div className="space-y-2">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}</div>
-        ) : (
-          <Card className="bg-card border-border overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b border-border bg-muted/20">
-                  <tr>
-                    <th className="text-left p-4 font-medium text-muted-foreground">Player</th>
-                    <th className="text-left p-4 font-medium text-muted-foreground">Terrain</th>
-                    <th className="text-left p-4 font-medium text-muted-foreground">Date & Time</th>
-                    <th className="text-left p-4 font-medium text-muted-foreground">Type</th>
-                    <th className="text-left p-4 font-medium text-muted-foreground">Status</th>
-                    <th className="text-right p-4 font-medium text-muted-foreground">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data?.data?.map(r => (
-                    <tr key={r.id} data-testid={`row-reservation-${r.id}`} className="border-b border-border/50 hover:bg-muted/10 transition-colors">
-                      <td className="p-4">
-                        <div className="font-medium">{r.user ? `${r.user.firstName ?? ""} ${r.user.lastName ?? ""}`.trim() || r.user.email : r.guestName ?? "Guest"}</div>
-                        <div className="text-xs text-muted-foreground">{r.user?.email}</div>
-                      </td>
-                      <td className="p-4 text-muted-foreground">{r.terrain?.name}</td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-1">
-                          <CalendarDays className="h-3 w-3 text-primary" />
-                          {format(new Date(r.startTime), "MMM d, yyyy HH:mm")}
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <Badge variant="outline" className="text-xs capitalize border-border">{r.bookingType}</Badge>
-                      </td>
-                      <td className="p-4">
-                        <Badge variant="outline" className={`text-xs capitalize ${statusColor(r.status)}`}>{r.status}</Badge>
-                      </td>
-                      <td className="p-4 text-right">
-                        {r.status !== "cancelled" && (
-                          <Button data-testid={`btn-cancel-${r.id}`} variant="ghost" size="sm" onClick={() => handleCancel(r.id)} disabled={cancelMutation.isPending} className="text-destructive hover:text-destructive hover:bg-destructive/10">
-                            Cancel
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  {!data?.data?.length && (
-                    <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">No reservations found.</td></tr>
+        {/* List view */}
+        {view === "list" && (
+          <>
+            <Card className="bg-card/50 border-border">
+              <CardContent className="pt-4">
+                <div className="flex flex-wrap gap-3">
+                  <Input data-testid="input-date-filter" type="date" value={date} onChange={e => setDate(e.target.value)} className="w-40 bg-background" placeholder="Filter by date" />
+                  <Select value={terrainFilter} onValueChange={setTerrainFilter}>
+                    <SelectTrigger data-testid="select-terrain-filter" className="w-44 bg-background"><SelectValue placeholder="All terrains" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All terrains</SelectItem>
+                      {terrains?.map(t => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger data-testid="select-status-filter" className="w-36 bg-background"><SelectValue placeholder="All statuses" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      <SelectItem value="confirmed">Confirmed</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {(date || terrainFilter !== "all" || statusFilter !== "all") && (
+                    <Button variant="ghost" size="sm" onClick={() => { setDate(""); setTerrainFilter("all"); setStatusFilter("all"); }}>
+                      <X className="h-3 w-3 mr-1" /> Clear
+                    </Button>
                   )}
-                </tbody>
-              </table>
-            </div>
-            {data && data.total > 20 && (
-              <div className="flex justify-between items-center p-4 border-t border-border">
-                <span className="text-sm text-muted-foreground">{data.total} total</span>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Prev</Button>
-                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * 20 >= data.total}>Next</Button>
                 </div>
-              </div>
+              </CardContent>
+            </Card>
+
+            {isLoading ? (
+              <div className="space-y-2">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}</div>
+            ) : (
+              <Card className="bg-card border-border overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-border bg-muted/20">
+                      <tr>
+                        <th className="text-left p-4 font-medium text-muted-foreground">Player</th>
+                        <th className="text-left p-4 font-medium text-muted-foreground">Terrain</th>
+                        <th className="text-left p-4 font-medium text-muted-foreground">Date & Time</th>
+                        <th className="text-left p-4 font-medium text-muted-foreground">Type</th>
+                        <th className="text-left p-4 font-medium text-muted-foreground">Status</th>
+                        <th className="text-right p-4 font-medium text-muted-foreground">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data?.data?.map(r => (
+                        <tr key={r.id} data-testid={`row-reservation-${r.id}`} className="border-b border-border/50 hover:bg-muted/10 transition-colors">
+                          <td className="p-4">
+                            <div className="font-medium">{r.user ? `${r.user.firstName ?? ""} ${r.user.lastName ?? ""}`.trim() || r.user.email : r.guestName ?? "Guest"}</div>
+                            <div className="text-xs text-muted-foreground">{r.user?.email}</div>
+                          </td>
+                          <td className="p-4 text-muted-foreground">{r.terrain?.name}</td>
+                          <td className="p-4">
+                            <div className="flex items-center gap-1">
+                              <CalendarDays className="h-3 w-3 text-primary" />
+                              {format(new Date(r.startTime), "MMM d, yyyy HH:mm")}
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <Badge variant="outline" className="text-xs capitalize border-border">{r.bookingType}</Badge>
+                          </td>
+                          <td className="p-4">
+                            <Badge variant="outline" className={`text-xs capitalize ${statusColor(r.status)}`}>{r.status}</Badge>
+                          </td>
+                          <td className="p-4 text-right">
+                            {r.status !== "cancelled" && (
+                              <Button data-testid={`btn-cancel-${r.id}`} variant="ghost" size="sm" onClick={() => handleCancel(r.id)} disabled={cancelMutation.isPending} className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                                Cancel
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      {!data?.data?.length && (
+                        <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">No reservations found.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {data && data.total > 20 && (
+                  <div className="flex justify-between items-center p-4 border-t border-border">
+                    <span className="text-sm text-muted-foreground">{data.total} total</span>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Prev</Button>
+                      <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * 20 >= data.total}>Next</Button>
+                    </div>
+                  </div>
+                )}
+              </Card>
             )}
-          </Card>
+          </>
         )}
       </div>
     </div>

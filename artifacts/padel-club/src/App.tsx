@@ -23,6 +23,8 @@ import Contact from "@/pages/contact";
 import PlayerReservations from "@/pages/player-reservations";
 import Wallet from "@/pages/wallet";
 import Profile from "@/pages/profile";
+import JoinInvite from "@/pages/join-invite";
+import OpenMatches from "@/pages/open-matches";
 import { syncUser } from "@/lib/user-sync";
 import { I18nProvider } from "@/lib/i18n";
 
@@ -210,6 +212,8 @@ function ClerkProviderWithRoutes() {
               <Route path="/reservations" component={PlayerReservations} />
               <Route path="/wallet" component={Wallet} />
               <Route path="/profile" component={Profile} />
+              <Route path="/open-matches" component={OpenMatches} />
+              <Route path="/join/:token" component={JoinInvite} />
               <Route component={NotFound} />
             </Switch>
           </NavLayout>
