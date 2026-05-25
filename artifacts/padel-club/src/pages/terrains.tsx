@@ -138,7 +138,7 @@ export default function Terrains() {
               <Card key={terrain.id} className="bg-card border-border overflow-hidden flex flex-col">
                 <div className="h-48 overflow-hidden bg-muted relative">
                   <img
-                    src={terrain.type === 'indoor' ? '/src/assets/images/terrain-indoor.png' : '/src/assets/images/terrain-outdoor.png'}
+                    src={terrain.type === 'indoor' ? '/terrain-indoor.png' : '/terrain-outdoor.png'}
                     alt={terrain.name}
                     className="w-full h-full object-cover transition-transform hover:scale-105"
                     onError={(e) => {

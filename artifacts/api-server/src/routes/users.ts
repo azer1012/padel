@@ -67,7 +67,14 @@ router.get("/users", requireAdmin, async (req, res) => {
     );
   }
 
-  const [{ total }] = await db.select({ total: count() }).from(usersTable);
+  const searchCondition = search
+    ? or(
+        ilike(usersTable.email, `%${search}%`),
+        ilike(usersTable.firstName, `%${search}%`),
+        ilike(usersTable.lastName, `%${search}%`),
+      )
+    : undefined;
+  const [{ total }] = await db.select({ total: count() }).from(usersTable).where(searchCondition);
   const data = await query.limit(limitNum).offset(offset);
 
   res.json({ data, total: Number(total), page: pageNum, limit: limitNum });

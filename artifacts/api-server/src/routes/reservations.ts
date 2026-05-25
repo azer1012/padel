@@ -88,7 +88,8 @@ router.post("/reservations", requireUser, async (req, res) => {
   const start = new Date(startTime);
   const end = new Date(start.getTime() + 90 * 60 * 1000);
 
-  const tokensNeeded = 1;
+  // 4 tokens per 90-min court session (1 token per person, 4 players per court)
+  const tokensNeeded = 4;
   // Only check token balance for member bookings (not guest/manual)
   if (targetUser && targetUser.tokenBalance < tokensNeeded) {
     res.status(400).json({ error: "Insufficient tokens" });

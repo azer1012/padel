@@ -40,7 +40,7 @@ export default function Home() {
         <section className="relative h-[80vh] min-h-[600px] flex items-center justify-center overflow-hidden">
           <div className="absolute inset-0 z-0">
             <img 
-              src="/src/assets/images/hero-padel.png" 
+              src="/hero-padel.png" 
               alt="Padel Court" 
               className="w-full h-full object-cover opacity-40"
             />
