@@ -33,9 +33,14 @@ router.post("/news", requireAdmin, async (req, res) => {
 });
 
 router.get("/news/:id", async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id as string);
+  const auth = (req as any).dbUser;
   const [article] = await db.select().from(newsTable).where(eq(newsTable.id, id));
   if (!article) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  if (!article.isPublished && auth?.role !== "admin") {
     res.status(404).json({ error: "Not found" });
     return;
   }

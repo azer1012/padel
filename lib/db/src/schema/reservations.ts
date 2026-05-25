@@ -1,4 +1,5 @@
-import { pgTable, serial, integer, timestamp, text, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, timestamp, text, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { terrainsTable } from "./terrains";
@@ -21,7 +22,11 @@ export const reservationsTable = pgTable("reservations", {
   bookingType: bookingTypeEnum("booking_type").notNull().default("online"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [
+  uniqueIndex("reservations_terrain_start_confirmed_idx")
+    .on(table.terrainId, table.startTime)
+    .where(sql`status = 'confirmed'`),
+]);
 
 export const reservationsRelations = relations(reservationsTable, ({ one }) => ({
   terrain: one(terrainsTable, {
