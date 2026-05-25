@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, reservationsTable, terrainsTable, usersTable, tokenTransactionsTable, notificationsTable, activityTable } from "@workspace/db";
-import { eq, and, gte, lt, lte, desc, count } from "drizzle-orm";
+import { eq, and, gte, lt, lte, desc, count, sql } from "drizzle-orm";
 import { requireUser, requireAdmin } from "../lib/auth";
 
 const router = Router();
@@ -64,7 +64,9 @@ router.post("/reservations", requireUser, async (req, res) => {
   const { terrainId, startTime, userId: bodyUserId, guestName, guestPhone, bookingType = "online", notes } = req.body;
 
   const targetUserId = currentUser.role === "admin" && bodyUserId ? parseInt(bodyUserId) : currentUser.id;
-  const targetUser = targetUserId === currentUser.id ? currentUser : (await db.select().from(usersTable).where(eq(usersTable.id, targetUserId)))[0];
+  const targetUser = targetUserId === currentUser.id
+    ? currentUser
+    : (await db.select().from(usersTable).where(eq(usersTable.id, targetUserId)))[0];
 
   const [terrain] = await db.select().from(terrainsTable).where(eq(terrainsTable.id, parseInt(terrainId)));
   if (!terrain) {
@@ -75,73 +77,111 @@ router.post("/reservations", requireUser, async (req, res) => {
   const start = new Date(startTime);
   const end = new Date(start.getTime() + 90 * 60 * 1000);
 
-  const conflict = await db.select().from(reservationsTable).where(
-    and(
-      eq(reservationsTable.terrainId, terrain.id),
-      eq(reservationsTable.startTime, start),
-      eq(reservationsTable.status, "confirmed" as any)
-    )
-  );
-  if (conflict.length > 0) {
-    res.status(409).json({ error: "Slot already booked" });
-    return;
-  }
-
   const tokensNeeded = 1;
   if (targetUser && targetUser.tokenBalance < tokensNeeded) {
     res.status(400).json({ error: "Insufficient tokens" });
     return;
   }
 
-  const newBalance = (targetUser?.tokenBalance ?? 0) - tokensNeeded;
-  if (targetUser) {
-    await db.update(usersTable).set({ tokenBalance: newBalance }).where(eq(usersTable.id, targetUser.id));
-  }
+  try {
+    const result = await db.transaction(async (tx) => {
+      const conflict = await tx.select().from(reservationsTable).where(
+        and(
+          eq(reservationsTable.terrainId, terrain.id),
+          eq(reservationsTable.status, "confirmed" as any),
+          lt(reservationsTable.startTime, end),
+          gte(reservationsTable.endTime, start)
+        )
+      );
+      if (conflict.length > 0) {
+        throw new Error("SLOT_CONFLICT");
+      }
 
-  const [reservation] = await db.insert(reservationsTable).values({
-    terrainId: terrain.id,
-    userId: targetUser?.id ?? null,
-    guestName,
-    guestPhone,
-    startTime: start,
-    endTime: end,
-    status: "confirmed",
-    tokensCharged: tokensNeeded,
-    bookingType: bookingType as any,
-    notes,
-  }).returning();
+      if (targetUser) {
+        const [freshUser] = await tx.select().from(usersTable).where(eq(usersTable.id, targetUser.id)).for("update");
+        if (!freshUser || freshUser.tokenBalance < tokensNeeded) {
+          throw new Error("INSUFFICIENT_TOKENS");
+        }
+        const newBalance = freshUser.tokenBalance - tokensNeeded;
+        await tx.update(usersTable).set({ tokenBalance: newBalance }).where(eq(usersTable.id, freshUser.id));
 
-  if (targetUser) {
-    await db.insert(tokenTransactionsTable).values({
-      userId: targetUser.id,
-      adminId: currentUser.role === "admin" ? currentUser.id : null,
-      reservationId: reservation.id,
-      type: "debit",
-      amount: tokensNeeded,
-      balanceAfter: newBalance,
-      description: `Reservation: ${terrain.name} on ${start.toLocaleDateString()}`,
+        const [reservation] = await tx.insert(reservationsTable).values({
+          terrainId: terrain.id,
+          userId: freshUser.id,
+          guestName,
+          guestPhone,
+          startTime: start,
+          endTime: end,
+          status: "confirmed",
+          tokensCharged: tokensNeeded,
+          bookingType: bookingType as any,
+          notes,
+        }).returning();
+
+        await tx.insert(tokenTransactionsTable).values({
+          userId: freshUser.id,
+          adminId: currentUser.role === "admin" ? currentUser.id : null,
+          reservationId: reservation.id,
+          type: "debit",
+          amount: tokensNeeded,
+          balanceAfter: newBalance,
+          description: `Reservation: ${terrain.name} on ${start.toLocaleDateString()}`,
+        });
+
+        await tx.insert(notificationsTable).values({
+          userId: freshUser.id,
+          type: "booking_confirmed",
+          title: "Reservation Confirmed",
+          message: `Your booking for ${terrain.name} on ${start.toLocaleDateString()} at ${start.toLocaleTimeString()} is confirmed.`,
+        });
+
+        await tx.insert(activityTable).values({
+          type: "reservation_created",
+          message: `Reservation created for ${terrain.name}`,
+          userId: freshUser.id,
+          userName: `${freshUser.firstName ?? ""} ${freshUser.lastName ?? ""}`.trim() || freshUser.email,
+        });
+
+        return reservation;
+      } else {
+        const [reservation] = await tx.insert(reservationsTable).values({
+          terrainId: terrain.id,
+          userId: null,
+          guestName,
+          guestPhone,
+          startTime: start,
+          endTime: end,
+          status: "confirmed",
+          tokensCharged: 0,
+          bookingType: "manual" as any,
+          notes,
+        }).returning();
+
+        await tx.insert(activityTable).values({
+          type: "reservation_created",
+          message: `Reservation created for ${terrain.name}`,
+          userId: null,
+          userName: guestName ?? "Guest",
+        });
+
+        return reservation;
+      }
     });
 
-    await db.insert(notificationsTable).values({
-      userId: targetUser.id,
-      type: "booking_confirmed",
-      title: "Reservation Confirmed",
-      message: `Your booking for ${terrain.name} on ${start.toLocaleDateString()} at ${start.toLocaleTimeString()} is confirmed.`,
+    const full = await db.query.reservationsTable.findFirst({
+      where: eq(reservationsTable.id, result.id),
+      with: { terrain: true, user: true },
     });
+    res.status(201).json(full);
+  } catch (err: any) {
+    if (err.message === "SLOT_CONFLICT") {
+      res.status(409).json({ error: "Slot already booked" });
+    } else if (err.message === "INSUFFICIENT_TOKENS") {
+      res.status(400).json({ error: "Insufficient tokens" });
+    } else {
+      throw err;
+    }
   }
-
-  await db.insert(activityTable).values({
-    type: "reservation_created",
-    message: `Reservation created for ${terrain.name}`,
-    userId: targetUser?.id ?? null,
-    userName: targetUser ? `${targetUser.firstName ?? ""} ${targetUser.lastName ?? ""}`.trim() || targetUser.email : guestName ?? "Guest",
-  });
-
-  const full = await db.query.reservationsTable.findFirst({
-    where: eq(reservationsTable.id, reservation.id),
-    with: { terrain: true, user: true },
-  });
-  res.status(201).json(full);
 });
 
 router.get("/reservations/:id", requireUser, async (req, res) => {
@@ -227,7 +267,9 @@ router.post("/reservations/:id/cancel", requireUser, async (req, res) => {
     type: "reservation_cancelled",
     message: `Reservation cancelled for ${reservation.terrain?.name ?? "terrain"}`,
     userId: reservation.userId,
-    userName: reservation.user ? `${reservation.user.firstName ?? ""} ${reservation.user.lastName ?? ""}`.trim() || reservation.user.email : null,
+    userName: reservation.user
+      ? `${reservation.user.firstName ?? ""} ${reservation.user.lastName ?? ""}`.trim() || reservation.user.email
+      : null,
   });
 
   res.json(updated);

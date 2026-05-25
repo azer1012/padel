@@ -2,45 +2,52 @@ import { Link, useLocation } from "wouter";
 import { useGetMe } from "@workspace/api-client-react";
 import { SignOutButton } from "@clerk/react";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, CalendarDays, Wallet, User, Shield, Users, Coins, Newspaper, Trophy, Home, LogOut, Menu, X } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Wallet, User, Shield, Users, Coins, Newspaper, Trophy, Home, LogOut, Menu, Globe } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { useI18n, type Lang } from "@/lib/i18n";
 
-const playerLinks = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/reservations", label: "Book Court", icon: CalendarDays },
-  { href: "/wallet", label: "Wallet", icon: Wallet },
-  { href: "/profile", label: "Profile", icon: User },
-];
-
-const publicLinks = [
-  { href: "/", label: "Home", icon: Home },
-  { href: "/terrains", label: "Courts", icon: LayoutDashboard },
-  { href: "/tournaments", label: "Tournaments", icon: Trophy },
-  { href: "/news", label: "News", icon: Newspaper },
-];
-
-const adminLinks = [
-  { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/reservations", label: "Reservations", icon: CalendarDays },
-  { href: "/admin/terrains", label: "Terrains", icon: Shield },
-  { href: "/admin/users", label: "Users", icon: Users },
-  { href: "/admin/tokens", label: "Tokens", icon: Coins },
-  { href: "/admin/news", label: "News", icon: Newspaper },
-  { href: "/admin/tournaments", label: "Tournaments", icon: Trophy },
+const LANG_OPTIONS: { value: Lang; label: string; short: string }[] = [
+  { value: "fr", label: "Français", short: "FR" },
+  { value: "ar", label: "العربية", short: "AR" },
+  { value: "en", label: "English", short: "EN" },
 ];
 
 export function NavLayout({ children }: { children: React.ReactNode }) {
   const { data: user } = useGetMe();
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { t, lang, setLang } = useI18n();
 
   const isAdmin = user?.role === "admin";
   const isAdminRoute = location.startsWith("/admin");
   const isAuthRoute = location.startsWith("/sign-in") || location.startsWith("/sign-up");
-  const isPublicRoute = !user && !isAuthRoute;
 
   if (isAuthRoute) return <>{children}</>;
+
+  const playerLinks = [
+    { href: "/dashboard", label: t("dashboard"), icon: LayoutDashboard },
+    { href: "/reservations", label: t("reservations"), icon: CalendarDays },
+    { href: "/wallet", label: t("wallet"), icon: Wallet },
+    { href: "/profile", label: t("profile"), icon: User },
+  ];
+
+  const publicLinks = [
+    { href: "/", label: t("home"), icon: Home },
+    { href: "/terrains", label: t("courts"), icon: LayoutDashboard },
+    { href: "/tournaments", label: t("tournaments"), icon: Trophy },
+    { href: "/news", label: t("news"), icon: Newspaper },
+  ];
+
+  const adminLinks = [
+    { href: "/admin", label: t("dashboard"), icon: LayoutDashboard },
+    { href: "/admin/reservations", label: t("reservations"), icon: CalendarDays },
+    { href: "/admin/terrains", label: t("courts"), icon: Shield },
+    { href: "/admin/users", label: "Users", icon: Users },
+    { href: "/admin/tokens", label: "Tokens", icon: Coins },
+    { href: "/admin/news", label: t("news"), icon: Newspaper },
+    { href: "/admin/tournaments", label: t("tournaments"), icon: Trophy },
+  ];
 
   const links = isAdmin && isAdminRoute ? adminLinks : user ? playerLinks : publicLinks;
 
@@ -77,7 +84,7 @@ export function NavLayout({ children }: { children: React.ReactNode }) {
             <Link href="/admin" onClick={() => setMobileOpen(false)}>
               <div className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted/20 hover:text-foreground transition-colors mt-4 border-t border-border pt-4">
                 <Shield className="h-4 w-4 shrink-0" />
-                Admin Panel
+                {t("admin")}
               </div>
             </Link>
           )}
@@ -91,9 +98,30 @@ export function NavLayout({ children }: { children: React.ReactNode }) {
           )}
         </nav>
 
-        <div className="border-t border-border p-3">
+        <div className="border-t border-border p-3 space-y-2">
+          <div className="flex items-center gap-1.5 px-2">
+            <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <div className="flex gap-1">
+              {LANG_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setLang(opt.value)}
+                  title={opt.label}
+                  className={cn(
+                    "text-xs font-semibold px-1.5 py-0.5 rounded transition-colors",
+                    lang === opt.value
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {opt.short}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {user ? (
-            <div className="space-y-2">
+            <div className="space-y-1">
               <div className="px-3 py-1">
                 <p className="text-xs font-medium text-foreground truncate">{user.firstName ? `${user.firstName} ${user.lastName ?? ""}`.trim() : user.email}</p>
                 <p className="text-xs text-muted-foreground truncate">{user.email}</p>
@@ -101,13 +129,13 @@ export function NavLayout({ children }: { children: React.ReactNode }) {
               <SignOutButton>
                 <Button variant="ghost" size="sm" data-testid="btn-sign-out" className="w-full justify-start text-muted-foreground hover:text-destructive">
                   <LogOut className="h-4 w-4 mr-2" />
-                  Sign Out
+                  {t("signOut")}
                 </Button>
               </SignOutButton>
             </div>
           ) : (
             <Link href="/sign-in">
-              <Button variant="outline" size="sm" className="w-full border-primary/30 text-primary hover:bg-primary/10">Sign In</Button>
+              <Button variant="outline" size="sm" className="w-full border-primary/30 text-primary hover:bg-primary/10">{t("signIn")}</Button>
             </Link>
           )}
         </div>

@@ -24,6 +24,7 @@ import PlayerReservations from "@/pages/player-reservations";
 import Wallet from "@/pages/wallet";
 import Profile from "@/pages/profile";
 import { syncUser } from "@/lib/user-sync";
+import { I18nProvider } from "@/lib/i18n";
 
 const queryClient = new QueryClient();
 
@@ -221,9 +222,11 @@ function ClerkProviderWithRoutes() {
 
 function App() {
   return (
-    <WouterRouter base={basePath}>
-      <ClerkProviderWithRoutes />
-    </WouterRouter>
+    <I18nProvider>
+      <WouterRouter base={basePath}>
+        <ClerkProviderWithRoutes />
+      </WouterRouter>
+    </I18nProvider>
   );
 }
 

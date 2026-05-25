@@ -6,3 +6,5 @@ export * from "./news";
 export * from "./tournaments";
 export * from "./notifications";
 export * from "./activity";
+export * from "./clubs";
+export * from "./staff-roles";

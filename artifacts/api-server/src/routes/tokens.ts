@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, tokenTransactionsTable, usersTable, activityTable } from "@workspace/db";
-import { eq, desc, count } from "drizzle-orm";
+import { eq, desc, count, and } from "drizzle-orm";
 import { requireUser, requireAdmin } from "../lib/auth";
 
 const router = Router();
@@ -91,11 +91,13 @@ router.get("/tokens/admin/transactions", requireAdmin, async (req, res) => {
   if (userId) conditions.push(eq(tokenTransactionsTable.userId, parseInt(userId)));
   if (type) conditions.push(eq(tokenTransactionsTable.type, type as any));
 
-  const whereClause = conditions.length > 0 ? conditions.reduce((a, b) => ({ ...a, ...b })) : undefined;
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-  const [{ total }] = await db.select({ total: count() }).from(tokenTransactionsTable);
+  const [{ total }] = await db.select({ total: count() }).from(tokenTransactionsTable)
+    .where(whereClause);
 
   const data = await db.query.tokenTransactionsTable.findMany({
+    where: whereClause,
     with: { user: true },
     orderBy: [desc(tokenTransactionsTable.createdAt)],
     limit: limitNum,
