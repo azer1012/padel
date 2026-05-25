@@ -5,16 +5,120 @@ import { loadUser } from "../lib/auth";
 
 const router = Router();
 
+function buildSlotsForTerrainDay(
+  terrain: typeof terrainsTable.$inferSelect,
+  reservationsForTerrain: any[],
+  requestedDate: Date,
+  now: Date,
+  dbUserId: number | null,
+  isAdmin: boolean,
+): object[] {
+  const [openH, openM] = terrain.openingTime.split(":").map(Number);
+  const [closeH, closeM] = terrain.closingTime.split(":").map(Number);
+
+  const opening = new Date(requestedDate);
+  opening.setHours(openH, openM, 0, 0);
+  const closing = new Date(requestedDate);
+  closing.setHours(closeH, closeM, 0, 0);
+
+  const reservationMap = new Map(
+    reservationsForTerrain.map(r => [r.startTime.toISOString(), r])
+  );
+
+  const slots: object[] = [];
+  const cursor = new Date(opening);
+
+  while (cursor.getTime() + 90 * 60 * 1000 <= closing.getTime()) {
+    const slotEnd = new Date(cursor.getTime() + 90 * 60 * 1000);
+    const reservation = reservationMap.get(cursor.toISOString());
+    const isPast = cursor <= now;
+
+    if (reservation) {
+      const isFullCourt = reservation.bookingMode === "full_court";
+      const isLegacy = reservation.bookingMode === null;
+      const isOwnSpot = reservation.bookingMode === "own_spot";
+
+      let filledSpots: number;
+      let openSpots: number;
+
+      if (isFullCourt) {
+        // Entire court booked — fully occupied regardless of player rows
+        filledSpots = reservation.totalSpots ?? 4;
+        openSpots = 0;
+      } else if (isLegacy) {
+        // Legacy (pre-multiplay) reservation: treat as single-player session
+        // with remaining spots potentially open, based on actual player rows
+        filledSpots = Math.max(1, reservation.players.length);
+        openSpots = Math.max(0, (reservation.totalSpots ?? 4) - filledSpots);
+      } else {
+        // own_spot: each player paid for their spot
+        filledSpots = reservation.players.length;
+        openSpots = Math.max(0, (reservation.totalSpots ?? 4) - filledSpots);
+      }
+
+      // Player data: admin sees full detail; others see name + own userId only
+      const players = reservation.players.map((p: any) => {
+        const isOwn = p.userId === dbUserId;
+        return {
+          id: p.id,
+          name: p.user
+            ? `${p.user.firstName ?? ""} ${p.user.lastName ?? ""}`.trim() || p.user.email
+            : "Player",
+          userId: (isAdmin || isOwn) ? p.userId : null,
+          paymentType: isAdmin ? p.paymentType : null,
+          paymentStatus: isAdmin ? p.paymentStatus : null,
+        };
+      });
+
+      slots.push({
+        startTime: cursor.toISOString(),
+        endTime: slotEnd.toISOString(),
+        status: openSpots <= 0 ? "full" : "partial",
+        reservationId: reservation.id,
+        bookingMode: reservation.bookingMode,
+        totalSpots: reservation.totalSpots ?? 4,
+        filledSpots,
+        openSpots,
+        isPublic: reservation.isPublic,
+        publicDescription: reservation.publicDescription,
+        players,
+        creatorName: reservation.user
+          ? `${reservation.user.firstName ?? ""} ${reservation.user.lastName ?? ""}`.trim() || reservation.user.email
+          : reservation.guestName ?? "Guest",
+      });
+    } else {
+      slots.push({
+        startTime: cursor.toISOString(),
+        endTime: slotEnd.toISOString(),
+        status: isPast ? "past" : "available",
+        reservationId: null,
+        bookingMode: null,
+        totalSpots: 4,
+        filledSpots: 0,
+        openSpots: 4,
+        isPublic: false,
+        publicDescription: null,
+        players: [],
+        creatorName: null,
+      });
+    }
+
+    cursor.setTime(slotEnd.getTime());
+  }
+
+  return slots;
+}
+
 router.get("/calendar", loadUser, async (req, res) => {
-  const { date, terrainIds } = req.query as Record<string, string>;
+  const { date, endDate, terrainIds } = req.query as Record<string, string>;
 
   if (!date) {
     res.status(400).json({ error: "date is required (YYYY-MM-DD)" });
     return;
   }
 
-  const requestedDate = new Date(date);
-  if (isNaN(requestedDate.getTime())) {
+  const startDate = new Date(date);
+  if (isNaN(startDate.getTime())) {
     res.status(400).json({ error: "Invalid date" });
     return;
   }
@@ -22,6 +126,18 @@ router.get("/calendar", loadUser, async (req, res) => {
   const dbUser = (req as any).dbUser as { id: number; role: string } | undefined;
   const isAdmin = dbUser?.role === "admin";
   const currentUserId = dbUser?.id ?? null;
+
+  // Determine date range (single day or range up to 7 days)
+  let rangeEnd = new Date(startDate);
+  if (endDate) {
+    const parsedEnd = new Date(endDate);
+    if (!isNaN(parsedEnd.getTime()) && parsedEnd > startDate) {
+      // Cap at 7 days to prevent abuse
+      const maxEnd = new Date(startDate);
+      maxEnd.setDate(maxEnd.getDate() + 6);
+      rangeEnd = parsedEnd <= maxEnd ? parsedEnd : maxEnd;
+    }
+  }
 
   const allTerrains = await db.select().from(terrainsTable)
     .where(eq(terrainsTable.isActive, true));
@@ -33,13 +149,13 @@ router.get("/calendar", loadUser, async (req, res) => {
   }
 
   if (terrains.length === 0) {
-    res.json({ date, terrains: [] });
+    res.json({ date, endDate: endDate || undefined, terrains: [] });
     return;
   }
 
-  const dayStart = new Date(requestedDate);
+  const dayStart = new Date(startDate);
   dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(requestedDate);
+  const dayEnd = new Date(rangeEnd);
   dayEnd.setHours(23, 59, 59, 999);
 
   const tids = terrains.map(t => t.id);
@@ -59,88 +175,27 @@ router.get("/calendar", loadUser, async (req, res) => {
 
   const now = new Date();
 
+  // Build result: for each terrain, collect slots across the entire date range
   const result = terrains.map(terrain => {
-    const [openH, openM] = terrain.openingTime.split(":").map(Number);
-    const [closeH, closeM] = terrain.closingTime.split(":").map(Number);
-
-    const opening = new Date(requestedDate);
-    opening.setHours(openH, openM, 0, 0);
-    const closing = new Date(requestedDate);
-    closing.setHours(closeH, closeM, 0, 0);
-
     const terrainReservations = reservations.filter(r => r.terrainId === terrain.id);
-    const reservationMap = new Map(
-      terrainReservations.map(r => [r.startTime.toISOString(), r])
-    );
+    const allSlots: object[] = [];
 
-    const slots: object[] = [];
-    const cursor = new Date(opening);
+    // Iterate each day in the range
+    const cursor = new Date(startDate);
+    while (cursor <= rangeEnd) {
+      const dayReservations = terrainReservations.filter(r => {
+        const d = r.startTime;
+        return d.getFullYear() === cursor.getFullYear() &&
+          d.getMonth() === cursor.getMonth() &&
+          d.getDate() === cursor.getDate();
+      });
 
-    while (cursor.getTime() + 90 * 60 * 1000 <= closing.getTime()) {
-      const slotEnd = new Date(cursor.getTime() + 90 * 60 * 1000);
-      const reservation = reservationMap.get(cursor.toISOString());
-      const isPast = cursor <= now;
+      const daySlots = buildSlotsForTerrainDay(
+        terrain, dayReservations, cursor, now, currentUserId, isAdmin,
+      );
+      allSlots.push(...daySlots);
 
-      if (reservation) {
-        // Occupancy: full_court (or legacy null) = whole court booked; own_spot = per-player
-        const isOwnSpot = reservation.bookingMode === "own_spot";
-        const filledSpots = isOwnSpot
-          ? reservation.players.length
-          : (reservation.totalSpots ?? 4);
-        const openSpots = isOwnSpot
-          ? Math.max(0, (reservation.totalSpots ?? 4) - filledSpots)
-          : 0;
-
-        // Player data: admin sees everything; others only see names + their own userId
-        const players = reservation.players.map(p => {
-          const isOwn = p.userId === currentUserId;
-          return {
-            id: p.id,
-            name: p.user
-              ? `${p.user.firstName ?? ""} ${p.user.lastName ?? ""}`.trim() || p.user.email
-              : "Player",
-            // Only expose userId for admin (slot management) or the player themselves
-            userId: (isAdmin || isOwn) ? p.userId : null,
-            // Payment details: admin only
-            paymentType: isAdmin ? p.paymentType : null,
-            paymentStatus: isAdmin ? p.paymentStatus : null,
-          };
-        });
-
-        slots.push({
-          startTime: cursor.toISOString(),
-          endTime: slotEnd.toISOString(),
-          status: openSpots <= 0 ? "full" : "partial",
-          reservationId: reservation.id,
-          bookingMode: reservation.bookingMode,
-          totalSpots: reservation.totalSpots ?? 4,
-          filledSpots,
-          openSpots,
-          isPublic: reservation.isPublic,
-          publicDescription: reservation.publicDescription,
-          players,
-          creatorName: reservation.user
-            ? `${reservation.user.firstName ?? ""} ${reservation.user.lastName ?? ""}`.trim() || reservation.user.email
-            : reservation.guestName ?? "Guest",
-        });
-      } else {
-        slots.push({
-          startTime: cursor.toISOString(),
-          endTime: slotEnd.toISOString(),
-          status: isPast ? "past" : "available",
-          reservationId: null,
-          bookingMode: null,
-          totalSpots: 4,
-          filledSpots: 0,
-          openSpots: 4,
-          isPublic: false,
-          publicDescription: null,
-          players: [],
-          creatorName: null,
-        });
-      }
-
-      cursor.setTime(slotEnd.getTime());
+      cursor.setDate(cursor.getDate() + 1);
     }
 
     return {
@@ -152,11 +207,11 @@ router.get("/calendar", loadUser, async (req, res) => {
         openingTime: terrain.openingTime,
         closingTime: terrain.closingTime,
       },
-      slots,
+      slots: allSlots,
     };
   });
 
-  res.json({ date, terrains: result });
+  res.json({ date, endDate: endDate || undefined, terrains: result });
 });
 
 export default router;

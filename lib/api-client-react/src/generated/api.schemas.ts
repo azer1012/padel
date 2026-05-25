@@ -568,10 +568,10 @@ export const CalendarBookingMode = {
 
 export interface CalendarSlotPlayer {
   id: number;
-  userId: number;
+  userId: number | null;
   name: string;
-  paymentType: 'token' | 'cash';
-  paymentStatus: 'paid' | 'pending' | 'refunded';
+  paymentType: 'token' | 'cash' | null;
+  paymentStatus: 'paid' | 'pending' | 'refunded' | null;
 }
 
 export interface CalendarSlot {
@@ -603,11 +603,13 @@ export interface CalendarTerrain {
 
 export interface CalendarResponse {
   date: string;
+  endDate?: string;
   terrains: CalendarTerrain[];
 }
 
 export type GetCalendarParams = {
   date: string;
+  endDate?: string;
   terrainIds?: string;
 };
 

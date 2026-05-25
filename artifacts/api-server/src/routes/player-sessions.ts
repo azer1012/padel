@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, reservationsTable, reservationPlayersTable, playerInvitesTable, usersTable, tokenTransactionsTable, notificationsTable, activityTable } from "@workspace/db";
+import { db, reservationsTable, reservationPlayersTable, playerInvitesTable, usersTable, tokenTransactionsTable, notificationsTable, activityTable, terrainsTable } from "@workspace/db";
 import { eq, and, count } from "drizzle-orm";
 import { requireUser, requireAdmin } from "../lib/auth";
 import crypto from "node:crypto";
@@ -23,7 +23,7 @@ router.post("/reservations/:id/join", requireUser, async (req, res) => {
     res.status(400).json({ error: "Reservation is not active" });
     return;
   }
-  if (reservation.bookingMode === "full_court" || reservation.bookingMode === null) {
+  if (reservation.bookingMode === "full_court") {
     res.status(400).json({ error: "This court is fully reserved — no open spots" });
     return;
   }
@@ -112,9 +112,9 @@ router.delete("/reservations/:id/leave", requireUser, async (req, res) => {
 
   const reservation = playerRow.reservation;
 
-  // Creator of a full_court booking cannot "leave" — they must cancel the reservation
+  // Creator of an explicit full_court booking cannot "leave" — they must cancel the reservation
   const isCreator = reservation.userId === currentUser.id;
-  const isFullCourt = reservation.bookingMode === "full_court" || reservation.bookingMode === null;
+  const isFullCourt = reservation.bookingMode === "full_court";
   if (isCreator && isFullCourt) {
     res.status(400).json({ error: "Court creator cannot leave — please cancel the reservation instead" });
     return;
@@ -498,4 +498,102 @@ router.delete("/reservations/:id/open-match", requireUser, async (req, res) => {
   res.json(updated);
 });
 
+// ─── Admin: Assign player to a session ───────────────────────────────────────
+router.post("/reservations/:id/players", requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  const { userId, paymentType = "cash", paymentStatus = "pending" } = req.body;
+
+  if (!userId) {
+    res.status(400).json({ error: "userId is required" });
+    return;
+  }
+
+  const [reservation] = await db.select().from(reservationsTable)
+    .where(eq(reservationsTable.id, id));
+  if (!reservation) {
+    res.status(404).json({ error: "Reservation not found" });
+    return;
+  }
+  if (reservation.status !== "confirmed") {
+    res.status(400).json({ error: "Reservation is not active" });
+    return;
+  }
+
+  // Check capacity
+  const [{ c }] = await db.select({ c: count() }).from(reservationPlayersTable)
+    .where(eq(reservationPlayersTable.reservationId, id));
+  if (Number(c) >= (reservation.totalSpots ?? 4)) {
+    res.status(409).json({ error: "No open spots left in this session" });
+    return;
+  }
+
+  // Check not already a player
+  const [existing] = await db.select().from(reservationPlayersTable)
+    .where(and(eq(reservationPlayersTable.reservationId, id), eq(reservationPlayersTable.userId, parseInt(userId))));
+  if (existing) {
+    res.status(409).json({ error: "Player already in this session" });
+    return;
+  }
+
+  const [player] = await db.insert(reservationPlayersTable).values({
+    reservationId: id,
+    userId: parseInt(userId),
+    paymentType: paymentType as any,
+    paymentStatus: paymentStatus as any,
+    tokensCharged: 0,
+  }).returning();
+
+  res.status(201).json(player);
+});
+
+// ─── Admin: Block a slot for maintenance ─────────────────────────────────────
+router.post("/admin/slots/block", requireAdmin, async (req, res) => {
+  const { terrainId, startTime, reason = "Maintenance" } = req.body;
+
+  if (!terrainId || !startTime) {
+    res.status(400).json({ error: "terrainId and startTime are required" });
+    return;
+  }
+
+  const [terrain] = await db.select().from(terrainsTable).where(eq(terrainsTable.id, parseInt(terrainId)));
+  if (!terrain) {
+    res.status(404).json({ error: "Terrain not found" });
+    return;
+  }
+
+  const start = new Date(startTime);
+  const end = new Date(start.getTime() + 90 * 60 * 1000);
+
+  // Check for existing confirmed reservation at this slot
+  const [conflict] = await db.select().from(reservationsTable).where(
+    and(
+      eq(reservationsTable.terrainId, terrain.id),
+      eq(reservationsTable.status, "confirmed" as any),
+      eq(reservationsTable.startTime, start),
+    )
+  );
+  if (conflict) {
+    res.status(409).json({ error: "Slot already has a confirmed reservation" });
+    return;
+  }
+
+  const [blocked] = await db.insert(reservationsTable).values({
+    terrainId: terrain.id,
+    userId: null,
+    guestName: `[${reason}]`,
+    startTime: start,
+    endTime: end,
+    status: "confirmed",
+    tokensCharged: 0,
+    bookingType: "manual",
+    bookingMode: "full_court",
+    totalSpots: 4,
+    isPublic: false,
+    notes: reason,
+  }).returning();
+
+  res.status(201).json(blocked);
+});
+
 export default router;
+

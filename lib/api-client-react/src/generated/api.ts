@@ -2994,6 +2994,7 @@ export const getCalendarQueryKey = (params: GetCalendarParams) => ['calendar', p
 export const getCalendar = async (params: GetCalendarParams, options?: RequestInit): Promise<CalendarResponse> => {
   const query = new URLSearchParams();
   query.set('date', params.date);
+  if (params.endDate) query.set('endDate', params.endDate);
   if (params.terrainIds) query.set('terrainIds', params.terrainIds);
   return customFetch<CalendarResponse>(`/api/calendar?${query.toString()}`, { ...options, method: 'GET' });
 };
