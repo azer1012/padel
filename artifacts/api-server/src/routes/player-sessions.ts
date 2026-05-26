@@ -28,6 +28,11 @@ router.post("/reservations/:id/join", requireUser, async (req, res) => {
     return;
   }
 
+  if (reservation.startTime <= new Date()) {
+    res.status(400).json({ error: "Cannot join a session that has already started or ended" });
+    return;
+  }
+
   const alreadyJoined = reservation.players.find(p => p.userId === currentUser.id);
   if (alreadyJoined) {
     res.status(409).json({ error: "You already have a spot in this session" });
@@ -294,6 +299,11 @@ router.post("/invites/:token/accept", requireUser, async (req, res) => {
   // Block joining a full-court session via invite
   if (invite.reservation.bookingMode === "full_court") {
     res.status(400).json({ error: "Full-court reservations cannot have additional players" });
+    return;
+  }
+
+  if (invite.reservation.startTime <= new Date()) {
+    res.status(400).json({ error: "Cannot join a session that has already started or ended" });
     return;
   }
 

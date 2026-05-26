@@ -14,11 +14,11 @@ import { useI18n } from "@/lib/i18n";
 import { Calendar, Users, Zap, Clock, Link, Globe, Lock, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const NEXT_7_DAYS = Array.from({ length: 7 }, (_, i) => {
-  const d = addDays(new Date(), i);
+function getWeekStart(offset = 0): Date {
+  const d = addDays(new Date(), offset * 7);
   d.setHours(12, 0, 0, 0);
   return d;
-});
+}
 
 type BookingModal =
   | { type: "book"; slot: CalendarSlot; terrain: CalendarTerrain["terrain"] }
@@ -119,6 +119,8 @@ function BookingModal({
   const [publicDescription, setPublicDescription] = useState("");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [copiedInvite, setCopiedInvite] = useState(false);
+  const [assignUserId, setAssignUserId] = useState("");
+  const [isAssigning, setIsAssigning] = useState(false);
 
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -253,6 +255,30 @@ function BookingModal({
         toast({ title: "Erreur", description: err?.data?.error ?? "Impossible d'annuler", variant: "destructive" });
       },
     });
+  };
+
+  const handleAdminAssignPlayer = async () => {
+    if (!slot.reservationId || !assignUserId.trim()) return;
+    setIsAssigning(true);
+    try {
+      const res = await fetch(`/api/reservations/${slot.reservationId}/players`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: parseInt(assignUserId), paymentType: "cash", paymentStatus: "pending" }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast({ title: "Erreur", description: err.error ?? "Impossible d'assigner", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Joueur assigné à la session" });
+      setAssignUserId("");
+      invalidateAll();
+    } catch {
+      toast({ title: "Erreur réseau", variant: "destructive" });
+    } finally {
+      setIsAssigning(false);
+    }
   };
 
   const handleAdminBlockSlot = async () => {
@@ -524,6 +550,29 @@ function BookingModal({
             )}
           </div>
 
+          {/* Admin: assign player */}
+          {isAdmin && slot.openSpots > 0 && slot.bookingMode !== "full_court" && slot.reservationId && (
+            <div className="pt-2 border-t border-border space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Assigner un joueur (admin)</p>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  placeholder="User ID"
+                  value={assignUserId}
+                  onChange={e => setAssignUserId(e.target.value)}
+                  className="flex-1 text-sm bg-background border border-border rounded-lg px-3 py-2 text-foreground placeholder:text-muted-foreground"
+                />
+                <Button
+                  size="sm"
+                  onClick={handleAdminAssignPlayer}
+                  disabled={isAssigning || !assignUserId.trim()}
+                  className="bg-primary text-primary-foreground font-bold"
+                >
+                  {isAssigning ? "..." : "Assigner"}
+                </Button>
+              </div>
+            </div>
+          )}
           {inviteUrl && (
             <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 space-y-2">
               <p className="text-xs font-semibold text-primary">Lien d'invitation</p>
@@ -548,14 +597,22 @@ export default function CourtCalendar({
   isAdmin?: boolean;
   currentUserId?: number | null;
 }) {
-  const [selectedDate, setSelectedDate] = useState<Date>(NEXT_7_DAYS[0]);
+  const [weekOffset, setWeekOffset] = useState(0);
   const [modal, setModal] = useState<BookingModal>(null);
-  const { t } = useI18n();
   const { isSignedIn } = useUser();
 
-  const dateStr = selectedDate.toISOString().split("T")[0];
+  // Week: today + offset*7 → today + offset*7 + 6
+  const weekStart = useMemo(() => getWeekStart(weekOffset), [weekOffset]);
+  const weekDays = useMemo(() =>
+    Array.from({ length: 7 }, (_, i) => {
+      const d = addDays(weekStart, i);
+      return d.toISOString().split("T")[0];
+    }), [weekStart]);
 
-  const { data: calendarData, isLoading } = useGetCalendar({ date: dateStr });
+  const dateStr = weekDays[0];
+  const endDateStr = weekDays[6];
+
+  const { data: calendarData, isLoading } = useGetCalendar({ date: dateStr, endDate: endDateStr });
 
   const handleClickAvailable = (slot: CalendarSlot, terrain: CalendarTerrain["terrain"]) => {
     if (!isSignedIn) {
@@ -569,51 +626,79 @@ export default function CourtCalendar({
     setModal({ type: "session", slot, terrain });
   };
 
-  // Collect all unique time slots across terrains for row headers
-  const allTimeSlots = useMemo(() => {
-    if (!calendarData?.terrains.length) return [];
+  const terrains = calendarData?.terrains ?? [];
+
+  // Build slot lookup: terrainId → date → timeHHMM → slot
+  const slotMap = useMemo(() => {
+    const map = new Map<string, CalendarSlot>();
+    terrains.forEach(({ terrain, slots }) => {
+      slots.forEach(slot => {
+        const d = slot.startTime.slice(0, 10);
+        const t = new Date(slot.startTime).toISOString().slice(11, 16);
+        map.set(`${terrain.id}|${d}|${t}`, slot);
+      });
+    });
+    return map;
+  }, [terrains]);
+
+  // Unique time-of-day rows (HH:MM), sorted
+  const timeRows = useMemo(() => {
     const times = new Set<string>();
-    calendarData.terrains.forEach(t => t.slots.forEach(s => times.add(s.startTime)));
+    terrains.forEach(({ slots }) =>
+      slots.forEach(s => times.add(new Date(s.startTime).toISOString().slice(11, 16)))
+    );
     return Array.from(times).sort();
-  }, [calendarData]);
+  }, [terrains]);
+
+  const numTerrains = terrains.length;
+  const totalCols = 1 + numTerrains * 7; // time col + 7 days × N terrains
 
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <div className="flex gap-2">{[...Array(7)].map((_, i) => <Skeleton key={i} className="h-12 w-16 rounded-lg" />)}</div>
-        <div className="grid gap-2" style={{ gridTemplateColumns: `80px repeat(3, 1fr)` }}>
-          {[...Array(24)].map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
+        <div className="flex gap-2">{[...Array(7)].map((_, i) => <Skeleton key={i} className="h-10 w-20 rounded-lg" />)}</div>
+        <div className="grid gap-1" style={{ gridTemplateColumns: `72px repeat(${numTerrains * 7 || 3}, 1fr)` }}>
+          {[...Array(32)].map((_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)}
         </div>
       </div>
     );
   }
 
-  const terrains = calendarData?.terrains ?? [];
-
   return (
-    <div className="space-y-6">
-      {/* Date selector */}
-      <div className="flex gap-1.5 flex-wrap">
-        {NEXT_7_DAYS.map((day) => {
-          const isSelected = day.toDateString() === selectedDate.toDateString();
-          const dayLabel = format(day, "EEE", { locale: fr });
-          const dateLabel = format(day, "dd/MM");
-          return (
-            <button
-              key={day.toISOString()}
-              onClick={() => setSelectedDate(day)}
-              className={cn(
-                "px-3 py-2 rounded-lg text-sm font-semibold border transition-all min-w-[60px] text-center",
-                isSelected
-                  ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                  : "bg-background border-border text-foreground hover:border-primary/50"
-              )}
-            >
-              <div className="capitalize">{dayLabel}</div>
-              <div className="text-xs opacity-70">{dateLabel}</div>
-            </button>
-          );
-        })}
+    <div className="space-y-4">
+      {/* Week navigation */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => setWeekOffset(o => o - 1)}
+          className="p-1.5 rounded-lg border border-border hover:border-primary/50 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <div className="flex gap-1 flex-wrap">
+          {weekDays.map((day) => {
+            const isToday = day === new Date().toISOString().split("T")[0];
+            return (
+              <div
+                key={day}
+                className={cn(
+                  "px-2 py-1 rounded-lg text-xs font-semibold border text-center min-w-[52px]",
+                  isToday
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "border-border text-muted-foreground bg-muted/10"
+                )}
+              >
+                <div className="capitalize">{format(new Date(day + "T12:00:00"), "EEE", { locale: fr })}</div>
+                <div className="opacity-70">{format(new Date(day + "T12:00:00"), "dd/MM")}</div>
+              </div>
+            );
+          })}
+        </div>
+        <button
+          onClick={() => setWeekOffset(o => o + 1)}
+          className="p-1.5 rounded-lg border border-border hover:border-primary/50 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
       </div>
 
       {/* Legend */}
@@ -625,7 +710,7 @@ export default function CourtCalendar({
         <span className="flex items-center gap-1"><Globe className="h-3 w-3 text-yellow-400" /> Open match</span>
       </div>
 
-      {/* Calendar grid */}
+      {/* Full-week grid: time rows × (day × terrain) columns */}
       {terrains.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <Calendar className="h-12 w-12 mx-auto mb-3 opacity-30" />
@@ -633,42 +718,76 @@ export default function CourtCalendar({
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <div className="min-w-[500px]" style={{ display: "grid", gridTemplateColumns: `72px repeat(${terrains.length}, 1fr)` }}>
-            {/* Header row: terrain names */}
-            <div className="bg-muted/30 p-2 border-b border-border" />
-            {terrains.map(({ terrain }) => (
-              <div key={terrain.id} className="bg-muted/30 p-2 border-b border-border border-l border-border/50">
-                <div className="text-xs font-bold text-foreground uppercase truncate">{terrain.name}</div>
-                <div className="text-[10px] text-muted-foreground capitalize">{terrain.type} · {terrain.pricePerPerson} TND</div>
-              </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `64px repeat(${numTerrains * 7}, minmax(80px, 1fr))`,
+              minWidth: `${64 + numTerrains * 7 * 80}px`,
+            }}
+          >
+            {/* ── Row 1: Day headers (each spans numTerrains cols) ── */}
+            <div className="bg-muted/40 p-2 border-b border-border sticky left-0 z-10" />
+            {weekDays.map((day, di) => (
+              terrains.map((_, ti) => (
+                ti === 0 ? (
+                  <div
+                    key={`day-${day}`}
+                    className="bg-muted/40 p-2 border-b border-l border-border text-center"
+                    style={{ gridColumn: `span ${numTerrains}` }}
+                  >
+                    <div className={cn("text-[11px] font-bold capitalize", day === new Date().toISOString().split("T")[0] ? "text-primary" : "text-foreground")}>
+                      {format(new Date(day + "T12:00:00"), "EEEE", { locale: fr })}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">{format(new Date(day + "T12:00:00"), "dd/MM")}</div>
+                  </div>
+                ) : null
+              ))
             ))}
 
-            {/* Time slots as rows */}
-            {allTimeSlots.map((timeStr) => (
-              <React.Fragment key={timeStr}>
-                {/* Row label */}
-                <div className="flex flex-col items-center justify-center p-1 border-b border-border/30 bg-muted/10">
-                  <Clock className="h-2.5 w-2.5 text-muted-foreground mb-0.5" />
-                  <span className="text-[10px] font-semibold text-muted-foreground">{format(new Date(timeStr), "HH:mm")}</span>
+            {/* ── Row 2: Terrain sub-headers ── */}
+            <div className="bg-muted/20 p-1 border-b border-border sticky left-0 z-10" />
+            {weekDays.flatMap((day) =>
+              terrains.map(({ terrain }) => (
+                <div key={`th-${day}-${terrain.id}`} className="bg-muted/20 p-1.5 border-b border-l border-border/60">
+                  <div className="text-[9px] font-bold text-foreground/70 uppercase truncate">{terrain.name}</div>
+                  <div className="text-[8px] text-muted-foreground">{(terrain as any).pricePerSession ?? ""}</div>
                 </div>
-                {/* Cells for each terrain */}
-                {terrains.map(({ terrain, slots }) => {
-                  const slot = slots.find(s => s.startTime === timeStr);
-                  if (!slot) {
-                    return <div key={`${terrain.id}-${timeStr}`} className="p-1 border-b border-border/30 border-l border-border/50 bg-muted/5" />;
-                  }
-                  return (
-                    <div key={`${terrain.id}-${timeStr}`} className="p-1 border-b border-border/30 border-l border-border/50">
-                      <SlotCell
-                        slot={slot}
-                        onClickAvailable={() => handleClickAvailable(slot, terrain)}
-                        onClickBooked={() => handleClickBooked(slot, terrain)}
-                        currentUserId={currentUserId}
-                        isAdmin={isAdmin}
-                      />
-                    </div>
-                  );
-                })}
+              ))
+            )}
+
+            {/* ── Time rows ── */}
+            {timeRows.map((timeHHMM) => (
+              <React.Fragment key={timeHHMM}>
+                {/* Time label */}
+                <div className="flex flex-col items-center justify-center p-1 border-b border-border/30 bg-muted/10 sticky left-0 z-10">
+                  <Clock className="h-2.5 w-2.5 text-muted-foreground mb-0.5" />
+                  <span className="text-[10px] font-semibold text-muted-foreground">{timeHHMM}</span>
+                </div>
+                {/* Cells: day × terrain */}
+                {weekDays.flatMap((day) =>
+                  terrains.map(({ terrain }) => {
+                    const slot = slotMap.get(`${terrain.id}|${day}|${timeHHMM}`);
+                    if (!slot) {
+                      return (
+                        <div
+                          key={`${terrain.id}|${day}|${timeHHMM}`}
+                          className="p-1 border-b border-l border-border/30 bg-muted/5"
+                        />
+                      );
+                    }
+                    return (
+                      <div key={`${terrain.id}|${day}|${timeHHMM}`} className="p-1 border-b border-l border-border/30">
+                        <SlotCell
+                          slot={slot}
+                          onClickAvailable={() => handleClickAvailable(slot, terrain)}
+                          onClickBooked={() => handleClickBooked(slot, terrain)}
+                          currentUserId={currentUserId}
+                          isAdmin={isAdmin}
+                        />
+                      </div>
+                    );
+                  })
+                )}
               </React.Fragment>
             ))}
           </div>
