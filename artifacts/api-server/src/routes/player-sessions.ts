@@ -186,6 +186,12 @@ router.post("/reservations/:id/invite", requireUser, async (req, res) => {
     return;
   }
 
+  // Full-court sessions are fully reserved — invites don't apply
+  if (reservation.bookingMode === "full_court") {
+    res.status(400).json({ error: "Full-court reservations cannot have additional players" });
+    return;
+  }
+
   const token = crypto.randomBytes(24).toString("hex");
   const expiresAt = new Date(reservation.startTime.getTime() - 30 * 60 * 1000); // 30 min before session
 
@@ -285,6 +291,12 @@ router.post("/invites/:token/accept", requireUser, async (req, res) => {
     return;
   }
 
+  // Block joining a full-court session via invite
+  if (invite.reservation.bookingMode === "full_court") {
+    res.status(400).json({ error: "Full-court reservations cannot have additional players" });
+    return;
+  }
+
   const tokensNeeded = 1;
 
   try {
@@ -362,6 +374,7 @@ router.post("/invites/:token/accept", requireUser, async (req, res) => {
 
 // ─── Admin: Update player payment status ─────────────────────────────────────
 router.patch("/reservations/:id/players/:playerId", requireAdmin, async (req, res) => {
+  const reservationId = parseInt(req.params.id as string);
   const playerId = parseInt(req.params.playerId as string);
   const { paymentStatus, paymentType } = req.body;
 
@@ -376,11 +389,14 @@ router.patch("/reservations/:id/players/:playerId", requireAdmin, async (req, re
 
   const [updated] = await db.update(reservationPlayersTable)
     .set(updates)
-    .where(eq(reservationPlayersTable.id, playerId))
+    .where(and(
+      eq(reservationPlayersTable.id, playerId),
+      eq(reservationPlayersTable.reservationId, reservationId),
+    ))
     .returning();
 
   if (!updated) {
-    res.status(404).json({ error: "Player not found" });
+    res.status(404).json({ error: "Player not found in this reservation" });
     return;
   }
 
@@ -516,6 +532,12 @@ router.post("/reservations/:id/players", requireAdmin, async (req, res) => {
   }
   if (reservation.status !== "confirmed") {
     res.status(400).json({ error: "Reservation is not active" });
+    return;
+  }
+
+  // Full-court sessions are entirely reserved — cannot add individual players
+  if (reservation.bookingMode === "full_court") {
+    res.status(400).json({ error: "Full-court reservations cannot have additional players" });
     return;
   }
 
