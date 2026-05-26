@@ -34,25 +34,31 @@ function buildSlotsForTerrainDay(
     const isPast = cursor <= now;
 
     if (reservation) {
-      const isFullCourt = reservation.bookingMode === "full_court";
-      const isLegacy = reservation.bookingMode === null;
-      const isOwnSpot = reservation.bookingMode === "own_spot";
+      // Legacy detection: bookingMode is NOT NULL (default full_court), but
+      // old single-player bookings were created before multi-player support.
+      // They have tokensCharged < 4 (only 1 token charged) and no player rows.
+      // Treat these as own_spot sessions with remaining open spots.
+      const isLegacyFullCourt =
+        reservation.bookingMode === "full_court" &&
+        reservation.tokensCharged < 4 &&
+        reservation.players.length === 0;
+
+      const isFullCourt = reservation.bookingMode === "full_court" && !isLegacyFullCourt;
+      const isOwnSpot = reservation.bookingMode === "own_spot" || isLegacyFullCourt;
 
       let filledSpots: number;
       let openSpots: number;
 
       if (isFullCourt) {
-        // Entire court booked — fully occupied regardless of player rows
+        // Explicit full-court booking: all 4 spots occupied, nobody can join
         filledSpots = reservation.totalSpots ?? 4;
         openSpots = 0;
-      } else if (isLegacy) {
-        // Legacy (pre-multiplay) reservation: treat as single-player session
-        // with remaining spots potentially open, based on actual player rows
-        filledSpots = Math.max(1, reservation.players.length);
-        openSpots = Math.max(0, (reservation.totalSpots ?? 4) - filledSpots);
       } else {
-        // own_spot: each player paid for their spot
-        filledSpots = reservation.players.length;
+        // own_spot or legacy single-player: spots based on actual player rows
+        // (legacy: at least 1 filled even if no player rows yet)
+        filledSpots = isLegacyFullCourt
+          ? Math.max(1, reservation.players.length)
+          : reservation.players.length;
         openSpots = Math.max(0, (reservation.totalSpots ?? 4) - filledSpots);
       }
 

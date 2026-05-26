@@ -383,6 +383,277 @@ paths:
               schema:
                 $ref: "#/components/schemas/Reservation"
 
+  # ─── Calendar ─────────────────────────────────────────────────────────
+  /calendar:
+    get:
+      operationId: getCalendar
+      tags: [reservations]
+      summary: Get calendar slots for one or more days
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Calendar data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarResponse"
+
+  # ─── Multi-player session actions ─────────────────────────────────────
+  /reservations/{id}/join:
+    post:
+      operationId: joinSession
+      tags: [reservations]
+      summary: Join an open session (own_spot, 1 token)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "201":
+          description: Joined session
+        "400":
+          description: Not an open session or insufficient tokens
+        "409":
+          description: No spots left
+
+  /reservations/{id}/leave:
+    delete:
+      operationId: leaveSession
+      tags: [reservations]
+      summary: Leave a session and get token refund
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Left session
+
+  /reservations/{id}/invite:
+    post:
+      operationId: createInvite
+      tags: [reservations]
+      summary: Create an invite link for a session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+      responses:
+        "201":
+          description: Invite created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteResponse"
+
+  /invites/{token}:
+    get:
+      operationId: getInvite
+      tags: [reservations]
+      summary: Resolve an invite token
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Invite details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteDetails"
+        "404":
+          description: Not found
+
+  /invites/{token}/accept:
+    post:
+      operationId: acceptInvite
+      tags: [reservations]
+      summary: Accept an invite and join the session
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Joined session via invite
+        "410":
+          description: Invite expired or already used
+
+  /open-matches:
+    get:
+      operationId: getOpenMatches
+      tags: [reservations]
+      summary: List public open-match sessions
+      responses:
+        "200":
+          description: Open matches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OpenMatch"
+
+  /reservations/{id}/open-match:
+    post:
+      operationId: makeSessionPublic
+      tags: [reservations]
+      summary: Make a session public (open match)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                publicDescription:
+                  type: string
+      responses:
+        "200":
+          description: Session made public
+    delete:
+      operationId: makeSessionPrivate
+      tags: [reservations]
+      summary: Make a session private (close open match)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Session made private
+
+  /reservations/{id}/players:
+    post:
+      operationId: adminAssignPlayer
+      tags: [reservations]
+      summary: Admin assign a player to a session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId:
+                  type: integer
+                paymentType:
+                  type: string
+                  enum: [token, cash]
+                paymentStatus:
+                  type: string
+                  enum: [paid, pending, refunded]
+      responses:
+        "201":
+          description: Player assigned
+        "409":
+          description: No spots or player already in session
+
+  /reservations/{id}/players/{playerId}:
+    patch:
+      operationId: updatePlayerPayment
+      tags: [reservations]
+      summary: Admin update player payment status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: playerId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paymentStatus:
+                  type: string
+                  enum: [paid, pending, refunded]
+                paymentType:
+                  type: string
+                  enum: [token, cash]
+      responses:
+        "200":
+          description: Player payment updated
+        "404":
+          description: Player not found in this reservation
+
+  /admin/slots/block:
+    post:
+      operationId: adminBlockSlot
+      tags: [reservations]
+      summary: Admin block a slot for maintenance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [terrainId, startTime]
+              properties:
+                terrainId:
+                  type: integer
+                startTime:
+                  type: string
+                  format: date-time
+                reason:
+                  type: string
+      responses:
+        "201":
+          description: Slot blocked
+        "409":
+          description: Slot already has a confirmed reservation
+
   # ─── Tokens ───────────────────────────────────────────────────────────
   /tokens/balance:
     get:
@@ -1392,6 +1663,160 @@ components:
           type: integer
         occupancyRate:
           type: number
+
+    # ─── Calendar ──────────────────────────────────────────────────────
+    CalendarSlotPlayer:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        userId:
+          type: ["integer", "null"]
+        paymentType:
+          type: ["string", "null"]
+          enum: [token, cash, null]
+        paymentStatus:
+          type: ["string", "null"]
+          enum: [paid, pending, refunded, null]
+
+    CalendarSlot:
+      type: object
+      required: [startTime, endTime, status, filledSpots, openSpots, totalSpots, players]
+      properties:
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [available, partial, full, past]
+        reservationId:
+          type: ["integer", "null"]
+        bookingMode:
+          type: ["string", "null"]
+          enum: [full_court, own_spot, null]
+        filledSpots:
+          type: integer
+        openSpots:
+          type: integer
+        totalSpots:
+          type: integer
+        isPublic:
+          type: boolean
+        publicDescription:
+          type: ["string", "null"]
+        players:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalendarSlotPlayer"
+
+    CalendarTerrain:
+      type: object
+      required: [terrain, slots]
+      properties:
+        terrain:
+          type: object
+          required: [id, name, type, pricePerSession]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            type:
+              type: string
+            pricePerSession:
+              type: number
+        slots:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalendarSlot"
+
+    CalendarResponse:
+      type: object
+      required: [date, terrains]
+      properties:
+        date:
+          type: string
+          format: date
+        endDate:
+          type: ["string", "null"]
+          format: date
+        terrains:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalendarTerrain"
+
+    # ─── Invites & Open Matches ────────────────────────────────────────
+    InviteResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+        inviteUrl:
+          type: string
+        invite:
+          type: object
+
+    InviteDetails:
+      type: object
+      required: [token, status, reservation]
+      properties:
+        token:
+          type: string
+        status:
+          type: string
+          enum: [pending, accepted, expired, cancelled]
+        openSpots:
+          type: integer
+        expiresAt:
+          type: string
+          format: date-time
+        invitedBy:
+          type: object
+        reservation:
+          type: object
+
+    OpenMatch:
+      type: object
+      required: [id, terrain, startTime, endTime, openSpots, totalSpots, filledSpots]
+      properties:
+        id:
+          type: integer
+        terrain:
+          type: object
+          required: [id, name]
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        publicDescription:
+          type: ["string", "null"]
+        openSpots:
+          type: integer
+        totalSpots:
+          type: integer
+        filledSpots:
+          type: integer
+        players:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
 
     # ─── Notifications ─────────────────────────────────────────────────
     Notification:

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { format, addDays } from "date-fns";
 import { fr } from "date-fns/locale";
-import { useGetCalendar, useCreateReservation, useJoinSession, useCreateInvite, useMakeSessionPublic, useMakeSessionPrivate, getCalendarQueryKey, getListReservationsQueryKey, getListUpcomingReservationsQueryKey, getGetTokenBalanceQueryKey, useLeaveSession, useUpdatePlayerPayment, getOpenMatchesQueryKey } from "@workspace/api-client-react";
+import { useGetCalendar, useCreateReservation, useJoinSession, useCreateInvite, useMakeSessionPublic, useMakeSessionPrivate, getCalendarQueryKey, getListReservationsQueryKey, getListUpcomingReservationsQueryKey, getGetTokenBalanceQueryKey, useLeaveSession, useUpdatePlayerPayment, getOpenMatchesQueryKey, useCancelReservation } from "@workspace/api-client-react";
 import type { CalendarSlot, CalendarTerrain } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -11,7 +11,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@clerk/react";
 import { useI18n } from "@/lib/i18n";
-import { Calendar, Users, Zap, Clock, Link, Globe, Lock, CheckCircle, AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar, Users, Zap, Clock, Link, Globe, Lock, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NEXT_7_DAYS = Array.from({ length: 7 }, (_, i) => {
@@ -130,6 +130,7 @@ function BookingModal({
   const makePublic = useMakeSessionPublic();
   const makePrivate = useMakeSessionPrivate();
   const updatePlayerPayment = useUpdatePlayerPayment();
+  const cancelReservation = useCancelReservation();
 
   if (!modal) return null;
   const { slot, terrain } = modal;
@@ -240,7 +241,41 @@ function BookingModal({
     });
   };
 
-  const isLoading = createReservation.isPending || joinSession.isPending || leaveSession.isPending;
+  const handleAdminCancel = () => {
+    if (!slot.reservationId) return;
+    cancelReservation.mutate({ id: slot.reservationId }, {
+      onSuccess: () => {
+        toast({ title: "Réservation annulée (admin)" });
+        invalidateAll();
+        onClose();
+      },
+      onError: (err: any) => {
+        toast({ title: "Erreur", description: err?.data?.error ?? "Impossible d'annuler", variant: "destructive" });
+      },
+    });
+  };
+
+  const handleAdminBlockSlot = async () => {
+    try {
+      const res = await fetch("/api/admin/slots/block", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ terrainId: terrain.id, startTime: slot.startTime, reason: "Maintenance" }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast({ title: "Erreur", description: err.error ?? "Impossible de bloquer", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Créneau bloqué pour maintenance" });
+      invalidateAll();
+      onClose();
+    } catch {
+      toast({ title: "Erreur réseau", variant: "destructive" });
+    }
+  };
+
+  const isLoading = createReservation.isPending || joinSession.isPending || leaveSession.isPending || cancelReservation.isPending;
 
   if (modal.type === "book") {
     return (
@@ -341,6 +376,17 @@ function BookingModal({
                 {isLoading ? "..." : "Confirmer"}
               </Button>
             </div>
+
+            {isAdmin && (
+              <Button
+                variant="outline"
+                className="w-full border-destructive/50 text-destructive hover:bg-destructive/10"
+                onClick={handleAdminBlockSlot}
+                disabled={isLoading}
+              >
+                Bloquer pour maintenance
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>
@@ -464,6 +510,16 @@ function BookingModal({
                 disabled={makePublic.isPending || makePrivate.isPending}
               >
                 {slot.isPublic ? <><Lock className="h-3.5 w-3.5 mr-1" /> Rendre privé</> : <><Globe className="h-3.5 w-3.5 mr-1" /> Rendre public</>}
+              </Button>
+            )}
+            {isAdmin && slot.reservationId && (
+              <Button
+                variant="outline"
+                className="border-destructive/50 text-destructive hover:bg-destructive/10"
+                onClick={handleAdminCancel}
+                disabled={isLoading}
+              >
+                <X className="h-3.5 w-3.5 mr-1" /> Annuler (admin)
               </Button>
             )}
           </div>
