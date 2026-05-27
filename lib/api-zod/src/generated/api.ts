@@ -25,7 +25,7 @@ export const getMeResponseLanguageDefault = `fr`;
 
 export const GetMeResponse = zod.object({
   "id": zod.number(),
-  "clerkId": zod.string(),
+  "supabaseAuthId": zod.string(),
   "email": zod.string(),
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -54,7 +54,7 @@ export const updateMeResponseLanguageDefault = `fr`;
 
 export const UpdateMeResponse = zod.object({
   "id": zod.number(),
-  "clerkId": zod.string(),
+  "supabaseAuthId": zod.string(),
   "email": zod.string(),
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -86,7 +86,7 @@ export const listUsersResponseDataItemLanguageDefault = `fr`;
 export const ListUsersResponse = zod.object({
   "data": zod.array(zod.object({
   "id": zod.number(),
-  "clerkId": zod.string(),
+  "supabaseAuthId": zod.string(),
   "email": zod.string(),
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -116,7 +116,7 @@ export const getUserResponseLanguageDefault = `fr`;
 
 export const GetUserResponse = zod.object({
   "id": zod.number(),
-  "clerkId": zod.string(),
+  "supabaseAuthId": zod.string(),
   "email": zod.string(),
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -301,7 +301,7 @@ export const ListReservationsResponse = zod.object({
 }).optional(),
   "user": zod.object({
   "id": zod.number(),
-  "clerkId": zod.string(),
+  "supabaseAuthId": zod.string(),
   "email": zod.string(),
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -371,7 +371,7 @@ export const ListUpcomingReservationsResponseItem = zod.object({
 }).optional(),
   "user": zod.object({
   "id": zod.number(),
-  "clerkId": zod.string(),
+  "supabaseAuthId": zod.string(),
   "email": zod.string(),
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -426,7 +426,7 @@ export const GetReservationResponse = zod.object({
 }).optional(),
   "user": zod.object({
   "id": zod.number(),
-  "clerkId": zod.string(),
+  "supabaseAuthId": zod.string(),
   "email": zod.string(),
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -485,7 +485,7 @@ export const UpdateReservationResponse = zod.object({
 }).optional(),
   "user": zod.object({
   "id": zod.number(),
-  "clerkId": zod.string(),
+  "supabaseAuthId": zod.string(),
   "email": zod.string(),
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -539,7 +539,7 @@ export const CancelReservationResponse = zod.object({
 }).optional(),
   "user": zod.object({
   "id": zod.number(),
-  "clerkId": zod.string(),
+  "supabaseAuthId": zod.string(),
   "email": zod.string(),
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -594,7 +594,7 @@ export const ListTokenTransactionsResponse = zod.object({
   "expiresAt": zod.coerce.date().nullish(),
   "user": zod.object({
   "id": zod.number(),
-  "clerkId": zod.string(),
+  "supabaseAuthId": zod.string(),
   "email": zod.string(),
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -642,7 +642,7 @@ export const AdjustUserTokensResponse = zod.object({
   "expiresAt": zod.coerce.date().nullish(),
   "user": zod.object({
   "id": zod.number(),
-  "clerkId": zod.string(),
+  "supabaseAuthId": zod.string(),
   "email": zod.string(),
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -688,7 +688,7 @@ export const ListAllTokenTransactionsResponse = zod.object({
   "expiresAt": zod.coerce.date().nullish(),
   "user": zod.object({
   "id": zod.number(),
-  "clerkId": zod.string(),
+  "supabaseAuthId": zod.string(),
   "email": zod.string(),
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),

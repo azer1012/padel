@@ -7,7 +7,7 @@ export const languageEnum = pgEnum("language", ["fr", "ar", "en"]);
 
 export const usersTable = pgTable("users", {
   id: serial("id").primaryKey(),
-  clerkId: text("clerk_id").notNull().unique(),
+  supabaseAuthId: text("supabase_auth_id").notNull().unique(),
   email: text("email").notNull().unique(),
   firstName: text("first_name"),
   lastName: text("last_name"),

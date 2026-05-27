@@ -1,11 +1,11 @@
 import { Link, useLocation } from "wouter";
 import { useGetMe } from "@workspace/api-client-react";
-import { SignOutButton } from "@clerk/react";
 import { Button } from "@/components/ui/button";
 import { LayoutDashboard, CalendarDays, Wallet, User, Shield, Users, Coins, Newspaper, Trophy, Home, LogOut, Menu, Globe } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useI18n, type Lang } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth";
 
 const LANG_OPTIONS: { value: Lang; label: string; short: string }[] = [
   { value: "fr", label: "Français", short: "FR" },
@@ -15,6 +15,7 @@ const LANG_OPTIONS: { value: Lang; label: string; short: string }[] = [
 
 export function NavLayout({ children }: { children: React.ReactNode }) {
   const { data: user } = useGetMe();
+  const { signOut } = useAuth();
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { t, lang, setLang } = useI18n();
@@ -127,12 +128,10 @@ export function NavLayout({ children }: { children: React.ReactNode }) {
                 <p className="text-xs font-medium text-foreground truncate">{user.firstName ? `${user.firstName} ${user.lastName ?? ""}`.trim() : user.email}</p>
                 <p className="text-xs text-muted-foreground truncate">{user.email}</p>
               </div>
-              <SignOutButton>
-                <Button variant="ghost" size="sm" data-testid="btn-sign-out" className="w-full justify-start text-muted-foreground hover:text-destructive">
-                  <LogOut className="h-4 w-4 mr-2" />
-                  {t("signOut")}
-                </Button>
-              </SignOutButton>
+              <Button variant="ghost" size="sm" data-testid="btn-sign-out" className="w-full justify-start text-muted-foreground hover:text-destructive" onClick={signOut}>
+                <LogOut className="h-4 w-4 mr-2" />
+                {t("signOut")}
+              </Button>
             </div>
           ) : (
             <Link href="/sign-in">

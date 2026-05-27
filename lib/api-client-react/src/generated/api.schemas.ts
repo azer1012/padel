@@ -28,7 +28,7 @@ export const UserLanguage = {
 
 export interface User {
   id: number;
-  clerkId: string;
+  supabaseAuthId: string;
   email: string;
   /** @nullable */
   firstName?: string | null;

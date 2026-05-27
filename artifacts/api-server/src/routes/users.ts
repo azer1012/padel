@@ -1,8 +1,7 @@
 import { Router } from "express";
 import { db, usersTable } from "@workspace/db";
 import { eq, ilike, or, count, sql } from "drizzle-orm";
-import { requireUser, requireAdmin } from "../lib/auth";
-import { getAuth } from "@clerk/express";
+import { requireAuth, requireUser, requireAdmin } from "../lib/auth";
 
 const router = Router();
 
@@ -21,32 +20,32 @@ router.patch("/users/me", requireUser, async (req, res) => {
   res.json(updated);
 });
 
-router.post("/users/sync", async (req, res) => {
-  const auth = getAuth(req);
-  if (!auth.userId) {
+router.post("/users/sync", requireAuth, async (req, res) => {
+  const authUserId = (req as any).authUserId;
+  if (!authUserId) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
   const { email, firstName, lastName, imageUrl } = req.body;
-  const existing = await db.select().from(usersTable).where(eq(usersTable.clerkId, auth.userId));
+  const existing = await db.select().from(usersTable).where(eq(usersTable.supabaseAuthId, authUserId));
   if (existing.length > 0) {
     const [updated] = await db.update(usersTable)
       .set({ email, firstName, lastName, avatarUrl: imageUrl, updatedAt: new Date() })
-      .where(eq(usersTable.clerkId, auth.userId))
+      .where(eq(usersTable.supabaseAuthId, authUserId))
       .returning();
     res.json(updated);
     return;
   }
   const [created] = await db.insert(usersTable).values({
-    clerkId: auth.userId,
-    email: email || `${auth.userId}@placeholder.com`,
+    supabaseAuthId: authUserId,
+    email: email || `${authUserId}@placeholder.local`,
     firstName,
     lastName,
     avatarUrl: imageUrl,
     role: "player",
     tokenBalance: 0,
     language: "fr",
-  }).returning();
+}).returning();
   res.status(201).json(created);
 });
 

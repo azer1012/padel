@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { useUser } from "@clerk/react";
+import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -14,7 +14,7 @@ import { MapPin, Calendar, Users, Zap, CheckCircle, AlertCircle } from "lucide-r
 export default function JoinInvite() {
   const params = useParams<{ token: string }>();
   const token = params.token;
-  const { isSignedIn } = useUser();
+  const { isSignedIn } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [, setLocation] = useLocation();

@@ -5,14 +5,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { useUser } from "@clerk/react";
+import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Globe, Users, MapPin, Calendar, Zap, AlertCircle } from "lucide-react";
 import { Link } from "wouter";
 
 export default function OpenMatches() {
-  const { isSignedIn } = useUser();
+  const { isSignedIn } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
 

@@ -4,10 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "db:migrate": "tsx ./src/apply-migrations.ts",
     "hello": "tsx ./src/hello.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "pg": "^8.20.0"
+  },
   "devDependencies": {
+    "@types/pg": "^8.20.0",
     "@types/node": "catalog:",
     "tsx": "catalog:"
   }

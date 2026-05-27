@@ -2,7 +2,6 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
-import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
 const rawPort = process.env.PORT;
 const port = rawPort && !Number.isNaN(Number(rawPort)) && Number(rawPort) > 0
@@ -13,23 +12,11 @@ const basePath = process.env.BASE_PATH ?? "/";
 
 export default defineConfig({
   base: basePath,
+  envPrefix: ["VITE_", "NEXT_PUBLIC_", "EXPO_PUBLIC_"],
+  envDir: path.resolve(import.meta.dirname, "..", ".."),
   plugins: [
     react(),
     tailwindcss(),
-    runtimeErrorOverlay(),
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
-      ? [
-          await import("@replit/vite-plugin-cartographer").then((m) =>
-            m.cartographer({
-              root: path.resolve(import.meta.dirname, ".."),
-            }),
-          ),
-          await import("@replit/vite-plugin-dev-banner").then((m) =>
-            m.devBanner(),
-          ),
-        ]
-      : []),
   ],
   resolve: {
     alias: {
@@ -42,6 +29,19 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("@supabase")) return "supabase";
+          if (id.includes("@radix-ui")) return "radix-ui";
+          if (id.includes("react") || id.includes("wouter") || id.includes("@tanstack")) return "react-vendor";
+          if (id.includes("recharts")) return "charts";
+          if (id.includes("framer-motion")) return "motion";
+          return "vendor";
+        },
+      },
+    },
   },
   server: {
     port,

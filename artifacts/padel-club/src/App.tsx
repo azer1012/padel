@@ -1,11 +1,18 @@
 import { Switch, Route, useLocation, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { ClerkProvider, SignIn, SignUp, Show, useClerk, useUser } from '@clerk/react';
-import { shadcn } from '@clerk/themes';
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
+import { setAuthTokenGetter } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { NavLayout } from "@/components/nav-layout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { supabase } from "@/lib/supabase";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import { syncUser } from "@/lib/user-sync";
+import { getAccessToken } from "@/services/api";
+import { I18nProvider } from "@/lib/i18n";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
@@ -25,123 +32,112 @@ import Wallet from "@/pages/wallet";
 import Profile from "@/pages/profile";
 import JoinInvite from "@/pages/join-invite";
 import OpenMatches from "@/pages/open-matches";
-import { syncUser } from "@/lib/user-sync";
-import { I18nProvider } from "@/lib/i18n";
 
 const queryClient = new QueryClient();
-
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
-const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL as string | undefined;
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-function stripBase(path: string): string {
-  return basePath && path.startsWith(basePath)
-    ? path.slice(basePath.length) || "/"
-    : path;
-}
+setAuthTokenGetter(getAccessToken);
 
-if (!clerkPubKey) {
-  throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY');
-}
+function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
+  const [, setLocation] = useLocation();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-const clerkAppearance = {
-  theme: shadcn,
-  cssLayerName: "clerk",
-  options: {
-    logoPlacement: "inside" as const,
-    logoLinkUrl: basePath || "/",
-    logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
-  },
-  variables: {
-    colorPrimary: "110 100% 54%",
-    colorForeground: "0 0% 98%",
-    colorMutedForeground: "197 10% 65%",
-    colorDanger: "0 84% 60%",
-    colorBackground: "197 26% 10%",
-    colorInput: "197 26% 18%",
-    colorInputForeground: "0 0% 98%",
-    colorNeutral: "197 26% 18%",
-    fontFamily: "'Inter', sans-serif",
-    borderRadius: "0.5rem",
-  },
-  elements: {
-    rootBox: "w-full flex justify-center",
-    cardBox: "bg-card rounded-2xl w-[440px] max-w-full overflow-hidden border border-border",
-    card: "!shadow-none !border-0 !bg-transparent !rounded-none",
-    footer: "!shadow-none !border-0 !bg-transparent !rounded-none",
-    headerTitle: "text-foreground font-bold text-2xl",
-    headerSubtitle: "text-muted-foreground",
-    socialButtonsBlockButtonText: "text-foreground font-medium",
-    formFieldLabel: "text-foreground font-medium",
-    footerActionLink: "text-primary hover:text-primary/80 font-medium",
-    footerActionText: "text-muted-foreground",
-    dividerText: "text-muted-foreground",
-    identityPreviewEditButton: "text-primary",
-    formFieldSuccessText: "text-primary",
-    alertText: "text-destructive font-medium",
-    logoBox: "mb-6 flex justify-center",
-    logoImage: "h-12 w-auto",
-    socialButtonsBlockButton: "bg-secondary hover:bg-secondary/80 border-border text-foreground transition-colors",
-    formButtonPrimary: "bg-primary hover:bg-primary/90 text-primary-foreground font-bold transition-colors",
-    formFieldInput: "bg-input border-border text-foreground focus:ring-primary focus:border-primary transition-all",
-    footerAction: "flex items-center justify-center space-x-2 mt-4",
-    dividerLine: "bg-border",
-    alert: "bg-destructive/10 border-destructive text-destructive",
-    otpCodeFieldInput: "bg-input border-border text-foreground focus:ring-primary focus:border-primary transition-all",
-    formFieldRow: "mb-4",
-    main: "w-full",
-  },
-};
+  const isSignUp = mode === "sign-up";
 
-function SignInPage() {
+  const handlePasswordAuth = async (event: FormEvent) => {
+    event.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+
+    const result = isSignUp
+      ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } })
+      : await supabase.auth.signInWithPassword({ email, password });
+
+    setIsSubmitting(false);
+
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+
+    setLocation("/dashboard");
+  };
+
+  const handleOAuth = async (provider: "google" | "apple") => {
+    await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: `${window.location.origin}${basePath || ""}/dashboard` },
+    });
+  };
+
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4">
-      <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
+      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-sm">
+        <div className="mb-6 text-center">
+          <img src={`${basePath}/logo.svg`} alt="Padel Club" className="mx-auto mb-4 h-12 w-auto" />
+          <h1 className="text-2xl font-black text-foreground">{isSignUp ? "Join Padel Club" : "Welcome back"}</h1>
+          <p className="text-sm text-muted-foreground">
+            {isSignUp ? "Create your account to book courts" : "Sign in to book your next match"}
+          </p>
+        </div>
+
+        <form className="space-y-4" onSubmit={handlePasswordAuth}>
+          <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" required />
+          <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" required minLength={8} />
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <Button type="submit" className="w-full" disabled={isSubmitting}>
+            {isSubmitting ? "..." : isSignUp ? "Create account" : "Sign in"}
+          </Button>
+        </form>
+
+        <div className="my-5 flex items-center gap-3">
+          <div className="h-px flex-1 bg-border" />
+          <span className="text-xs text-muted-foreground">or</span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+
+        <div className="grid gap-2">
+          <Button variant="outline" onClick={() => handleOAuth("google")}>Continue with Google</Button>
+          <Button variant="outline" onClick={() => handleOAuth("apple")}>Continue with Apple</Button>
+        </div>
+
+        <Button
+          variant="link"
+          className="mt-4 w-full text-primary"
+          onClick={() => setLocation(isSignUp ? "/sign-in" : "/sign-up")}
+        >
+          {isSignUp ? "Already have an account? Sign in" : "Need an account? Sign up"}
+        </Button>
+      </div>
     </div>
   );
 }
 
-function SignUpPage() {
-  return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4">
-      <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} />
-    </div>
-  );
-}
-
-function ClerkQueryClientCacheInvalidator() {
-  const { addListener } = useClerk();
+function QueryClientCacheInvalidator() {
   const queryClient = useQueryClient();
-  const prevUserIdRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
-    const unsubscribe = addListener(({ user }) => {
-      const userId = user?.id ?? null;
-      if (prevUserIdRef.current !== undefined && prevUserIdRef.current !== userId) {
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT" || event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
         queryClient.clear();
       }
-      prevUserIdRef.current = userId;
     });
-    return unsubscribe;
-  }, [addListener, queryClient]);
+
+    return () => data.subscription.unsubscribe();
+  }, [queryClient]);
 
   return null;
 }
 
 function UserSyncer() {
-  const { user, isSignedIn } = useUser();
-  const syncedRef = useRef<string | null>(null);
+  const { user, isSignedIn } = useAuth();
 
   useEffect(() => {
-    if (isSignedIn && user && syncedRef.current !== user.id) {
-      syncedRef.current = user.id;
-      syncUser({
-        id: user.id,
-        primaryEmailAddress: user.primaryEmailAddress,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        imageUrl: user.imageUrl,
-      });
+    if (isSignedIn && user) {
+      syncUser(user);
     }
   }, [isSignedIn, user]);
 
@@ -149,87 +145,55 @@ function UserSyncer() {
 }
 
 function HomeRedirect() {
-  return (
-    <>
-      <Show when="signed-in">
-        <Dashboard />
-      </Show>
-      <Show when="signed-out">
-        <Home />
-      </Show>
-    </>
-  );
+  const { isSignedIn } = useAuth();
+  return isSignedIn ? <Dashboard /> : <Home />;
 }
 
-function ClerkProviderWithRoutes() {
-  const [, setLocation] = useLocation();
-
+function AppRoutes() {
   return (
-    <ClerkProvider
-      publishableKey={clerkPubKey}
-      proxyUrl={clerkProxyUrl}
-      appearance={clerkAppearance}
-      signInUrl={`${basePath}/sign-in`}
-      signUpUrl={`${basePath}/sign-up`}
-      localization={{
-        signIn: {
-          start: {
-            title: "Welcome back to Padel Club",
-            subtitle: "Sign in to book your next match",
-          },
-        },
-        signUp: {
-          start: {
-            title: "Join Padel Club",
-            subtitle: "Get access to premium courts",
-          },
-        },
-      }}
-      routerPush={(to) => setLocation(stripBase(to))}
-      routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
-    >
-      <QueryClientProvider client={queryClient}>
-        <ClerkQueryClientCacheInvalidator />
-        <UserSyncer />
-        <TooltipProvider>
-          <NavLayout>
-            <Switch>
-              <Route path="/" component={HomeRedirect} />
-              <Route path="/sign-in/*?" component={SignInPage} />
-              <Route path="/sign-up/*?" component={SignUpPage} />
-              <Route path="/dashboard" component={Dashboard} />
-              <Route path="/admin" component={AdminDashboard} />
-              <Route path="/admin/reservations" component={AdminReservations} />
-              <Route path="/admin/terrains" component={AdminTerrains} />
-              <Route path="/admin/users" component={AdminUsers} />
-              <Route path="/admin/tokens" component={AdminTokens} />
-              <Route path="/admin/news" component={AdminNews} />
-              <Route path="/admin/tournaments" component={AdminTournaments} />
-              <Route path="/terrains" component={Terrains} />
-              <Route path="/tournaments" component={Tournaments} />
-              <Route path="/news" component={News} />
-              <Route path="/contact" component={Contact} />
-              <Route path="/reservations" component={PlayerReservations} />
-              <Route path="/wallet" component={Wallet} />
-              <Route path="/profile" component={Profile} />
-              <Route path="/open-matches" component={OpenMatches} />
-              <Route path="/join/:token" component={JoinInvite} />
-              <Route component={NotFound} />
-            </Switch>
-          </NavLayout>
-          <Toaster />
-        </TooltipProvider>
-      </QueryClientProvider>
-    </ClerkProvider>
+    <QueryClientProvider client={queryClient}>
+      <QueryClientCacheInvalidator />
+      <UserSyncer />
+      <TooltipProvider>
+        <NavLayout>
+          <Switch>
+            <Route path="/" component={HomeRedirect} />
+            <Route path="/sign-in/*?" component={() => <AuthPage mode="sign-in" />} />
+            <Route path="/sign-up/*?" component={() => <AuthPage mode="sign-up" />} />
+            <Route path="/dashboard" component={Dashboard} />
+            <Route path="/admin" component={AdminDashboard} />
+            <Route path="/admin/reservations" component={AdminReservations} />
+            <Route path="/admin/terrains" component={AdminTerrains} />
+            <Route path="/admin/users" component={AdminUsers} />
+            <Route path="/admin/tokens" component={AdminTokens} />
+            <Route path="/admin/news" component={AdminNews} />
+            <Route path="/admin/tournaments" component={AdminTournaments} />
+            <Route path="/terrains" component={Terrains} />
+            <Route path="/tournaments" component={Tournaments} />
+            <Route path="/news" component={News} />
+            <Route path="/contact" component={Contact} />
+            <Route path="/reservations" component={PlayerReservations} />
+            <Route path="/wallet" component={Wallet} />
+            <Route path="/profile" component={Profile} />
+            <Route path="/open-matches" component={OpenMatches} />
+            <Route path="/join/:token" component={JoinInvite} />
+            <Route component={NotFound} />
+          </Switch>
+        </NavLayout>
+        <Toaster />
+      </TooltipProvider>
+    </QueryClientProvider>
   );
 }
 
 function App() {
   return (
     <I18nProvider>
-      <WouterRouter base={basePath}>
-        <ClerkProviderWithRoutes />
-      </WouterRouter>
+      <AuthProvider>
+        <WouterRouter base={basePath}>
+          <AppRoutes />
+        </WouterRouter>
+      </AuthProvider>
     </I18nProvider>
   );
 }

@@ -2,14 +2,9 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { env } from "./config/env";
 
-const rawPort = process.env["PORT"];
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
+const rawPort = env.port ?? "3001";
 
 const port = Number(rawPort);
 

@@ -1103,11 +1103,11 @@ components:
     # ─── Users ────────────────────────────────────────────────────────
     User:
       type: object
-      required: [id, clerkId, email, role, createdAt]
+      required: [id, supabaseAuthId, email, role, createdAt]
       properties:
         id:
           type: integer
-        clerkId:
+        supabaseAuthId:
           type: string
         email:
           type: string

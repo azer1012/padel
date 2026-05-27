@@ -9,7 +9,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { useUser } from "@clerk/react";
+import { useAuth } from "@/lib/auth";
+import { apiFetch } from "@/services/api";
 import { useI18n } from "@/lib/i18n";
 import { Calendar, Users, Zap, Clock, Link, Globe, Lock, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -261,7 +262,7 @@ function BookingModal({
     if (!slot.reservationId || !assignUserId.trim()) return;
     setIsAssigning(true);
     try {
-      const res = await fetch(`/api/reservations/${slot.reservationId}/players`, {
+      const res = await apiFetch(`/api/reservations/${slot.reservationId}/players`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: parseInt(assignUserId), paymentType: "cash", paymentStatus: "pending" }),
@@ -283,7 +284,7 @@ function BookingModal({
 
   const handleAdminBlockSlot = async () => {
     try {
-      const res = await fetch("/api/admin/slots/block", {
+      const res = await apiFetch("/api/admin/slots/block", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ terrainId: terrain.id, startTime: slot.startTime, reason: "Maintenance" }),
@@ -599,7 +600,7 @@ export default function CourtCalendar({
 }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [modal, setModal] = useState<BookingModal>(null);
-  const { isSignedIn } = useUser();
+  const { isSignedIn } = useAuth();
 
   // Week: today + offset*7 → today + offset*7 + 6
   const weekStart = useMemo(() => getWeekStart(weekOffset), [weekOffset]);
