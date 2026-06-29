@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { Redirect } from "wouter";
 import { syncUser } from "@/lib/user-sync";
 import { getAccessToken } from "@/services/api";
 import { I18nProvider } from "@/lib/i18n";
@@ -149,6 +150,28 @@ function HomeRedirect() {
   return isSignedIn ? <Dashboard /> : <Home />;
 }
 
+function AdminRoute({ component: Component }: { component: React.ComponentType<any> }) {
+  const { user, isSignedIn, isLoaded } = useAuth();
+  
+  if (!isLoaded) return null;
+  if (!isSignedIn || user?.role !== "admin") {
+    return <Redirect to="/" />;
+  }
+  
+  return <Component />;
+}
+
+function ProtectedRoute({ component: Component }: { component: React.ComponentType<any> }) {
+  const { isSignedIn, isLoaded } = useAuth();
+  
+  if (!isLoaded) return null;
+  if (!isSignedIn) {
+    return <Redirect to="/sign-in" />;
+  }
+  
+  return <Component />;
+}
+
 function AppRoutes() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -160,14 +183,45 @@ function AppRoutes() {
             <Route path="/" component={HomeRedirect} />
             <Route path="/sign-in/*?" component={() => <AuthPage mode="sign-in" />} />
             <Route path="/sign-up/*?" component={() => <AuthPage mode="sign-up" />} />
-            <Route path="/dashboard" component={Dashboard} />
-            <Route path="/admin" component={AdminDashboard} />
-            <Route path="/admin/reservations" component={AdminReservations} />
-            <Route path="/admin/terrains" component={AdminTerrains} />
-            <Route path="/admin/users" component={AdminUsers} />
-            <Route path="/admin/tokens" component={AdminTokens} />
-            <Route path="/admin/news" component={AdminNews} />
-            <Route path="/admin/tournaments" component={AdminTournaments} />
+            
+            {/* Protected Player Routes */}
+            <Route path="/dashboard">
+              <ProtectedRoute component={Dashboard} />
+            </Route>
+            <Route path="/reservations">
+              <ProtectedRoute component={PlayerReservations} />
+            </Route>
+            <Route path="/wallet">
+              <ProtectedRoute component={Wallet} />
+            </Route>
+            <Route path="/profile">
+              <ProtectedRoute component={Profile} />
+            </Route>
+            
+            {/* Protected Admin Routes */}
+            <Route path="/admin">
+              <AdminRoute component={AdminDashboard} />
+            </Route>
+            <Route path="/admin/reservations">
+              <AdminRoute component={AdminReservations} />
+            </Route>
+            <Route path="/admin/terrains">
+              <AdminRoute component={AdminTerrains} />
+            </Route>
+            <Route path="/admin/users">
+              <AdminRoute component={AdminUsers} />
+            </Route>
+            <Route path="/admin/tokens">
+              <AdminRoute component={AdminTokens} />
+            </Route>
+            <Route path="/admin/news">
+              <AdminRoute component={AdminNews} />
+            </Route>
+            <Route path="/admin/tournaments">
+              <AdminRoute component={AdminTournaments} />
+            </Route>
+            
+            {/* Public Routes */}
             <Route path="/terrains" component={Terrains} />
             <Route path="/tournaments" component={Tournaments} />
             <Route path="/news" component={News} />

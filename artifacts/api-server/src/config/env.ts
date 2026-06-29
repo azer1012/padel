@@ -26,13 +26,17 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.string().optional(),
   DATABASE_URL: z.string().min(1),
-  VITE_SUPABASE_URL: z.string().url(),
-  VITE_SUPABASE_ANON_KEY: z.string().min(1),
+  SUPABASE_URL: z.string().url(),
+  SUPABASE_ANON_KEY: z.string().min(1),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   CORS_ORIGIN: z.string().default("*"),
   FRONTEND_URL: z.string().optional(),
   LOG_LEVEL: z.string().optional(),
 });
+
+// Normalize environment variables
+process.env.SUPABASE_URL ||= process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
+process.env.SUPABASE_ANON_KEY ||= process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 const parsed = envSchema.parse(process.env);
 
@@ -40,8 +44,8 @@ export const env = {
   nodeEnv: parsed.NODE_ENV,
   port: parsed.PORT,
   databaseUrl: parsed.DATABASE_URL,
-  supabaseUrl: parsed.VITE_SUPABASE_URL,
-  supabaseAnonKey: parsed.VITE_SUPABASE_ANON_KEY,
+  supabaseUrl: parsed.SUPABASE_URL,
+  supabaseAnonKey: parsed.SUPABASE_ANON_KEY,
   supabaseServiceRoleKey: parsed.SUPABASE_SERVICE_ROLE_KEY,
   corsOrigin: parsed.CORS_ORIGIN === "*" ? true : parsed.CORS_ORIGIN.split(",").map((origin: string) => origin.trim()),
   frontendUrl: parsed.FRONTEND_URL,

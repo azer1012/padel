@@ -4,9 +4,9 @@
   "license": "MIT",
   "scripts": {
     "preinstall": "node -e \"const fs=require('node:fs'); for (const file of ['package-lock.json','yarn.lock']) fs.rmSync(file,{force:true}); const ua=process.env.npm_config_user_agent||''; if (ua && !ua.includes('pnpm')) console.warn('This workspace is intended for pnpm.');\"",
-    "build": "corepack pnpm run typecheck && corepack pnpm -r --if-present run build",
+    "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
-    "typecheck": "corepack pnpm run typecheck:libs && corepack pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
   "devDependencies": {

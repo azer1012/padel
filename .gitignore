@@ -49,3 +49,32 @@ Thumbs.db
 
 .cache/
 .local/
+
+# Replit artifacts
+.replit-artifact
+
+# Lock files (use pnpm)
+pnpm-lock.yaml
+yarn.lock
+package-lock.json
+
+# Build
+.turbo
+.next
+build/
+out/
+
+# Testing
+.nyc_output
+
+# Logs
+logs
+*.log
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary
+tmp/
+temp/
+*.tmp

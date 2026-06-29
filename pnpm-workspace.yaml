@@ -28,7 +28,8 @@
 minimumReleaseAge: 1440
 
 packages:
-  - artifacts/*
+  - artifacts/api-server
+  - artifacts/padel-club
   - lib/*
   - lib/integrations/*
   - scripts
