@@ -1,8 +1,8 @@
-import * as React from "react"
-import { Slot } from "@radix-ui/react-slot"
-import { cva, type VariantProps } from "class-variance-authority"
+import * as React from "react";
+import { Slot } from "@radix-ui/react-slot";
+import { cva, type VariantProps } from "class-variance-authority";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 /**
  * Smash Padel button language.
@@ -15,20 +15,16 @@ const buttonVariants = cva(
       variant: {
         default:
           "bg-court text-white [--fill:var(--color-court-deep)] shadow-[0_12px_28px_-14px_rgb(46_76_246/.9)] hover:shadow-[0_18px_36px_-16px_rgb(46_76_246/1)]",
-        lime:
-          "bg-ball text-night [--fill:#fff] hover:shadow-[0_18px_40px_-18px_rgb(221_247_74/.8)]",
-        dark:
-          "bg-ink text-white [--fill:var(--color-court)]",
-        destructive:
-          "bg-destructive text-destructive-foreground [--fill:#C9353A]",
+        lime: "bg-ball text-night [--fill:#fff] hover:shadow-[0_18px_40px_-18px_rgb(221_247_74/.8)]",
+        dark: "bg-ink text-white [--fill:var(--color-court)]",
+        destructive: "bg-destructive text-destructive-foreground [--fill:#C9353A]",
         outline:
           "bg-transparent text-foreground shadow-[inset_0_0_0_1.5px_rgb(16_26_77/.2)] [--fill:var(--color-ink)] hover:text-white hover:shadow-[inset_0_0_0_1.5px_var(--color-ink)]",
         "outline-dark":
           "bg-transparent text-white shadow-[inset_0_0_0_1.5px_rgb(255_255_255/.35)] [--fill:rgb(255_255_255/.12)] hover:shadow-[inset_0_0_0_1.5px_#fff]",
         "outline-destructive":
           "bg-transparent text-destructive shadow-[inset_0_0_0_1.5px_hsl(var(--destructive)/.4)] [--fill:hsl(var(--destructive)/.1)]",
-        secondary:
-          "bg-secondary text-secondary-foreground [--fill:#DCE2F8]",
+        secondary: "bg-secondary text-secondary-foreground [--fill:#DCE2F8]",
         ghost: "bg-transparent hover:translate-y-0 hover:bg-foreground/5",
         link: "rounded-none text-primary underline-offset-4 hover:translate-y-0 hover:underline",
       },
@@ -45,27 +41,22 @@ const buttonVariants = cva(
       variant: "default",
       size: "default",
     },
-  }
-)
+  },
+);
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {
-  asChild?: boolean
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
+  asChild?: boolean;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button"
+    const Comp = asChild ? Slot : "button";
     return (
-      <Comp
-        className={cn(buttonVariants({ variant, size, className }))}
-        ref={ref}
-        {...props}
-      />
-    )
-  }
-)
-Button.displayName = "Button"
+      <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
+    );
+  },
+);
+Button.displayName = "Button";
 
-export { Button, buttonVariants }
+export { Button, buttonVariants };

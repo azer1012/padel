@@ -75,7 +75,9 @@ function HomeRedirect() {
 }
 
 const RouteLoader = () => (
-  <div className="flex min-h-[60vh] items-center justify-center" aria-busy="true"><span className="live-dot" /></div>
+  <div className="flex min-h-[60vh] items-center justify-center" aria-busy="true">
+    <span className="live-dot" />
+  </div>
 );
 
 /**
@@ -107,7 +109,7 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   if (!isSignedIn) {
     return <Redirect to={`/sign-in?redirect=${encodeURIComponent(location)}`} />;
   }
-  
+
   return <Component />;
 }
 
@@ -122,7 +124,7 @@ function AppRoutes() {
             <Route path="/" component={HomeRedirect} />
             <Route path="/sign-in/*?" component={() => <AuthPage mode="sign-in" />} />
             <Route path="/sign-up/*?" component={() => <AuthPage mode="sign-up" />} />
-            
+
             {/* Protected Player Routes */}
             <Route path="/dashboard">
               <ProtectedRoute component={Dashboard} />
@@ -136,7 +138,7 @@ function AppRoutes() {
             <Route path="/profile">
               <ProtectedRoute component={Profile} />
             </Route>
-            
+
             {/* Protected Admin Routes */}
             <Route path="/admin">
               <AdminRoute component={AdminDashboard} />
@@ -159,7 +161,7 @@ function AppRoutes() {
             <Route path="/admin/tournaments">
               <AdminRoute component={AdminTournaments} />
             </Route>
-            
+
             {/* Public Routes */}
             <Route path="/terrains" component={Terrains} />
             <Route path="/tournaments" component={Tournaments} />

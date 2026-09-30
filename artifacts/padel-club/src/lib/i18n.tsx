@@ -159,9 +159,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const t = (key: TranslationKey): string => translations[lang][key] ?? translations.en[key];
 
   return (
-    <I18nContext.Provider value={{ lang, setLang, t, isRTL }}>
-      {children}
-    </I18nContext.Provider>
+    <I18nContext.Provider value={{ lang, setLang, t, isRTL }}>{children}</I18nContext.Provider>
   );
 }
 

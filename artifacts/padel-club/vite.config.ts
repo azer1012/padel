@@ -4,9 +4,8 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
 const rawPort = process.env.PORT;
-const port = rawPort && !Number.isNaN(Number(rawPort)) && Number(rawPort) > 0
-  ? Number(rawPort)
-  : 3000;
+const port =
+  rawPort && !Number.isNaN(Number(rawPort)) && Number(rawPort) > 0 ? Number(rawPort) : 3000;
 
 const basePath = process.env.BASE_PATH ?? "/";
 
@@ -14,10 +13,7 @@ export default defineConfig({
   base: basePath,
   envPrefix: ["VITE_", "NEXT_PUBLIC_", "EXPO_PUBLIC_"],
   envDir: path.resolve(import.meta.dirname, "..", ".."),
-  plugins: [
-    react(),
-    tailwindcss(),
-  ],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
@@ -33,10 +29,20 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
-          if (/recharts|react-smooth|\/d3-|victory-vendor|decimal\.js-light|internmap|react-transition-group|dom-helpers/.test(id)) return "charts";
+          if (
+            /recharts|react-smooth|\/d3-|victory-vendor|decimal\.js-light|internmap|react-transition-group|dom-helpers/.test(
+              id,
+            )
+          )
+            return "charts";
           if (id.includes("@supabase")) return "supabase";
           if (id.includes("@radix-ui")) return "radix-ui";
-          if (/node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?(react|react-dom|scheduler|wouter|@tanstack|use-sync-external-store|regexparam)\//.test(id)) return "react-vendor";
+          if (
+            /node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?(react|react-dom|scheduler|wouter|@tanstack|use-sync-external-store|regexparam)\//.test(
+              id,
+            )
+          )
+            return "react-vendor";
           if (id.includes("framer-motion")) return "motion";
           return "vendor";
         },
