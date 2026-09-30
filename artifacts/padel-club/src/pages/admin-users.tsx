@@ -1,285 +1,66 @@
-import { useState } from "react";
-import {
-  useListUsers,
-  useGetUser,
-  useAdjustUserTokens,
-  useListAllTokenTransactions,
-  getListUsersQueryKey,
-  getGetUserQueryKey,
-  getListAllTokenTransactionsQueryKey,
-} from "@workspace/api-client-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Page, PageHeader } from "@/components/smash/primitives";
-import { useTx } from "@/lib/i18n";
-import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
-import { ArrowLeft, Coins, Search } from "lucide-react";
+import { useEffect, useState } from "react";
 import { format } from "date-fns";
+import { useListUsers, getListUsersQueryKey } from "@workspace/api-client-react";
+import type { User } from "@workspace/api-client-react";
+import { Coins, Users as UsersIcon, Mail, Phone } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Avatar, Page, PageHeader } from "@/components/smash/primitives";
+import { DataTable, Pagination, Pill, SearchInput, Toolbar, displayName, type Column } from "@/components/smash/admin";
+import { TokenAdjustDialog } from "@/components/smash/token-adjust";
+import { useTx, useDateLocale } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
+
+const PAGE = 20;
 
 export default function AdminUsers() {
   const tx = useTx();
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
+  const locale = useDateLocale();
   const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
-  const [tokenOpen, setTokenOpen] = useState(false);
-  const [tokenForm, setTokenForm] = useState({
-    amount: "",
-    type: "credit",
-    description: "",
-    notes: "",
-  });
+  const [tokenUser, setTokenUser] = useState<number | null>(null);
 
-  const params: Record<string, any> = { page, limit: 20 };
-  if (search) params.search = search;
+  // Debounce so we don't hit the API on every keystroke
+  useEffect(() => { const t = setTimeout(() => { setQuery(search.trim()); setPage(1); }, 300); return () => clearTimeout(t); }, [search]);
 
-  const { data, isLoading } = useListUsers(params, {
-    query: { queryKey: getListUsersQueryKey(params) },
-  });
-  const { data: selectedUser } = useGetUser(selectedUserId!, {
-    query: { enabled: !!selectedUserId, queryKey: getGetUserQueryKey(selectedUserId!) },
-  });
-  const adjustMutation = useAdjustUserTokens();
+  const params: Record<string, any> = { page, limit: PAGE };
+  if (query) params.search = query;
+  const { data, isLoading } = useListUsers(params, { query: { queryKey: getListUsersQueryKey(params) } });
 
-  function openTokenDialog(userId: number) {
-    setSelectedUserId(userId);
-    setTokenForm({ amount: "", type: "credit", description: "", notes: "" });
-    setTokenOpen(true);
-  }
-
-  function handleAdjust() {
-    if (!selectedUserId || !tokenForm.amount || !tokenForm.description) {
-      toast({ title: "Please fill all required fields", variant: "destructive" });
-      return;
-    }
-    adjustMutation.mutate(
-      {
-        data: {
-          userId: selectedUserId,
-          amount: parseInt(tokenForm.amount),
-          type: tokenForm.type as any,
-          description: tokenForm.description,
-          notes: tokenForm.notes || undefined,
-        },
-      },
-      {
-        onSuccess: () => {
-          toast({ title: `Tokens ${tokenForm.type}ed successfully` });
-          setTokenOpen(false);
-          queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getGetUserQueryKey(selectedUserId!) });
-        },
-        onError: () => toast({ title: "Error adjusting tokens", variant: "destructive" }),
-      },
-    );
-  }
+  const columns: Column<User>[] = [
+    { key: "member", header: tx({ fr: "Membre", en: "Member", ar: "العضو" }), cell: (u) => (
+      <span className="flex items-center gap-3">
+        <Avatar name={displayName(u)} index={u.id} size={40} />
+        <span className="flex min-w-0 flex-col">
+          <span className="flex items-center gap-2 truncate font-bold">{displayName(u)}{u.role === "admin" && <Pill tone="court" className="h-6">Admin</Pill>}</span>
+          <span className="flex items-center gap-1.5 truncate text-xs text-muted-foreground"><Mail className="size-3" />{u.email}</span>
+        </span>
+      </span>
+    ) },
+    { key: "phone", header: tx({ fr: "Téléphone", en: "Phone", ar: "الهاتف" }), hideBelow: "lg", cell: (u) => u.phone ? <a href={`tel:${u.phone}`} className="ulink flex items-center gap-1.5 text-sm" dir="ltr"><Phone className="size-3.5" />{u.phone}</a> : <span className="text-muted-foreground">—</span> },
+    { key: "joined", header: tx({ fr: "Membre depuis", en: "Joined", ar: "انضم" }), hideBelow: "md", cell: (u) => <span className="text-sm text-muted-foreground">{format(new Date(u.createdAt), "d MMM yyyy", { locale })}</span> },
+    { key: "balance", header: "Tokens", cell: (u) => {
+      const b = u.tokenBalance ?? 0;
+      return <span className={cn("inline-flex h-8 min-w-12 items-center justify-center gap-1.5 rounded-full px-3 text-sm font-extrabold", b === 0 ? "bg-[#FDE4E4] text-[#A3262B]" : b < 4 ? "bg-[#FFEBD9] text-[#9A4A12]" : "bg-ball text-night")}><Coins className="size-3.5" />{b}</span>;
+    } },
+    { key: "actions", header: <span className="sr-only">Actions</span>, align: "end", cell: (u) => (
+      <Button data-testid={`btn-manage-tokens-${u.id}`} variant="outline" size="sm" onClick={() => setTokenUser(u.id)}>
+        <Coins />{tx({ fr: "Tokens", en: "Tokens", ar: "الرصيد" })}
+      </Button>
+    ) },
+  ];
 
   return (
     <Page wide>
-      <PageHeader
-        eyebrow="Admin"
-        title={tx({ fr: "Membres", en: "Members", ar: "الأعضاء" })}
-        subtitle={tx({
-          fr: "Les joueurs du club et leurs soldes de tokens.",
-          en: "Club players and their token balances.",
-          ar: "لاعبو النادي وأرصدتهم.",
-        })}
-      />
-
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          data-testid="input-user-search"
-          placeholder="Search by name or email..."
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1);
-          }}
-          className="pl-9 bg-card border-border"
-        />
-      </div>
-
-      {isLoading ? (
-        <div className="space-y-2">
-          {[...Array(5)].map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full" />
-          ))}
-        </div>
-      ) : (
-        <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border bg-mist">
-                <tr>
-                  <th className="text-left p-4 font-medium text-muted-foreground">User</th>
-                  <th className="text-left p-4 font-medium text-muted-foreground">Role</th>
-                  <th className="text-left p-4 font-medium text-muted-foreground">Tokens</th>
-                  <th className="text-left p-4 font-medium text-muted-foreground">Joined</th>
-                  <th className="text-right p-4 font-medium text-muted-foreground">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data?.data?.map((u) => (
-                  <tr
-                    key={u.id}
-                    data-testid={`row-user-${u.id}`}
-                    className="border-b border-border/50 hover:bg-muted/10 transition-colors"
-                  >
-                    <td className="p-4">
-                      <div className="font-medium">
-                        {u.firstName || u.lastName
-                          ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim()
-                          : "—"}
-                      </div>
-                      <div className="text-xs text-muted-foreground">{u.email}</div>
-                    </td>
-                    <td className="p-4">
-                      <Badge
-                        variant="outline"
-                        className={`text-xs ${u.role === "admin" ? "border-primary/30 text-primary" : "border-border text-muted-foreground"}`}
-                      >
-                        {u.role}
-                      </Badge>
-                    </td>
-                    <td className="p-4">
-                      <span className="font-bold text-primary text-lg">{u.tokenBalance}</span>
-                    </td>
-                    <td className="p-4 text-muted-foreground text-xs">
-                      {format(new Date(u.createdAt), "MMM d, yyyy")}
-                    </td>
-                    <td className="p-4 text-right">
-                      <Button
-                        data-testid={`btn-manage-tokens-${u.id}`}
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openTokenDialog(u.id)}
-                      >
-                        <Coins className="h-3 w-3 mr-1" /> Tokens
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-                {!data?.data?.length && (
-                  <tr>
-                    <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                      No users found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          {data && data.total > 20 && (
-            <div className="flex justify-between items-center p-4 border-t border-border">
-              <span className="text-sm text-muted-foreground">{data.total} total users</span>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                >
-                  Prev
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => p + 1)}
-                  disabled={page * 20 >= data.total}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          )}
-        </Card>
-      )}
-
-      <Dialog open={tokenOpen} onOpenChange={setTokenOpen}>
-        <DialogContent className="max-w-[560px]">
-          <DialogHeader>
-            <DialogTitle>Manage Tokens — {selectedUser?.email}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-1 mb-4">
-            <p className="text-sm text-muted-foreground">Current balance</p>
-            <p className="text-3xl font-black text-primary">{selectedUser?.tokenBalance ?? 0}</p>
-          </div>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Amount</Label>
-                <Input
-                  data-testid="input-token-amount"
-                  type="number"
-                  min="1"
-                  value={tokenForm.amount}
-                  onChange={(e) => setTokenForm((f) => ({ ...f, amount: e.target.value }))}
-                  placeholder="e.g. 4"
-                />
-              </div>
-              <div>
-                <Label>Type</Label>
-                <Select
-                  value={tokenForm.type}
-                  onValueChange={(v) => setTokenForm((f) => ({ ...f, type: v }))}
-                >
-                  <SelectTrigger data-testid="select-token-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="credit">Credit (add)</SelectItem>
-                    <SelectItem value="debit">Debit (remove)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div>
-              <Label>Description *</Label>
-              <Input
-                data-testid="input-token-description"
-                value={tokenForm.description}
-                onChange={(e) => setTokenForm((f) => ({ ...f, description: e.target.value }))}
-                placeholder="e.g. Cash payment — 100 TND"
-              />
-            </div>
-            <div>
-              <Label>Notes (optional)</Label>
-              <Input
-                value={tokenForm.notes}
-                onChange={(e) => setTokenForm((f) => ({ ...f, notes: e.target.value }))}
-                placeholder="Internal notes"
-              />
-            </div>
-            <Button
-              data-testid="btn-confirm-tokens"
-              onClick={handleAdjust}
-              disabled={adjustMutation.isPending}
-              className="w-full"
-              size="lg"
-            >
-              {adjustMutation.isPending
-                ? "Processing..."
-                : `${tokenForm.type === "credit" ? "Add" : "Remove"} Tokens`}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <PageHeader eyebrow="Admin" title={tx({ fr: "Membres", en: "Members", ar: "الأعضاء" })}
+        subtitle={data ? tx({ fr: `${data.total} joueur(s) inscrit(s). Recherchez un membre pour gérer ses tokens.`, en: `${data.total} registered player(s). Find a member to manage their tokens.`, ar: `${data.total} لاعب مسجل.` }) : undefined} />
+      <Toolbar>
+        <SearchInput value={search} onChange={setSearch} placeholder={tx({ fr: "Nom ou email…", en: "Name or email…", ar: "الاسم أو البريد…" })} />
+      </Toolbar>
+      <DataTable caption={tx({ fr: "Membres", en: "Members", ar: "الأعضاء" })} columns={columns} rows={data?.data} loading={isLoading} rowKey={(u) => u.id} rowTestId={(u) => `row-user-${u.id}`}
+        empty={<span className="flex flex-col items-center gap-2 text-muted-foreground"><UsersIcon className="size-8" />{query ? tx({ fr: `Aucun membre pour « ${query} ».`, en: `No member matches “${query}”.`, ar: `لا عضو يطابق «${query}».` }) : tx({ fr: "Aucun membre pour l'instant.", en: "No members yet.", ar: "لا أعضاء بعد." })}</span>}
+        footer={data && <Pagination page={page} pageSize={PAGE} total={data.total} onPage={setPage} />} />
+      <TokenAdjustDialog open={tokenUser !== null} onOpenChange={(o) => !o && setTokenUser(null)} userId={tokenUser} />
     </Page>
   );
 }

@@ -1,337 +1,149 @@
 import { useState } from "react";
-import {
-  useListTerrains,
-  useCreateTerrain,
-  useUpdateTerrain,
-  useDeleteTerrain,
-  getListTerrainsQueryKey,
-} from "@workspace/api-client-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { useListTerrains, useCreateTerrain, useUpdateTerrain, useDeleteTerrain, getListTerrainsQueryKey } from "@workspace/api-client-react";
+import type { Terrain } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Plus, Pencil, Trash2, Clock, Users, Sun, Warehouse, LandPlot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Page, PageHeader } from "@/components/smash/primitives";
-import { useTx } from "@/lib/i18n";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { CourtLines, EmptyState, Page, PageHeader } from "@/components/smash/primitives";
+import { Field, Pill, Segmented, useConfirm } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
-import { ArrowLeft, Plus, Pencil, Trash2 } from "lucide-react";
+import { useTx } from "@/lib/i18n";
+import { CLUB } from "@/config/club";
+import { cn } from "@/lib/utils";
 
-type TerrainForm = {
-  name: string;
-  description: string;
-  type: string;
-  pricePerPerson: string;
-  capacity: string;
-  openingTime: string;
-  closingTime: string;
-};
-const defaultForm: TerrainForm = {
-  name: "",
-  description: "",
-  type: "indoor",
-  pricePerPerson: "25",
-  capacity: "4",
-  openingTime: "08:00",
-  closingTime: "23:00",
-};
+type Form = { name: string; description: string; type: "indoor" | "outdoor"; pricePerPerson: string; capacity: string; openingTime: string; closingTime: string };
+const blank: Form = { name: "", description: "", type: "indoor", pricePerPerson: "25", capacity: "4", openingTime: "08:00", closingTime: "23:00" };
 
 export default function AdminTerrains() {
   const tx = useTx();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
+  const { confirm, dialog } = useConfirm();
   const { data: terrains, isLoading } = useListTerrains();
   const createMutation = useCreateTerrain();
   const updateMutation = useUpdateTerrain();
   const deleteMutation = useDeleteTerrain();
+  const [editing, setEditing] = useState<Terrain | "new" | null>(null);
+  const [form, setForm] = useState<Form>(blank);
+  const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const refresh = () => qc.invalidateQueries({ queryKey: getListTerrainsQueryKey() });
+  const saving = createMutation.isPending || updateMutation.isPending;
 
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editId, setEditId] = useState<number | null>(null);
-  const [form, setForm] = useState<TerrainForm>(defaultForm);
+  const openCreate = () => { setForm(blank); setEditing("new"); };
+  const openEdit = (t: Terrain) => {
+    setForm({ name: t.name, description: t.description ?? "", type: t.type as Form["type"], pricePerPerson: String(t.pricePerPerson), capacity: String(t.capacity), openingTime: t.openingTime ?? "08:00", closingTime: t.closingTime ?? "23:00" });
+    setEditing(t);
+  };
 
-  function openCreate() {
-    setForm(defaultForm);
-    setCreateOpen(true);
+  function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim()) { toast({ title: tx({ fr: "Donnez un nom au terrain", en: "Give the court a name", ar: "أدخل اسم الملعب" }), variant: "destructive" }); return; }
+    const payload = { name: form.name.trim(), description: form.description, type: form.type, pricePerPerson: parseFloat(form.pricePerPerson), capacity: parseInt(form.capacity), openingTime: form.openingTime, closingTime: form.closingTime };
+    const done = (msg: string) => () => { toast({ title: msg }); setEditing(null); refresh(); };
+    const fail = (e: any) => toast({ title: tx({ fr: "Enregistrement impossible", en: "Couldn't save", ar: "تعذر الحفظ" }), description: e?.data?.error, variant: "destructive" });
+    if (editing && editing !== "new") updateMutation.mutate({ id: editing.id, data: payload as any }, { onSuccess: done(tx({ fr: "Terrain mis à jour", en: "Court updated", ar: "تم تحديث الملعب" })), onError: fail });
+    else createMutation.mutate({ data: payload as any }, { onSuccess: done(tx({ fr: "Terrain ajouté", en: "Court added", ar: "تمت إضافة الملعب" })), onError: fail });
   }
-  function openEdit(t: any) {
-    setEditId(t.id);
-    setForm({
-      name: t.name,
-      description: t.description ?? "",
-      type: t.type,
-      pricePerPerson: String(t.pricePerPerson),
-      capacity: String(t.capacity),
-      openingTime: t.openingTime,
-      closingTime: t.closingTime,
+
+  function handleToggle(t: Terrain) {
+    updateMutation.mutate({ id: t.id, data: { isActive: !t.isActive } }, {
+      onSuccess: () => { refresh(); toast({ title: t.isActive ? tx({ fr: `${t.name} fermé à la réservation`, en: `${t.name} closed to bookings`, ar: `${t.name} مغلق للحجز` }) : tx({ fr: `${t.name} ouvert à la réservation`, en: `${t.name} open for bookings`, ar: `${t.name} مفتوح للحجز` }) }); },
     });
   }
-  function handleSave() {
-    const payload = {
-      name: form.name,
-      description: form.description,
-      type: form.type as any,
-      pricePerPerson: parseFloat(form.pricePerPerson),
-      capacity: parseInt(form.capacity),
-      openingTime: form.openingTime,
-      closingTime: form.closingTime,
-    };
-    if (editId) {
-      updateMutation.mutate(
-        { id: editId, data: payload },
-        {
-          onSuccess: () => {
-            toast({ title: "Terrain updated" });
-            setEditId(null);
-            queryClient.invalidateQueries({ queryKey: getListTerrainsQueryKey() });
-          },
-          onError: () => toast({ title: "Error updating", variant: "destructive" }),
-        },
-      );
-    } else {
-      createMutation.mutate(
-        { data: payload },
-        {
-          onSuccess: () => {
-            toast({ title: "Terrain created" });
-            setCreateOpen(false);
-            queryClient.invalidateQueries({ queryKey: getListTerrainsQueryKey() });
-          },
-          onError: () => toast({ title: "Error creating", variant: "destructive" }),
-        },
-      );
-    }
-  }
-  function handleToggle(t: any) {
-    updateMutation.mutate(
-      { id: t.id, data: { isActive: !t.isActive } },
-      {
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: getListTerrainsQueryKey() }),
-      },
-    );
-  }
-  function handleDelete(id: number) {
-    if (!confirm("Delete this terrain?")) return;
-    deleteMutation.mutate(
-      { id },
-      {
-        onSuccess: () => {
-          toast({ title: "Terrain deleted" });
-          queryClient.invalidateQueries({ queryKey: getListTerrainsQueryKey() });
-        },
-      },
-    );
+
+  async function handleDelete(t: Terrain) {
+    const ok = await confirm({
+      title: tx({ fr: `Supprimer ${t.name} ?`, en: `Delete ${t.name}?`, ar: `حذف ${t.name}؟` }),
+      description: tx({ fr: "Pour une fermeture temporaire, désactivez plutôt le terrain : l'historique est conservé.", en: "For a temporary closure, switch the court off instead: history is kept.", ar: "للإغلاق المؤقت، عطّل الملعب بدلًا من ذلك." }),
+      confirmLabel: tx({ fr: "Supprimer", en: "Delete", ar: "حذف" }), destructive: true,
+    });
+    if (!ok) return;
+    deleteMutation.mutate({ id: t.id }, {
+      onSuccess: () => { toast({ title: tx({ fr: "Terrain supprimé", en: "Court deleted", ar: "تم حذف الملعب" }) }); refresh(); },
+      onError: (e: any) => toast({ title: tx({ fr: "Suppression impossible", en: "Couldn't delete", ar: "تعذر الحذف" }), description: e?.data?.error, variant: "destructive" }),
+    });
   }
 
-  const formFields = (
-    <div className="space-y-4">
-      <div>
-        <Label>Name</Label>
-        <Input
-          data-testid="input-terrain-name"
-          value={form.name}
-          onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          placeholder="Court A"
-        />
-      </div>
-      <div>
-        <Label>Description</Label>
-        <Input
-          value={form.description}
-          onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-          placeholder="Description (optional)"
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label>Type</Label>
-          <Select value={form.type} onValueChange={(v) => setForm((f) => ({ ...f, type: v }))}>
-            <SelectTrigger data-testid="select-terrain-type">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="indoor">Indoor</SelectItem>
-              <SelectItem value="outdoor">Outdoor</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label>Capacity</Label>
-          <Input
-            type="number"
-            value={form.capacity}
-            onChange={(e) => setForm((f) => ({ ...f, capacity: e.target.value }))}
-          />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label>Opening Time</Label>
-          <Input
-            type="time"
-            value={form.openingTime}
-            onChange={(e) => setForm((f) => ({ ...f, openingTime: e.target.value }))}
-          />
-        </div>
-        <div>
-          <Label>Closing Time</Label>
-          <Input
-            type="time"
-            value={form.closingTime}
-            onChange={(e) => setForm((f) => ({ ...f, closingTime: e.target.value }))}
-          />
-        </div>
-      </div>
-      <div>
-        <Label>Price per person (TND)</Label>
-        <Input
-          type="number"
-          value={form.pricePerPerson}
-          onChange={(e) => setForm((f) => ({ ...f, pricePerPerson: e.target.value }))}
-        />
-      </div>
-      <Button
-        data-testid="btn-save-terrain"
-        onClick={handleSave}
-        disabled={createMutation.isPending || updateMutation.isPending}
-        className="w-full"
-        size="lg"
-      >
-        {createMutation.isPending || updateMutation.isPending ? "Saving..." : "Save Terrain"}
-      </Button>
-    </div>
-  );
+  const active = (terrains ?? []).filter((t) => t.isActive).length;
 
   return (
     <Page wide>
-      <PageHeader
-        eyebrow="Admin"
-        title={tx({ fr: "Terrains", en: "Courts", ar: "الملاعب" })}
-        subtitle={tx({
-          fr: "Vos terrains, horaires et prix.",
-          en: "Your courts, hours and prices.",
-          ar: "ملاعبك وأوقاتها وأسعارها.",
-        })}
-        actions={
-          <>
-            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-              <DialogTrigger asChild>
-                <Button data-testid="btn-create-terrain" onClick={openCreate}>
-                  <Plus /> Add Terrain
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-[560px]">
-                <DialogHeader>
-                  <DialogTitle>New Terrain</DialogTitle>
-                </DialogHeader>
-                {formFields}
-              </DialogContent>
-            </Dialog>
-          </>
-        }
-      />
+      <PageHeader eyebrow="Admin" title={tx({ fr: "Terrains", en: "Courts", ar: "الملاعب" })}
+        subtitle={terrains ? tx({ fr: `${active} terrain(s) ouverts sur ${terrains.length}. Prix, horaires et disponibilité.`, en: `${active} of ${terrains.length} courts open. Prices, hours and availability.`, ar: `${active} من ${terrains.length} ملاعب مفتوحة.` }) : undefined}
+        actions={<Button data-testid="btn-create-terrain" onClick={openCreate}><Plus />{tx({ fr: "Ajouter un terrain", en: "Add a court", ar: "إضافة ملعب" })}</Button>} />
 
       {isLoading ? (
-        <div className="grid gap-4">
-          {[...Array(3)].map((_, i) => (
-            <Skeleton key={i} className="h-24 w-full" />
-          ))}
-        </div>
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-[300px] !rounded-[30px]" />)}</div>
+      ) : !terrains?.length ? (
+        <EmptyState icon={<LandPlot className="size-7" />} title={tx({ fr: "Aucun terrain", en: "No courts yet", ar: "لا ملاعب بعد" })} text={tx({ fr: "Ajoutez votre premier terrain pour ouvrir les réservations.", en: "Add your first court to open bookings.", ar: "أضف ملعبك الأول لفتح الحجوزات." })}
+          action={<Button onClick={openCreate}><Plus />{tx({ fr: "Ajouter un terrain", en: "Add a court", ar: "إضافة ملعب" })}</Button>} />
       ) : (
-        <div className="grid gap-4">
-          {terrains?.map((t) => (
-            <Card key={t.id} data-testid={`card-terrain-${t.id}`} className="bg-card border-border">
-              <CardContent className="pt-4 flex items-center gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3">
-                    <span className="font-bold text-lg">{t.name}</span>
-                    <Badge variant="outline" className="text-xs capitalize border-border">
-                      {t.type}
-                    </Badge>
-                    {!t.isActive && (
-                      <Badge variant="outline" className="text-xs text-muted-foreground">
-                        Inactive
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {t.openingTime}–{t.closingTime} · {t.capacity} players · {t.pricePerPerson}{" "}
-                    TND/person
-                  </p>
-                  {t.description && (
-                    <p className="text-xs text-muted-foreground mt-1">{t.description}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={t.isActive}
-                      onCheckedChange={() => handleToggle(t)}
-                      data-testid={`switch-terrain-${t.id}`}
-                    />
-                    <Label className="text-xs text-muted-foreground">
-                      {t.isActive ? "Active" : "Inactive"}
-                    </Label>
-                  </div>
-                  <Dialog
-                    open={editId === t.id}
-                    onOpenChange={(o) => {
-                      if (!o) setEditId(null);
-                    }}
-                  >
-                    <DialogTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        data-testid={`btn-edit-terrain-${t.id}`}
-                        onClick={() => openEdit(t)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-[560px]">
-                      <DialogHeader>
-                        <DialogTitle>Edit Terrain</DialogTitle>
-                      </DialogHeader>
-                      {formFields}
-                    </DialogContent>
-                  </Dialog>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    data-testid={`btn-delete-terrain-${t.id}`}
-                    onClick={() => handleDelete(t.id)}
-                    className="text-destructive hover:bg-destructive/10"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {terrains.map((t) => (
+            <article key={t.id} data-testid={`card-terrain-${t.id}`} className={cn("lift enter flex flex-col gap-5 rounded-[30px] bg-card p-5 shadow-sm", !t.isActive && "opacity-70")}>
+              <div className="relative h-[130px] overflow-hidden rounded-[18px] border-[3px] border-white shadow-[0_0_0_1px_#E4E8F7]"
+                style={{ background: t.isActive ? (t.type === "outdoor" ? "#2B8A5E" : "var(--color-court)") : "var(--color-night-3)" }}>
+                <CourtLines />
+                <span className="absolute start-3 top-3"><Pill tone={t.isActive ? "lime" : "muted"}>{t.isActive ? tx({ fr: "Ouvert", en: "Open", ar: "مفتوح" }) : tx({ fr: "Fermé", en: "Closed", ar: "مغلق" })}</Pill></span>
+                <span className="absolute bottom-3 end-3 flex items-center gap-1.5 rounded-full bg-night/70 px-3 py-1 text-xs font-bold text-white">
+                  {t.type === "outdoor" ? <Sun className="size-3.5" /> : <Warehouse className="size-3.5" />}{t.type === "outdoor" ? "Outdoor" : "Indoor"}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <h2 className="disp m-0 text-[26px] leading-tight">{t.name}</h2>
+                {t.description && <p className="m-0 text-sm text-muted-foreground">{t.description}</p>}
+              </div>
+              <dl className="m-0 grid grid-cols-3 gap-2 text-sm">
+                <div className="rounded-2xl bg-mist p-3"><dt className="flex items-center gap-1 text-xs text-muted-foreground"><Clock className="size-3" />{tx({ fr: "Horaires", en: "Hours", ar: "الساعات" })}</dt><dd className="m-0 mt-1 font-bold" dir="ltr">{t.openingTime}–{t.closingTime}</dd></div>
+                <div className="rounded-2xl bg-mist p-3"><dt className="flex items-center gap-1 text-xs text-muted-foreground"><Users className="size-3" />{tx({ fr: "Joueurs", en: "Players", ar: "لاعبون" })}</dt><dd className="m-0 mt-1 font-bold">{t.capacity}</dd></div>
+                <div className="rounded-2xl bg-mist p-3"><dt className="text-xs text-muted-foreground">{tx({ fr: "Prix / joueur", en: "Per player", ar: "للاعب" })}</dt><dd className="m-0 mt-1 font-bold">{t.pricePerPerson} {CLUB.currency}</dd></div>
+              </dl>
+              <div className="mt-auto flex items-center justify-between gap-2 border-t border-[#E4E8F7] pt-4">
+                <label className="flex cursor-pointer items-center gap-2.5 text-sm font-bold">
+                  <Switch checked={t.isActive} onCheckedChange={() => handleToggle(t)} data-testid={`switch-terrain-${t.id}`} />
+                  {tx({ fr: "Réservable", en: "Bookable", ar: "قابل للحجز" })}
+                </label>
+                <span className="flex gap-1">
+                  <Button variant="ghost" size="icon-sm" data-testid={`btn-edit-terrain-${t.id}`} onClick={() => openEdit(t)} aria-label={tx({ fr: `Modifier ${t.name}`, en: `Edit ${t.name}`, ar: `تعديل ${t.name}` })}><Pencil /></Button>
+                  <Button variant="ghost" size="icon-sm" className="text-destructive" data-testid={`btn-delete-terrain-${t.id}`} onClick={() => handleDelete(t)} aria-label={tx({ fr: `Supprimer ${t.name}`, en: `Delete ${t.name}`, ar: `حذف ${t.name}` })}><Trash2 /></Button>
+                </span>
+              </div>
+            </article>
           ))}
-          {!terrains?.length && (
-            <div className="text-center py-12 text-muted-foreground">
-              No terrains yet. Add your first court.
-            </div>
-          )}
         </div>
       )}
+
+      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent className="max-w-[560px]">
+          <DialogHeader className="text-start"><DialogTitle>{editing === "new" ? tx({ fr: "Nouveau terrain", en: "New court", ar: "ملعب جديد" }) : tx({ fr: "Modifier le terrain", en: "Edit court", ar: "تعديل الملعب" })}</DialogTitle></DialogHeader>
+          <form className="flex flex-col gap-4" onSubmit={handleSave}>
+            <Field label={tx({ fr: "Nom", en: "Name", ar: "الاسم" })} htmlFor="t-name" required>
+              <Input id="t-name" data-testid="input-terrain-name" value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Court Central" />
+            </Field>
+            <Field label={tx({ fr: "Description", en: "Description", ar: "الوصف" })} htmlFor="t-desc">
+              <Textarea id="t-desc" rows={2} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder={tx({ fr: "Ex : panoramique, vue sur le lac", en: "e.g. panoramic, lake view", ar: "مثال: بانورامي" })} />
+            </Field>
+            <Field label="Type">
+              <Segmented label="Type" value={form.type} onChange={(v) => set("type", v as Form["type"])} options={[{ value: "indoor", label: "Indoor" }, { value: "outdoor", label: "Outdoor" }]} />
+            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label={tx({ fr: "Ouverture", en: "Opens", ar: "يفتح" })} htmlFor="t-open"><Input id="t-open" type="time" value={form.openingTime} onChange={(e) => set("openingTime", e.target.value)} /></Field>
+              <Field label={tx({ fr: "Fermeture", en: "Closes", ar: "يغلق" })} htmlFor="t-close"><Input id="t-close" type="time" value={form.closingTime} onChange={(e) => set("closingTime", e.target.value)} /></Field>
+              <Field label={tx({ fr: `Prix par joueur (${CLUB.currency})`, en: `Price per player (${CLUB.currency})`, ar: `السعر للاعب (${CLUB.currency})` })} htmlFor="t-price"><Input id="t-price" type="number" min={0} step="0.5" inputMode="decimal" value={form.pricePerPerson} onChange={(e) => set("pricePerPerson", e.target.value)} /></Field>
+              <Field label={tx({ fr: "Joueurs", en: "Players", ar: "اللاعبون" })} htmlFor="t-cap"><Input id="t-cap" type="number" min={2} max={4} inputMode="numeric" value={form.capacity} onChange={(e) => set("capacity", e.target.value)} /></Field>
+            </div>
+            <Button data-testid="btn-save-terrain" type="submit" size="lg" disabled={saving}>
+              {saving ? tx({ fr: "Enregistrement…", en: "Saving…", ar: "جارٍ الحفظ…" }) : tx({ fr: "Enregistrer", en: "Save court", ar: "حفظ" })}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+      {dialog}
     </Page>
   );
 }

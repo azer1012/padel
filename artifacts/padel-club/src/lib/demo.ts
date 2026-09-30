@@ -117,12 +117,32 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/api\/users\/me$/, () => [200, me]],
   ["PATCH", /^\/api\/users\/me$/, (_m, _u, b) => { Object.assign(me, b); return [200, me]; }],
   ["POST", /^\/api\/users\/sync$/, () => [200, me]],
-  ["GET", /^\/api\/users$/, () => [200, { data: users, total: users.length, page: 1, limit: 50 }]],
+  ["GET", /^\/api\/users$/, (_m, u) => {
+    const q = (u.searchParams.get("search") ?? "").toLowerCase();
+    const list = users.filter((x) => !q || `${x.firstName} ${x.lastName} ${x.email}`.toLowerCase().includes(q));
+    return [200, { data: list, total: list.length, page: 1, limit: 200 }];
+  }],
   ["GET", /^\/api\/tokens\/balance$/, () => [200, { userId: ME_ID, balance, pendingExpiry: 2, nextExpiryDate: addDaysIso(12) }]],
   ["GET", /^\/api\/tokens\/transactions$/, () => [200, { data: txs, total: txs.length, page: 1, limit: 30 }]],
-  ["GET", /^\/api\/tokens\/admin\/transactions$/, () => [200, { data: txs.map((t) => ({ ...t, user: me })), total: txs.length, page: 1, limit: 25 }]],
-  ["POST", /^\/api\/tokens\/admin\/adjust$/, (_m, _u, b) => { if (b.userId === ME_ID) charge(b.amount, b.description, b.type !== "debit"); return [200, txs[0]]; }],
+  ["GET", /^\/api\/tokens\/admin\/transactions$/, (_m, u) => {
+    const uid = u.searchParams.get("userId"), type = u.searchParams.get("type");
+    const list = txs.filter((t) => (!uid || t.userId === +uid) && (!type || t.type === type)).map((t) => ({ ...t, user: users.find((x) => x.id === t.userId) }));
+    return [200, { data: list, total: list.length, page: 1, limit: 25 }];
+  }],
+  ["POST", /^\/api\/tokens\/admin\/adjust$/, (_m, _u, b) => {
+    const u = users.find((x) => x.id === b.userId) as any; if (!u) return [404, { error: "Membre introuvable" }];
+    const before = u.id === ME_ID ? balance : (u.tokenBalance ?? 0);
+    const after = b.type === "credit" ? before + b.amount : b.type === "debit" ? before - b.amount : b.amount;
+    if (after < 0) return [400, { error: "Solde insuffisant" }];
+    u.tokenBalance = after; if (u.id === ME_ID) balance = after;
+    const t = { id: nextId++, userId: u.id, type: b.type, amount: b.amount, balanceAfter: after, description: b.description, notes: b.notes ?? null, createdAt: new Date().toISOString() };
+    txs.unshift(t); return [200, t];
+  }],
   ["GET", /^\/api\/terrains$/, () => [200, terrains]],
+  ["POST", /^\/api\/terrains$/, (_m, _u, b) => { const t = { ...terrains[0], ...b, id: nextId++, isActive: true, description: b.description || null }; terrains.push(t); return [201, t]; }],
+  ["PATCH", /^\/api\/terrains\/(\d+)$/, (m, _u, b) => { const t = terrains.find((x) => x.id === +m[1]); if (!t) return [404, { error: "Introuvable" }]; Object.assign(t, b); return [200, t]; }],
+  ["PUT", /^\/api\/terrains\/(\d+)$/, (m, _u, b) => { const t = terrains.find((x) => x.id === +m[1]); if (!t) return [404, { error: "Introuvable" }]; Object.assign(t, b); return [200, t]; }],
+  ["DELETE", /^\/api\/terrains\/(\d+)$/, (m) => { const i = terrains.findIndex((x) => x.id === +m[1]); if (i >= 0) terrains.splice(i, 1); return [204, null]; }],
   ["GET", /^\/api\/calendar$/, (_m, u) => {
     const day = u.searchParams.get("date")!; seed(day);
     return [200, { date: day, terrains: terrains.map((t) => ({ terrain: t, slots: slotsFor(day).map(({ start, end }) => calendarSlot(t, start, end)) })) }];
@@ -134,9 +154,26 @@ const routes: [string, RegExp, Handler][] = [
     return [200, list.map((b) => ({ reservationId: b.id, terrain: terrainOf(b.terrainId), startTime: b.start.toISOString(), endTime: b.end.toISOString(), totalSpots: 4, filledSpots: b.players.length, openSpots: 4 - b.players.length, publicDescription: b.desc, players: b.players.map((p) => ({ name: p.name, paymentStatus: p.paymentStatus })) }))];
   }],
   ["GET", /^\/api\/reservations\/upcoming$/, () => [200, mineList().filter((b) => b.status === "confirmed" && b.end.getTime() > Date.now()).sort((a, b) => +a.start - +b.start).map(asReservation)]],
-  ["GET", /^\/api\/reservations$/, () => { const l = mineList().map(asReservation); return [200, { data: l, total: l.length, page: 1, limit: 30 }]; }],
+  ["GET", /^\/api\/reservations$/, (_m, u) => {
+    mineList();
+    const admin = u.searchParams.has("page") && u.searchParams.get("limit") === "20";
+    const status = u.searchParams.get("status"), tid = u.searchParams.get("terrainId"), date = u.searchParams.get("date");
+    const src = admin ? Array.from(bookings.values()) : mineList();
+    const l = src.filter((b) => (!status || b.status === status) && (!tid || b.terrainId === +tid) && (!date || dayKey(b.start) === date))
+      .sort((a, b) => +b.start - +a.start).slice(0, 20)
+      .map((b) => ({ ...asReservation(b), guestName: (b as any).guestName ?? null, guestPhone: (b as any).guestPhone ?? null, bookingType: (b as any).bookingType ?? "online",
+        user: b.players[0]?.userId === ME_ID ? me : { id: 100, email: `${b.creator.split(" ")[0].toLowerCase()}@mail.tn`, firstName: b.creator.split(" ")[0], lastName: b.creator.split(" ")[1] } }));
+    return [200, { data: l, total: l.length, page: 1, limit: 20 }];
+  }],
   ["POST", /^\/api\/reservations$/, (_m, _u, b) => {
-    const start = new Date(b.startTime); const cost = b.bookingMode === "own_spot" ? 1 : 4;
+    const start = new Date(b.startTime);
+    if (b.guestName !== undefined || b.userId !== undefined || b.bookingType === "phone" || b.bookingType === "manual") {
+      const name = b.guestName || "Invité";
+      const bk: any = { id: nextId++, terrainId: b.terrainId, start, end: new Date(start.getTime() + 90 * 60e3), mode: "full_court", isPublic: false, desc: null,
+        players: [{ id: nextId++, userId: null, name, paymentType: "cash", paymentStatus: "pending" }], creator: name, createdAt: new Date().toISOString(), status: "confirmed", guestName: b.guestName ?? null, guestPhone: b.guestPhone ?? null, bookingType: b.bookingType };
+      bookings.set(key(b.terrainId, start), bk); return [201, asReservation(bk)];
+    }
+    const cost = b.bookingMode === "own_spot" ? 1 : 4;
     if (balance < cost) return [400, { error: "Solde de tokens insuffisant" }];
     const booking: Booking = { id: nextId++, terrainId: b.terrainId, start, end: new Date(start.getTime() + 90 * 60e3), mode: b.bookingMode ?? "full_court", isPublic: !!b.isPublic, desc: b.publicDescription ?? null,
       players: [{ id: nextId++, userId: ME_ID, name: "Yasmine Ben Ali", paymentType: "token", paymentStatus: "paid" }], creator: "Yasmine Ben Ali", createdAt: new Date().toISOString(), status: "confirmed" };
@@ -155,8 +192,15 @@ const routes: [string, RegExp, Handler][] = [
     return b ? [200, { invite: { id: 1, status: "pending", expiresAt: addDaysIso(1), invitedBy: b.creator.split(" ")[0] }, reservation: { id: b.id, terrainName: terrainOf(b.terrainId).name, startTime: b.start.toISOString(), endTime: b.end.toISOString(), totalSpots: 4, filledSpots: b.players.length, openSpots: 4 - b.players.length } }] : [404, { error: "Invitation expirée" }]; }],
   ["POST", /^\/api\/invites\/[^/]+\/accept$/, () => { charge(1, "Invitation acceptée"); return [200, { message: "ok" }]; }],
   ["GET", /^\/api\/tournaments$/, () => [200, tournaments]],
+  ["POST", /^\/api\/tournaments$/, (_m, _u, b) => { const t = { description: null, endDate: null, maxTeams: null, prizeInfo: null, imageUrl: null, ...b, id: nextId++, registeredTeams: 0, createdAt: new Date().toISOString() }; tournaments.unshift(t); return [201, t]; }],
+  ["PATCH", /^\/api\/tournaments\/(\d+)$/, (m, _u, b) => { const t = tournaments.find((x) => x.id === +m[1]); if (!t) return [404, { error: "Introuvable" }]; Object.assign(t, b); return [200, t]; }],
+  ["PUT", /^\/api\/tournaments\/(\d+)$/, (m, _u, b) => { const t = tournaments.find((x) => x.id === +m[1]); if (!t) return [404, { error: "Introuvable" }]; Object.assign(t, b); return [200, t]; }],
   ["POST", /^\/api\/tournaments\/(\d+)\/register$/, (m) => { const t = tournaments.find((x) => x.id === +m[1]); if (t) t.registeredTeams = (t.registeredTeams ?? 0) + 1; return [201, { id: nextId++, tournamentId: +m[1], userId: ME_ID, teamName: null, createdAt: new Date().toISOString() }]; }],
   ["GET", /^\/api\/news$/, () => [200, { data: news, total: news.length, page: 1, limit: 30 }]],
+  ["POST", /^\/api\/news$/, (_m, _u, b) => { const a = { excerpt: null, imageUrl: null, category: null, ...b, id: nextId++, publishedAt: b.isPublished ? new Date().toISOString() : null, createdAt: new Date().toISOString() }; news.unshift(a); return [201, a]; }],
+  ["PATCH", /^\/api\/news\/(\d+)$/, (m, _u, b) => { const a = news.find((x) => x.id === +m[1]); if (!a) return [404, { error: "Introuvable" }]; Object.assign(a, b); return [200, a]; }],
+  ["PUT", /^\/api\/news\/(\d+)$/, (m, _u, b) => { const a = news.find((x) => x.id === +m[1]); if (!a) return [404, { error: "Introuvable" }]; Object.assign(a, b); return [200, a]; }],
+  ["DELETE", /^\/api\/news\/(\d+)$/, (m) => { const i = news.findIndex((x) => x.id === +m[1]); if (i >= 0) news.splice(i, 1); return [204, null]; }],
   ["GET", /^\/api\/notifications$/, () => [200, notifications]],
   ["POST", /^\/api\/notifications\/read-all$/, () => { notifications.forEach((n) => (n.isRead = true)); return [200, { updated: notifications.length }]; }],
   ["GET", /^\/api\/dashboard\/stats$/, () => [200, { totalReservationsToday: 31, totalReservationsThisMonth: 612, activeUsers: 284, totalTokensIssued: 5120, occupancyRateToday: 78, upcomingReservations: 9, revenueEquivalentToday: 2750 }]],
