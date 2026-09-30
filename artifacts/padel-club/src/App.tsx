@@ -1,29 +1,29 @@
 import { Switch, Route, useLocation, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import type { FormEvent } from "react";
-import { setAuthTokenGetter } from "@workspace/api-client-react";
+import { lazy, Suspense, useEffect } from "react";
+import { setAuthTokenGetter, useGetMe } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { NavLayout } from "@/components/nav-layout";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { Redirect } from "wouter";
 import { syncUser } from "@/lib/user-sync";
 import { getAccessToken } from "@/services/api";
 import { I18nProvider } from "@/lib/i18n";
+import { DEMO } from "@/lib/demo";
+import { useHashLocation } from "wouter/use-hash-location";
 import NotFound from "@/pages/not-found";
+import AuthPage from "@/pages/auth";
 import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
-import AdminDashboard from "@/pages/admin";
-import AdminReservations from "@/pages/admin-reservations";
-import AdminTerrains from "@/pages/admin-terrains";
-import AdminUsers from "@/pages/admin-users";
-import AdminTokens from "@/pages/admin-tokens";
-import AdminNews from "@/pages/admin-news";
-import AdminTournaments from "@/pages/admin-tournaments";
+const AdminDashboard = lazy(() => import("@/pages/admin"));
+const AdminReservations = lazy(() => import("@/pages/admin-reservations"));
+const AdminTerrains = lazy(() => import("@/pages/admin-terrains"));
+const AdminUsers = lazy(() => import("@/pages/admin-users"));
+const AdminTokens = lazy(() => import("@/pages/admin-tokens"));
+const AdminNews = lazy(() => import("@/pages/admin-news"));
+const AdminTournaments = lazy(() => import("@/pages/admin-tournaments"));
 import Terrains from "@/pages/terrains";
 import Tournaments from "@/pages/tournaments";
 import News from "@/pages/news";
@@ -34,88 +34,12 @@ import Profile from "@/pages/profile";
 import JoinInvite from "@/pages/join-invite";
 import OpenMatches from "@/pages/open-matches";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { staleTime: 20_000, retry: 1 } },
+});
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 setAuthTokenGetter(getAccessToken);
-
-function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
-  const [, setLocation] = useLocation();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const isSignUp = mode === "sign-up";
-
-  const handlePasswordAuth = async (event: FormEvent) => {
-    event.preventDefault();
-    setError(null);
-    setIsSubmitting(true);
-
-    const result = isSignUp
-      ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } })
-      : await supabase.auth.signInWithPassword({ email, password });
-
-    setIsSubmitting(false);
-
-    if (result.error) {
-      setError(result.error.message);
-      return;
-    }
-
-    setLocation("/dashboard");
-  };
-
-  const handleOAuth = async (provider: "google" | "apple") => {
-    await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo: `${window.location.origin}${basePath || ""}/dashboard` },
-    });
-  };
-
-  return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-sm">
-        <div className="mb-6 text-center">
-          <img src={`${basePath}/logo.svg`} alt="Padel Club" className="mx-auto mb-4 h-12 w-auto" />
-          <h1 className="text-2xl font-black text-foreground">{isSignUp ? "Join Padel Club" : "Welcome back"}</h1>
-          <p className="text-sm text-muted-foreground">
-            {isSignUp ? "Create your account to book courts" : "Sign in to book your next match"}
-          </p>
-        </div>
-
-        <form className="space-y-4" onSubmit={handlePasswordAuth}>
-          <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" required />
-          <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" required minLength={8} />
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? "..." : isSignUp ? "Create account" : "Sign in"}
-          </Button>
-        </form>
-
-        <div className="my-5 flex items-center gap-3">
-          <div className="h-px flex-1 bg-border" />
-          <span className="text-xs text-muted-foreground">or</span>
-          <div className="h-px flex-1 bg-border" />
-        </div>
-
-        <div className="grid gap-2">
-          <Button variant="outline" onClick={() => handleOAuth("google")}>Continue with Google</Button>
-          <Button variant="outline" onClick={() => handleOAuth("apple")}>Continue with Apple</Button>
-        </div>
-
-        <Button
-          variant="link"
-          className="mt-4 w-full text-primary"
-          onClick={() => setLocation(isSignUp ? "/sign-in" : "/sign-up")}
-        >
-          {isSignUp ? "Already have an account? Sign in" : "Need an account? Sign up"}
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 function QueryClientCacheInvalidator() {
   const queryClient = useQueryClient();
@@ -150,23 +74,38 @@ function HomeRedirect() {
   return isSignedIn ? <Dashboard /> : <Home />;
 }
 
+const RouteLoader = () => (
+  <div className="flex min-h-[60vh] items-center justify-center" aria-busy="true"><span className="live-dot" /></div>
+);
+
+/**
+ * Admin gate. The role lives on the API user (useGetMe), not on the Supabase
+ * session user (whose role is always "authenticated").
+ */
 function AdminRoute({ component: Component }: { component: React.ComponentType<any> }) {
-  const { user, isSignedIn, isLoaded } = useAuth();
-  
-  if (!isLoaded) return null;
-  if (!isSignedIn || user?.role !== "admin") {
-    return <Redirect to="/" />;
-  }
-  
-  return <Component />;
+  const { isSignedIn, isLoaded } = useAuth();
+  const [location] = useLocation();
+  const { data: me, isLoading, isError } = useGetMe({ query: { enabled: isSignedIn } as any });
+
+  if (!isLoaded) return <RouteLoader />;
+  if (!isSignedIn) return <Redirect to={`/sign-in?redirect=${encodeURIComponent(location)}`} />;
+  if (isLoading) return <RouteLoader />;
+  if (isError || me?.role !== "admin") return <Redirect to="/dashboard" />;
+
+  return (
+    <Suspense fallback={<RouteLoader />}>
+      <Component />
+    </Suspense>
+  );
 }
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType<any> }) {
   const { isSignedIn, isLoaded } = useAuth();
-  
+  const [location] = useLocation();
+
   if (!isLoaded) return null;
   if (!isSignedIn) {
-    return <Redirect to="/sign-in" />;
+    return <Redirect to={`/sign-in?redirect=${encodeURIComponent(location)}`} />;
   }
   
   return <Component />;
@@ -226,9 +165,6 @@ function AppRoutes() {
             <Route path="/tournaments" component={Tournaments} />
             <Route path="/news" component={News} />
             <Route path="/contact" component={Contact} />
-            <Route path="/reservations" component={PlayerReservations} />
-            <Route path="/wallet" component={Wallet} />
-            <Route path="/profile" component={Profile} />
             <Route path="/open-matches" component={OpenMatches} />
             <Route path="/join/:token" component={JoinInvite} />
             <Route component={NotFound} />
@@ -244,7 +180,7 @@ function App() {
   return (
     <I18nProvider>
       <AuthProvider>
-        <WouterRouter base={basePath}>
+        <WouterRouter {...(DEMO ? { hook: useHashLocation } : { base: basePath })}>
           <AppRoutes />
         </WouterRouter>
       </AuthProvider>

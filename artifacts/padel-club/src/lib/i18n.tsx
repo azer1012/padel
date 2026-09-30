@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useState, useEffect, type ReactNode } from "react";
+import { enGB, fr as frLocale, arTN, type Locale } from "date-fns/locale";
 
 export type Lang = "fr" | "ar" | "en";
 
@@ -155,7 +156,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     document.documentElement.dir = isRTL ? "rtl" : "ltr";
   }, [lang, isRTL]);
 
-  const t = (key: TranslationKey): string => translations[lang][key];
+  const t = (key: TranslationKey): string => translations[lang][key] ?? translations.en[key];
 
   return (
     <I18nContext.Provider value={{ lang, setLang, t, isRTL }}>
@@ -166,4 +167,20 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
 export function useI18n() {
   return useContext(I18nContext);
+}
+
+/** Inline, typed copy for page-specific text. Arabic and English fall back to French. */
+export type Copy = { fr: string; en?: string; ar?: string };
+
+export function useTx() {
+  const { lang } = useI18n();
+  return useCallback((c: Copy) => c[lang] ?? c.fr, [lang]);
+}
+
+const DATE_LOCALES: Record<Lang, Locale> = { fr: frLocale, en: enGB, ar: arTN };
+
+/** date-fns locale that follows the selected language. */
+export function useDateLocale(): Locale {
+  const { lang } = useI18n();
+  return DATE_LOCALES[lang];
 }

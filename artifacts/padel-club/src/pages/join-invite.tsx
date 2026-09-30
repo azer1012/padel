@@ -1,147 +1,79 @@
-import { useParams } from "wouter";
+import { useParams, useLocation, Link } from "wouter";
+import { format } from "date-fns";
 import { useGetInvite, useAcceptInvite, getCalendarQueryKey, getListUpcomingReservationsQueryKey, getGetTokenBalanceQueryKey } from "@workspace/api-client-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useQueryClient } from "@tanstack/react-query";
+import { Coins, AlertCircle, MapPin, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { format } from "date-fns";
-import { fr } from "date-fns/locale";
+import { Logo } from "@/components/smash/brand";
+import { CourtLines, Eyebrow } from "@/components/smash/primitives";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
-import { MapPin, Calendar, Users, Zap, CheckCircle, AlertCircle } from "lucide-react";
+import { useTx, useDateLocale } from "@/lib/i18n";
 
 export default function JoinInvite() {
-  const params = useParams<{ token: string }>();
-  const token = params.token;
+  const tx = useTx();
+  const locale = useDateLocale();
+  const { token } = useParams<{ token: string }>();
   const { isSignedIn } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [, setLocation] = useLocation();
-
-  const { data: inviteData, isLoading, error } = useGetInvite(token ?? "", {
-    query: { enabled: !!token },
-  });
-
+  const { data: inviteData, isLoading, error } = useGetInvite(token ?? "", { query: { enabled: !!token } as any });
   const acceptInvite = useAcceptInvite();
 
   const handleAccept = () => {
-    if (!isSignedIn) {
-      window.location.href = `/sign-in?redirect=/join/${token}`;
-      return;
-    }
+    if (!isSignedIn) { setLocation(`/sign-in?redirect=${encodeURIComponent(`/join/${token}`)}`); return; }
     if (!token) return;
     acceptInvite.mutate({ token }, {
       onSuccess: () => {
-        toast({ title: "Place confirmée!", description: "Vous avez rejoint la session. 1 token débité." });
-        const dateStr = inviteData ? new Date(inviteData.reservation.startTime).toISOString().split("T")[0] : "";
-        if (dateStr) qc.invalidateQueries({ queryKey: getCalendarQueryKey({ date: dateStr }) });
+        toast({ title: tx({ fr: "Vous êtes dans le match !", en: "You're in the match!", ar: "أنت في المباراة!" }), description: tx({ fr: "1 token débité.", en: "1 token charged.", ar: "تم خصم رصيد واحد." }) });
+        if (inviteData) qc.invalidateQueries({ queryKey: getCalendarQueryKey({ date: format(new Date(inviteData.reservation.startTime), "yyyy-MM-dd") }) });
         qc.invalidateQueries({ queryKey: getListUpcomingReservationsQueryKey() });
         qc.invalidateQueries({ queryKey: getGetTokenBalanceQueryKey() });
         setLocation("/reservations");
       },
-      onError: (err: any) => {
-        toast({ title: "Erreur", description: err?.data?.error ?? "Impossible de rejoindre", variant: "destructive" });
-      },
+      onError: (err: any) => toast({ title: tx({ fr: "Impossible de rejoindre", en: "Couldn't join", ar: "تعذر الانضمام" }), description: err?.data?.error, variant: "destructive" }),
     });
   };
 
-  if (!token) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="max-w-sm w-full bg-card border-border">
-          <CardContent className="pt-6 text-center space-y-2">
-            <AlertCircle className="h-12 w-12 text-destructive mx-auto" />
-            <p className="text-foreground font-bold">Lien d'invitation invalide</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  const shell = (content: React.ReactNode) => (
+    <div className="on-dark relative flex min-h-[100dvh] flex-col items-center overflow-hidden bg-night px-5 py-6 text-white">
+      <div aria-hidden="true" className="absolute -end-24 top-24 h-[300px] w-[560px] rotate-[-9deg] rounded-xl border-[3px] border-white/10 bg-court/25"><CourtLines /></div>
+      <div className="relative w-full max-w-[480px]"><Logo /></div>
+      <div className="relative flex w-full max-w-[480px] flex-1 flex-col justify-center py-10">{content}</div>
+    </div>
+  );
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="max-w-sm w-full bg-card border-border">
-          <CardContent className="pt-6 space-y-4">
-            <Skeleton className="h-8 w-48 mx-auto" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-10 w-full" />
-          </CardContent>
-        </Card>
-      </div>
+  if (!token || error || (!isLoading && !inviteData)) {
+    return shell(
+      <div className="enter flex flex-col items-start gap-5">
+        <span className="flex size-16 items-center justify-center rounded-full bg-coral text-night"><AlertCircle className="size-7" /></span>
+        <h1 className="disp m-0 text-5xl leading-none">{tx({ fr: "Invitation expirée", en: "Invite expired", ar: "انتهت الدعوة" })}</h1>
+        <p className="m-0 text-lg text-muted-d">{(error as any)?.data?.error ?? tx({ fr: "Ce lien n'est plus valide. Demandez-en un nouveau à votre ami.", en: "This link is no longer valid. Ask your friend for a new one.", ar: "هذا الرابط لم يعد صالحًا." })}</p>
+        <Button asChild variant="lime" size="lg"><Link href="/open-matches">{tx({ fr: "Voir les open matches", en: "See open matches", ar: "المباريات المفتوحة" })}</Link></Button>
+      </div>,
     );
   }
-
-  if (error || !inviteData) {
-    const errMsg = (error as any)?.data?.error ?? "Lien expiré ou invalide";
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="max-w-sm w-full bg-card border-border">
-          <CardContent className="pt-6 text-center space-y-3">
-            <AlertCircle className="h-12 w-12 text-destructive mx-auto" />
-            <p className="text-foreground font-bold">Invitation invalide</p>
-            <p className="text-muted-foreground text-sm">{errMsg}</p>
-            <Button variant="outline" onClick={() => setLocation("/terrains")} className="w-full">Voir les courts</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  if (isLoading || !inviteData) return shell(<div className="flex flex-col gap-4"><Skeleton className="h-12 w-3/4 bg-white/10" /><Skeleton className="h-[280px] !rounded-[32px] bg-white/10" /></div>);
 
   const { invite, reservation } = inviteData;
-
-  return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="max-w-sm w-full bg-card border-border">
-        <CardHeader className="text-center">
-          <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-2">
-            <Users className="h-6 w-6 text-primary" />
-          </div>
-          <CardTitle className="text-xl font-black uppercase text-primary">Invitation à jouer</CardTitle>
-          <p className="text-sm text-muted-foreground">{invite.invitedBy} vous invite à rejoindre une session</p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="p-4 rounded-xl bg-background border border-border space-y-3">
-            <div className="flex items-center gap-2 text-sm">
-              <MapPin className="h-4 w-4 text-primary shrink-0" />
-              <span className="font-semibold">{reservation.terrainName}</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Calendar className="h-4 w-4 shrink-0" />
-              <span>{format(new Date(reservation.startTime), "EEEE d MMMM yyyy", { locale: fr })}</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Users className="h-4 w-4 shrink-0" />
-              <span>{reservation.filledSpots}/{reservation.totalSpots} joueurs · {reservation.openSpots} place{reservation.openSpots !== 1 ? "s" : ""} libre{reservation.openSpots !== 1 ? "s" : ""}</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
-            <Zap className="h-4 w-4 text-primary shrink-0" />
-            <span className="text-sm text-muted-foreground"><strong className="text-foreground">1 token</strong> sera débité de votre portefeuille</span>
-          </div>
-
-          {!isSignedIn && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 text-sm">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              Connectez-vous pour accepter l'invitation
-            </div>
-          )}
-
-          <Button
-            className="w-full bg-primary text-primary-foreground font-bold hover:bg-primary/90"
-            onClick={handleAccept}
-            disabled={acceptInvite.isPending}
-          >
-            {acceptInvite.isPending ? "..." : isSignedIn ? "Rejoindre la session" : "Se connecter & rejoindre"}
-          </Button>
-          <Button variant="ghost" className="w-full text-muted-foreground" onClick={() => setLocation("/terrains")}>
-            Retour aux courts
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+  return shell(
+    <div className="enter flex flex-col gap-7">
+      <Eyebrow live className="text-ball">{tx({ fr: "Invitation", en: "Invite", ar: "دعوة" })}</Eyebrow>
+      <h1 className="disp m-0 text-[clamp(42px,9vw,60px)] leading-[0.95]">{tx({ fr: `${invite.invitedBy} vous attend sur le terrain.`, en: `${invite.invitedBy} saved you a spot.`, ar: `${invite.invitedBy} يدعوك للعب.` })}</h1>
+      <div className="flex flex-col gap-4 rounded-[32px] bg-white p-6 text-ink">
+        <span className="disp text-[56px] leading-[0.9]" dir="ltr">{format(new Date(reservation.startTime), "HH:mm")}</span>
+        <span className="flex items-center gap-2 font-semibold capitalize text-muted-foreground"><CalendarDays className="size-4" />{format(new Date(reservation.startTime), "EEEE d MMMM", { locale })}</span>
+        <span className="flex items-center gap-2 font-bold"><MapPin className="size-4 text-court" />{reservation.terrainName}</span>
+        <div className="flex gap-1.5" aria-label={`${reservation.filledSpots}/${reservation.totalSpots}`}>
+          {Array.from({ length: reservation.totalSpots }, (_, i) => <span key={i} className={i < reservation.filledSpots ? "h-2.5 flex-1 rounded-full bg-court" : "h-2.5 flex-1 rounded-full bg-secondary"} />)}
+        </div>
+        <span className="text-sm font-semibold text-success">{tx({ fr: `${reservation.openSpots} place(s) libre(s)`, en: `${reservation.openSpots} spot(s) left`, ar: `${reservation.openSpots} مكان شاغر` })}</span>
+      </div>
+      <Button variant="lime" size="xl" onClick={handleAccept} disabled={acceptInvite.isPending || reservation.openSpots === 0}>
+        <Coins />{acceptInvite.isPending ? "…" : isSignedIn ? tx({ fr: "Rejoindre · 1 token", en: "Join · 1 token", ar: "انضم · رصيد واحد" }) : tx({ fr: "Se connecter et rejoindre", en: "Sign in and join", ar: "سجّل الدخول وانضم" })}
+      </Button>
+    </div>,
   );
 }

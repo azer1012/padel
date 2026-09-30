@@ -33,10 +33,10 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
+          if (/recharts|react-smooth|\/d3-|victory-vendor|decimal\.js-light|internmap|react-transition-group|dom-helpers/.test(id)) return "charts";
           if (id.includes("@supabase")) return "supabase";
           if (id.includes("@radix-ui")) return "radix-ui";
-          if (id.includes("react") || id.includes("wouter") || id.includes("@tanstack")) return "react-vendor";
-          if (id.includes("recharts")) return "charts";
+          if (/node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?(react|react-dom|scheduler|wouter|@tanstack|use-sync-external-store|regexparam)\//.test(id)) return "react-vendor";
           if (id.includes("framer-motion")) return "motion";
           return "vendor";
         },

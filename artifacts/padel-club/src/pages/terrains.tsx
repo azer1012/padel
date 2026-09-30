@@ -1,26 +1,33 @@
 import { useGetMe } from "@workspace/api-client-react";
-import { useI18n } from "@/lib/i18n";
+import { Coins, Timer, Users } from "lucide-react";
 import CourtCalendar from "@/components/court-calendar";
-import { Calendar } from "lucide-react";
+import { Page, PageHeader } from "@/components/smash/primitives";
+import { useAuth } from "@/lib/auth";
+import { useTx } from "@/lib/i18n";
+import { CLUB } from "@/config/club";
 
 export default function Terrains() {
-  const { data: me } = useGetMe();
-  const { t } = useI18n();
-
+  const { isSignedIn } = useAuth();
+  const { data: me } = useGetMe({ query: { enabled: isSignedIn } as any });
+  const tx = useTx();
+  const rules = [
+    { icon: Coins, text: tx({ fr: `Terrain complet : ${CLUB.tokensFullCourt} tokens`, en: `Full court: ${CLUB.tokensFullCourt} tokens`, ar: `ملعب كامل: ${CLUB.tokensFullCourt} رصيد` }) },
+    { icon: Users, text: tx({ fr: `Votre place : ${CLUB.tokensOwnSpot} token`, en: `Your spot: ${CLUB.tokensOwnSpot} token`, ar: `مكانك: رصيد ${CLUB.tokensOwnSpot}` }) },
+    { icon: Timer, text: tx({ fr: `${CLUB.slotMinutes} minutes par match`, en: `${CLUB.slotMinutes} minutes per match`, ar: `${CLUB.slotMinutes} دقيقة للمباراة` }) },
+  ];
   return (
-    <div className="min-h-screen bg-background text-foreground py-10 px-4">
-      <div className="max-w-7xl mx-auto space-y-8">
-        <div className="text-center space-y-3">
-          <h1 className="text-4xl md:text-5xl font-black uppercase italic text-primary flex items-center justify-center gap-3">
-            <Calendar className="h-9 w-9" />
-            {t("courts")}
-          </h1>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Réservez un créneau sur nos terrains indoor et outdoor — court complet (4 tokens) ou votre place uniquement (1 token).
-          </p>
-        </div>
-        <CourtCalendar isAdmin={false} currentUserId={me?.id ?? null} />
-      </div>
-    </div>
+    <Page wide>
+      <PageHeader
+        eyebrow={tx({ fr: "Réserver", en: "Book a court", ar: "احجز ملعبًا" })}
+        title={tx({ fr: "Choisissez votre terrain", en: "Pick your court", ar: "اختر ملعبك" })}
+        subtitle={tx({ fr: "Les créneaux verts sont libres. Touchez-en un pour réserver le terrain ou juste votre place.", en: "Green slots are free. Tap one to book the whole court or just your spot.", ar: "المواعيد الخضراء متاحة. اضغط لحجز الملعب أو مكانك فقط." })}
+      />
+      <ul className="enter m-0 -mt-3 flex list-none flex-wrap gap-2 p-0">
+        {rules.map((r) => (
+          <li key={r.text} className="flex h-10 items-center gap-2 rounded-full bg-card px-4 text-sm font-bold shadow-sm"><r.icon className="size-4 text-court" />{r.text}</li>
+        ))}
+      </ul>
+      <CourtCalendar isAdmin={false} currentUserId={me?.id ?? null} />
+    </Page>
   );
 }

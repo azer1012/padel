@@ -1,181 +1,157 @@
 import { useState } from "react";
-import { useListReservations, useListUpcomingReservations, useCancelReservation, getListReservationsQueryKey, getListUpcomingReservationsQueryKey, getGetTokenBalanceQueryKey } from "@workspace/api-client-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { format } from "date-fns";
 import { Link } from "wouter";
-import { Calendar, Clock, MapPin, AlertCircle } from "lucide-react";
+import { format, isPast } from "date-fns";
+import {
+  useListReservations, useListUpcomingReservations, useCancelReservation,
+  getListReservationsQueryKey, getListUpcomingReservationsQueryKey, getGetTokenBalanceQueryKey, getOpenMatchesQueryKey,
+} from "@workspace/api-client-react";
+import type { Reservation } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { CalendarPlus, CalendarDays, MapPin, Coins, X, Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
 import { useToast } from "@/hooks/use-toast";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, useTx, useDateLocale } from "@/lib/i18n";
+import { CLUB } from "@/config/club";
+import { cn } from "@/lib/utils";
 
-const STATUS_COLORS: Record<string, string> = {
-  confirmed: "bg-primary/20 text-primary",
-  cancelled: "bg-destructive/20 text-destructive",
-  pending: "bg-yellow-500/20 text-yellow-400",
-};
+/** Build a tiny .ics so players can add the match to their calendar. */
+function downloadIcs(r: Reservation) {
+  const f = (d: string) => new Date(d).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const ics = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Smash Padel//FR", "BEGIN:VEVENT",
+    `UID:reservation-${r.id}@smashpadel`, `DTSTAMP:${f(new Date().toISOString())}`, `DTSTART:${f(r.startTime)}`, `DTEND:${f(r.endTime)}`,
+    `SUMMARY:Padel · ${r.terrain?.name ?? ""}`, `LOCATION:${CLUB.name}, ${CLUB.address}, ${CLUB.postal}`,
+    "BEGIN:VALARM", "TRIGGER:-PT2H", "ACTION:DISPLAY", "DESCRIPTION:Padel", "END:VALARM", "END:VEVENT", "END:VCALENDAR",
+  ].join("\r\n");
+  const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
+  const a = document.createElement("a"); a.href = url; a.download = `padel-${r.id}.ics`; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const tx = useTx();
+  if (status === "confirmed") return <Badge variant="success">{tx({ fr: "Confirmé", en: "Confirmed", ar: "مؤكد" })}</Badge>;
+  if (status === "cancelled") return <Badge variant="danger">{tx({ fr: "Annulé", en: "Cancelled", ar: "ملغى" })}</Badge>;
+  return <Badge variant="warning">{tx({ fr: "En attente", en: "Pending", ar: "قيد الانتظار" })}</Badge>;
+}
+
+function DateBlock({ date, dark }: { date: string; dark?: boolean }) {
+  const locale = useDateLocale();
+  return (
+    <span className={cn("flex size-[68px] shrink-0 flex-col items-center justify-center rounded-[20px]", dark ? "bg-night text-white" : "bg-mist")}>
+      <span className={cn("text-[11px] font-bold uppercase", dark ? "text-ball" : "text-muted-foreground")}>{format(new Date(date), "MMM", { locale })}</span>
+      <span className="disp text-[28px] leading-none">{format(new Date(date), "d")}</span>
+    </span>
+  );
+}
 
 export default function PlayerReservations() {
-  const { data: upcoming, isLoading: isLoadingUpcoming } = useListUpcomingReservations();
-  const { data: historyResponse, isLoading: isLoadingHistory } = useListReservations({ limit: 20 });
-  const cancelReservation = useCancelReservation();
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
+  const tx = useTx();
   const { t } = useI18n();
-  const [cancellingId, setCancellingId] = useState<number | null>(null);
+  const locale = useDateLocale();
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const { data: upcoming, isLoading: loadingUp } = useListUpcomingReservations();
+  const { data: historyResponse, isLoading: loadingHistory } = useListReservations({ limit: 30 });
+  const cancelReservation = useCancelReservation();
+  const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
+  const [toCancel, setToCancel] = useState<Reservation | null>(null);
 
-  const history = historyResponse?.data ?? [];
-  const pastHistory = history.filter(r => r.status !== "confirmed" || new Date(r.startTime) < new Date());
+  const history = (historyResponse?.data ?? []).filter((r) => r.status !== "confirmed" || isPast(new Date(r.startTime)));
+  const list = (upcoming ?? []).slice().sort((a, b) => +new Date(a.startTime) - +new Date(b.startTime));
 
-  const handleCancel = (id: number) => {
-    setCancellingId(id);
+  const confirmCancel = () => {
+    if (!toCancel) return;
+    const id = toCancel.id;
     cancelReservation.mutate({ id }, {
       onSuccess: () => {
-        toast({ title: "Reservation cancelled", description: "Your token has been refunded." });
-        queryClient.invalidateQueries({ queryKey: getListUpcomingReservationsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getListReservationsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetTokenBalanceQueryKey() });
-        setCancellingId(null);
+        toast({ title: tx({ fr: "Réservation annulée", en: "Booking cancelled", ar: "تم إلغاء الحجز" }), description: tx({ fr: "Vos tokens ont été remboursés.", en: "Your tokens were refunded.", ar: "تمت إعادة رصيدك." }) });
+        qc.invalidateQueries({ queryKey: getListUpcomingReservationsQueryKey() });
+        qc.invalidateQueries({ queryKey: getListReservationsQueryKey() });
+        qc.invalidateQueries({ queryKey: getGetTokenBalanceQueryKey() });
+        qc.invalidateQueries({ queryKey: getOpenMatchesQueryKey() });
+        setToCancel(null);
       },
-      onError: () => {
-        toast({ title: "Cancel failed", description: "Could not cancel the reservation.", variant: "destructive" });
-        setCancellingId(null);
-      },
+      onError: (e: any) => { toast({ title: tx({ fr: "Annulation impossible", en: "Couldn't cancel", ar: "تعذر الإلغاء" }), description: e?.data?.error, variant: "destructive" }); setToCancel(null); },
     });
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-6 md:p-8">
-      <div className="max-w-4xl mx-auto space-y-10">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold uppercase italic text-primary">{t("myReservations")}</h1>
-            <p className="text-muted-foreground mt-1">Manage your court bookings.</p>
-          </div>
-          <Link href="/terrains">
-            <Button className="bg-primary text-primary-foreground font-bold hover:bg-primary/90">
-              <Calendar className="h-4 w-4 mr-2" />
-              {t("bookCourt")}
-            </Button>
-          </Link>
-        </div>
+    <Page>
+      <PageHeader eyebrow={t("reservations")} title={t("myReservations")}
+        subtitle={tx({ fr: "Vos matchs à venir et votre historique.", en: "Your upcoming matches and history.", ar: "مبارياتك القادمة وسجلك." })}
+        actions={<Button asChild><Link href="/terrains"><CalendarPlus />{t("bookCourt")}</Link></Button>} />
 
-        <Card className="bg-card border-border">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5 text-primary" />
-              {t("upcomingBookings")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoadingUpcoming ? (
-              <div className="space-y-3">
-                <Skeleton className="h-20 w-full" />
-                <Skeleton className="h-20 w-full" />
-              </div>
-            ) : upcoming && upcoming.length > 0 ? (
-              <div className="space-y-3">
-                {upcoming.map((res) => (
-                  <div key={res.id} className="flex items-center justify-between p-4 border border-border rounded-lg bg-background hover:border-primary/50 transition-colors">
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 rounded-lg bg-primary/10 shrink-0">
-                        <MapPin className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-base">{res.terrain?.name ?? "Court"}</h3>
-                        <div className="flex items-center gap-3 text-sm text-muted-foreground mt-0.5">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="h-3.5 w-3.5" />
-                            {format(new Date(res.startTime), "PPP")}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Clock className="h-3.5 w-3.5" />
-                            {format(new Date(res.startTime), "HH:mm")} – {format(new Date(res.endTime), "HH:mm")}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase ${STATUS_COLORS[res.status] ?? "bg-muted text-muted-foreground"}`}>
-                        {res.status}
-                      </span>
-                      {res.status === "confirmed" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="border-destructive/50 text-destructive hover:bg-destructive/10"
-                          disabled={cancellingId === res.id}
-                          onClick={() => handleCancel(res.id)}
-                        >
-                          {cancellingId === res.id ? "..." : t("cancel")}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-10 space-y-3">
-                <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto opacity-50" />
-                <p className="text-muted-foreground">{t("noUpcoming")}</p>
-                <Link href="/terrains">
-                  <Button variant="outline" className="border-primary text-primary hover:bg-primary/10">
-                    {t("bookCourt")}
-                  </Button>
-                </Link>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-muted-foreground" />
-              {t("pastBookings")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoadingHistory ? (
-              <div className="space-y-3">
-                <Skeleton className="h-16 w-full" />
-                <Skeleton className="h-16 w-full" />
-              </div>
-            ) : pastHistory.length > 0 ? (
-              <div className="space-y-3">
-                {pastHistory.map((res) => (
-                  <div key={res.id} className="flex items-center justify-between p-4 border border-border rounded-lg bg-background opacity-70">
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 rounded-lg bg-muted shrink-0">
-                        <MapPin className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-base">{res.terrain?.name ?? "Court"}</h3>
-                        <div className="flex items-center gap-3 text-sm text-muted-foreground mt-0.5">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="h-3.5 w-3.5" />
-                            {format(new Date(res.startTime), "PPP")}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Clock className="h-3.5 w-3.5" />
-                            {format(new Date(res.startTime), "HH:mm")}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase ${STATUS_COLORS[res.status] ?? "bg-muted text-muted-foreground"}`}>
-                      {res.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-muted-foreground text-center py-6">{t("noPast")}</p>
-            )}
-          </CardContent>
-        </Card>
+      <div role="tablist" aria-label={t("reservations")} className="enter flex self-start rounded-full bg-card p-1 shadow-sm">
+        <button type="button" role="tab" aria-selected={tab === "upcoming"} className="pill-tab h-10" onClick={() => setTab("upcoming")}>{t("upcomingBookings")}{list.length ? ` · ${list.length}` : ""}</button>
+        <button type="button" role="tab" aria-selected={tab === "past"} className="pill-tab h-10" onClick={() => setTab("past")}>{t("pastBookings")}</button>
       </div>
-    </div>
+
+      {tab === "upcoming" ? (
+        loadingUp ? <div className="flex flex-col gap-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-[112px] !rounded-[26px]" />)}</div>
+        : list.length === 0 ? (
+          <EmptyState icon={<CalendarDays className="size-7" />} title={t("noUpcoming")} text={tx({ fr: "Trouvez un créneau libre, ça prend 30 secondes.", en: "Find a free slot, it takes 30 seconds.", ar: "ابحث عن موعد متاح، يستغرق 30 ثانية." })}
+            action={<Button asChild><Link href="/terrains">{t("bookCourt")}</Link></Button>} />
+        ) : (
+          <ul className="m-0 flex list-none flex-col gap-3 p-0">
+            {list.map((r, i) => (
+              <li key={r.id} className="lift flex flex-col gap-4 rounded-[26px] bg-card p-4 shadow-sm sm:flex-row sm:items-center sm:pe-5">
+                <div className="flex flex-1 items-center gap-4">
+                  <DateBlock date={r.startTime} dark={i === 0} />
+                  <span className="flex min-w-0 flex-col gap-1">
+                    <span className="flex flex-wrap items-center gap-2"><span className="text-lg font-extrabold">{r.terrain?.name ?? "Court"}</span><StatusBadge status={r.status} /></span>
+                    <span className="text-[15px] capitalize text-muted-foreground">{format(new Date(r.startTime), "EEEE", { locale })} · <span dir="ltr">{format(new Date(r.startTime), "HH:mm")} – {format(new Date(r.endTime), "HH:mm")}</span></span>
+                    {r.tokensCharged ? <span className="flex items-center gap-1.5 text-sm font-semibold text-court"><Coins className="size-3.5" />{r.tokensCharged} token{r.tokensCharged > 1 ? "s" : ""}</span> : null}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => downloadIcs(r)}><Download />{tx({ fr: "Calendrier", en: "Calendar", ar: "التقويم" })}</Button>
+                  {r.status === "confirmed" && (
+                    <Button variant="outline-destructive" size="sm" onClick={() => setToCancel(r)}><X />{t("cancel")}</Button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : loadingHistory ? <div className="flex flex-col gap-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-[84px] !rounded-[22px]" />)}</div>
+        : history.length === 0 ? <EmptyState title={t("noPast")} />
+        : (
+          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+            {history.map((r) => (
+              <li key={r.id} className="flex items-center gap-4 rounded-[22px] bg-card/70 p-3 pe-5">
+                <DateBlock date={r.startTime} />
+                <span className="flex flex-1 flex-col"><span className="font-extrabold">{r.terrain?.name ?? "Court"}</span>
+                  <span className="flex items-center gap-1.5 text-sm text-muted-foreground"><MapPin className="size-3.5" /><span dir="ltr">{format(new Date(r.startTime), "HH:mm")}</span></span></span>
+                <StatusBadge status={r.status} />
+              </li>
+            ))}
+          </ul>
+        )}
+
+      <AlertDialog open={!!toCancel} onOpenChange={(o) => !o && setToCancel(null)}>
+        <AlertDialogContent className="max-w-[440px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tx({ fr: "Annuler ce match ?", en: "Cancel this match?", ar: "إلغاء هذه المباراة؟" })}</AlertDialogTitle>
+            <AlertDialogDescription className="text-base">
+              {toCancel && `${toCancel.terrain?.name ?? ""}, ${format(new Date(toCancel.startTime), "EEEE d MMMM HH:mm", { locale })}. `}
+              {tx({ fr: "Vos tokens seront remboursés.", en: "Your tokens will be refunded.", ar: "سيتم إرجاع رصيدك." })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel className="h-12 rounded-full">{tx({ fr: "Garder", en: "Keep it", ar: "الإبقاء" })}</AlertDialogCancel>
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); confirmCancel(); }} disabled={cancelReservation.isPending} className="h-12 rounded-full bg-destructive">
+              {cancelReservation.isPending ? "…" : tx({ fr: "Oui, annuler", en: "Yes, cancel", ar: "نعم، ألغِ" })}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Page>
   );
 }

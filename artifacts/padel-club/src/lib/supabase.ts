@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { env } from "./env";
+import { installDemo } from "./demo";
 
 export const supabase = createClient(
   env.VITE_SUPABASE_URL,
@@ -19,3 +20,7 @@ export const supabase = createClient(
     },
   },
 );
+
+
+// No-op unless built with VITE_DEMO=true (see lib/demo.ts).
+installDemo(supabase);
