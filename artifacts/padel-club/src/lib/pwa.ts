@@ -7,7 +7,7 @@
  */
 import { useSyncExternalStore } from "react";
 import { pushSubscribe, pushUnsubscribe } from "@workspace/api-client-react";
-import { DEMO } from "@/lib/demo";
+import { DEMO } from "@/lib/demo-flag";
 
 type BIPEvent = Event & {
   prompt: () => Promise<void>;

@@ -279,3 +279,86 @@ export const useUpdateNotificationPrefs = () =>
 
 /** Body extension for booking / joining with rental equipment. */
 export type WithEquipment = { equipment?: EquipmentLine[] };
+
+// ─── Match management (admin desk) ───────────────────────────────────────────
+
+export type AddPlayerInput = {
+  reservationId: number;
+  userId: number;
+  /** cash_club (default): pays at the desk · token: debits the member's wallet */
+  paymentType?: "cash_club" | "token";
+  paymentStatus?: "paid" | "pending";
+};
+export const useAddPlayer = () =>
+  useMutation({
+    mutationFn: ({ reservationId, ...body }: AddPlayerInput) =>
+      customFetch<unknown>(`/api/reservations/${reservationId}/players`, {
+        method: "POST",
+        ...json(body),
+      }),
+  });
+export const useRemovePlayer = () =>
+  useMutation({
+    mutationFn: ({ reservationId, playerId }: { reservationId: number; playerId: number }) =>
+      customFetch<{ refunded: number }>(`/api/reservations/${reservationId}/players/${playerId}`, {
+        method: "DELETE",
+      }),
+  });
+export const useBlockSlot = () =>
+  useMutation({
+    mutationFn: (data: { terrainId: number; startTime: string; reason?: string }) =>
+      customFetch<unknown>("/api/admin/slots/block", { method: "POST", ...json(data) }),
+  });
+
+/** Admin booking on behalf of a member (token or cash at the desk) or a phone/walk-in guest. */
+export type AdminBookingInput = {
+  terrainId: number;
+  startTime: string;
+  bookingMode: "full_court" | "own_spot";
+  userId?: number;
+  paymentMethod?: "token" | "cash_club";
+  guestName?: string;
+  guestPhone?: string;
+  bookingType?: "phone" | "manual" | "online";
+  notes?: string;
+  isPublic?: boolean;
+  publicDescription?: string;
+  equipment?: EquipmentLine[];
+};
+
+// ─── Members (admin) ─────────────────────────────────────────────────────────
+
+export type AdminUserUpdate = {
+  firstName?: string | null;
+  lastName?: string | null;
+  phone?: string | null;
+  role?: "admin" | "player";
+};
+export const useAdminUpdateUser = () =>
+  useMutation({
+    mutationFn: ({ id, data }: { id: number; data: AdminUserUpdate }) =>
+      customFetch<unknown>(`/api/users/${id}`, { method: "PATCH", ...json(data) }),
+  });
+
+// ─── Tournaments ─────────────────────────────────────────────────────────────
+
+export const useUnregisterTournament = () =>
+  useMutation({
+    mutationFn: (id: number) =>
+      customFetch<unknown>(`/api/tournaments/${id}/register`, { method: "DELETE" }),
+  });
+
+/** Human message from any API error ({ error: "..." } body), or the fallback. */
+export function apiErrorMessage(e: unknown, fallback: string): string {
+  const data = (e as { data?: unknown })?.data;
+  if (data && typeof data === "object" && typeof (data as { error?: unknown }).error === "string")
+    return (data as { error: string }).error;
+  return fallback;
+}
+/** Machine code from an API error ({ code: "SLOT_TAKEN" }), if any. */
+export function apiErrorCode(e: unknown): string | undefined {
+  const data = (e as { data?: unknown })?.data;
+  return data && typeof data === "object"
+    ? ((data as { code?: string }).code ?? undefined)
+    : undefined;
+}

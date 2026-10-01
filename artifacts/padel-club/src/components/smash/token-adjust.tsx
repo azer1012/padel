@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useAdjustUserTokens,
-  useListUsers,
+  useGetUser,
   getListUsersQueryKey,
+  apiErrorMessage,
   getGetUserQueryKey,
   getListAllTokenTransactionsQueryKey,
   getGetTokenBalanceQueryKey,
@@ -11,13 +12,6 @@ import {
 import { ArrowRight, Coins } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -27,6 +21,8 @@ import {
 } from "@/components/ui/dialog";
 import { Field, Segmented, displayName } from "@/components/smash/admin";
 import { Avatar } from "@/components/smash/primitives";
+import { MemberPicker } from "@/components/smash/member-picker";
+import type { User } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTx } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -47,28 +43,28 @@ export function TokenAdjustDialog({
   const { toast } = useToast();
   const qc = useQueryClient();
   const adjust = useAdjustUserTokens();
-  const { data: users } = useListUsers({ limit: 200 } as any, {
-    query: { enabled: open, queryKey: getListUsersQueryKey({ limit: 200 } as any) },
-  });
-  const [memberId, setMemberId] = useState("");
+  const { data: locked } = useGetUser(userId ?? 0, { query: { enabled: open && !!userId } as any });
+  const [picked, setPicked] = useState<User | null>(null);
+  // One key per dialog opening: a double click or a retry can't credit twice
+  const [idempotencyKey, setIdempotencyKey] = useState("");
   const [kind, setKind] = useState<Kind>("credit");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
-  const [expiresAt, setExpiresAt] = useState("");
 
   useEffect(() => {
     if (open) {
-      setMemberId(userId ? String(userId) : "");
+      setPicked(null);
       setKind("credit");
       setAmount("");
       setDescription("");
       setNotes("");
-      setExpiresAt("");
+      setIdempotencyKey(crypto.randomUUID());
     }
   }, [open, userId]);
 
-  const member = users?.data?.find((u) => String(u.id) === memberId);
+  const member = userId ? locked : picked;
+  const memberId = member ? String(member.id) : "";
   const n = parseInt(amount) || 0;
   const current = member?.tokenBalance ?? 0;
   const next = kind === "credit" ? current + n : kind === "debit" ? current - n : n;
@@ -93,7 +89,11 @@ export function TokenAdjustDialog({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!memberId || n <= 0 || !description.trim()) {
+    if (
+      !memberId ||
+      (kind === "adjustment" ? n < 0 || amount === "" : n <= 0) ||
+      !description.trim()
+    ) {
       toast({
         title: tx({
           fr: "Membre, montant et motif sont requis",
@@ -123,8 +123,8 @@ export function TokenAdjustDialog({
           type: kind,
           description: description.trim(),
           notes: notes || undefined,
-          expiresAt: expiresAt ? new Date(expiresAt + "T23:59:59").toISOString() : undefined,
-        },
+          idempotencyKey,
+        } as any,
       },
       {
         onSuccess: () => {
@@ -158,7 +158,7 @@ export function TokenAdjustDialog({
               en: "Couldn't update tokens",
               ar: "تعذرت العملية",
             }),
-            description: err?.data?.error,
+            description: apiErrorMessage(err, ""),
             variant: "destructive",
           }),
       },
@@ -191,24 +191,7 @@ export function TokenAdjustDialog({
             </div>
           ) : (
             <Field label={tx({ fr: "Membre", en: "Member", ar: "العضو" })} required>
-              <Select value={memberId} onValueChange={setMemberId}>
-                <SelectTrigger data-testid="select-token-user">
-                  <SelectValue
-                    placeholder={tx({
-                      fr: "Choisir un membre",
-                      en: "Choose a member",
-                      ar: "اختر عضوًا",
-                    })}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {users?.data?.map((u) => (
-                    <SelectItem key={u.id} value={String(u.id)}>
-                      {displayName(u)} · {u.tokenBalance ?? 0} tokens
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <MemberPicker value={picked} onChange={setPicked} />
             </Field>
           )}
           <Segmented
@@ -297,20 +280,6 @@ export function TokenAdjustDialog({
             </div>
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            {kind === "credit" && (
-              <Field
-                label={tx({ fr: "Expire le", en: "Expires on", ar: "ينتهي في" })}
-                htmlFor="tk-exp"
-                hint={tx({ fr: "Optionnel", en: "Optional", ar: "اختياري" })}
-              >
-                <Input
-                  id="tk-exp"
-                  type="date"
-                  value={expiresAt}
-                  onChange={(e) => setExpiresAt(e.target.value)}
-                />
-              </Field>
-            )}
             <Field
               label={tx({ fr: "Note interne", en: "Internal note", ar: "ملاحظة داخلية" })}
               htmlFor="tk-notes"
@@ -319,7 +288,7 @@ export function TokenAdjustDialog({
                 en: "Admins only.",
                 ar: "للمسؤولين فقط.",
               })}
-              className={kind === "credit" ? "" : "sm:col-span-2"}
+              className="sm:col-span-2"
             >
               <Input
                 id="tk-notes"

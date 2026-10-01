@@ -29,9 +29,10 @@ import type {
   GetOccupancyStatsParams,
   GetPeakHoursParams,
   GetRecentActivityParams,
-  GetTerrainSlotsParams,
   HealthStatus,
   InviteResponse,
+  JoinPaymentMethod,
+  JoinResponse,
   ListAllTokenTransactionsParams,
   ListNewsParams,
   ListNotificationsParams,
@@ -834,90 +835,6 @@ export const useDeleteTerrain = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getDeleteTerrainMutationOptions(options));
     }
-
-export const getGetTerrainSlotsUrl = (params: GetTerrainSlotsParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : value.toString())
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/api/terrain-slots?${stringifiedParams}` : `/api/terrain-slots`
-}
-
-/**
- * @summary Get available slots for a terrain on a date
- */
-export const getTerrainSlots = async (params: GetTerrainSlotsParams, options?: RequestInit): Promise<TimeSlot[]> => {
-
-  return customFetch<TimeSlot[]>(getGetTerrainSlotsUrl(params),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-);}
-
-
-
-
-
-export const getGetTerrainSlotsQueryKey = (params?: GetTerrainSlotsParams,) => {
-    return [
-    `/api/terrain-slots`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getGetTerrainSlotsQueryOptions = <TData = Awaited<ReturnType<typeof getTerrainSlots>>, TError = ErrorType<unknown>>(params: GetTerrainSlotsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTerrainSlots>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetTerrainSlotsQueryKey(params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTerrainSlots>>> = ({ signal }) => getTerrainSlots(params, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTerrainSlots>>, TError, TData> & { queryKey: QueryKey }
-}
-
-export type GetTerrainSlotsQueryResult = NonNullable<Awaited<ReturnType<typeof getTerrainSlots>>>
-export type GetTerrainSlotsQueryError = ErrorType<unknown>
-
-
-/**
- * @summary Get available slots for a terrain on a date
- */
-
-export function useGetTerrainSlots<TData = Awaited<ReturnType<typeof getTerrainSlots>>, TError = ErrorType<unknown>>(
- params: GetTerrainSlotsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTerrainSlots>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
- ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-
-  const queryOptions = getGetTerrainSlotsQueryOptions(params,options)
-
-  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
 
 export const getListReservationsUrl = (params?: ListReservationsParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -3013,15 +2930,15 @@ export const useGetCalendar = <TError = ErrorType<unknown>>(
 
 // ─── Join session ─────────────────────────────────────────────────────────────
 
-export const joinSession = async (id: number, options?: RequestInit): Promise<{ message: string }> => {
-  return customFetch<{ message: string }>(`/api/reservations/${id}/join`, { ...options, method: 'POST' });
+export const joinSession = async (id: number, body: { paymentMethod?: JoinPaymentMethod; equipment?: { itemId: number; quantity: number }[] } = {}, options?: RequestInit): Promise<JoinResponse> => {
+  return customFetch<JoinResponse>(`/api/reservations/${id}/join`, { ...options, method: 'POST', body: JSON.stringify(body) });
 };
 
 export const useJoinSession = <TError = ErrorType<unknown>, TContext = unknown>(
-  options?: { mutation?: UseMutationOptions<Awaited<ReturnType<typeof joinSession>>, TError, { id: number }, TContext>, request?: SecondParameter<typeof customFetch> }
-): UseMutationResult<Awaited<ReturnType<typeof joinSession>>, TError, { id: number }, TContext> => {
+  options?: { mutation?: UseMutationOptions<Awaited<ReturnType<typeof joinSession>>, TError, { id: number; paymentMethod?: JoinPaymentMethod }, TContext>, request?: SecondParameter<typeof customFetch> }
+): UseMutationResult<Awaited<ReturnType<typeof joinSession>>, TError, { id: number; paymentMethod?: JoinPaymentMethod }, TContext> => {
   const { mutation: mutationOptions, request: requestOptions } = options ?? {};
-  const mutationFn: MutationFunction<Awaited<ReturnType<typeof joinSession>>, { id: number }> = ({ id }) => joinSession(id, requestOptions);
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof joinSession>>, { id: number; paymentMethod?: JoinPaymentMethod }> = ({ id, paymentMethod }) => joinSession(id, { paymentMethod }, requestOptions);
   return useMutation({ mutationFn, ...mutationOptions });
 };
 
@@ -3074,15 +2991,15 @@ export const useGetInvite = <TError = ErrorType<unknown>>(
 
 // ─── Accept invite ────────────────────────────────────────────────────────────
 
-export const acceptInvite = async (token: string, options?: RequestInit): Promise<{ message: string }> => {
-  return customFetch<{ message: string }>(`/api/invites/${token}/accept`, { ...options, method: 'POST' });
+export const acceptInvite = async (token: string, body: { paymentMethod?: JoinPaymentMethod } = {}, options?: RequestInit): Promise<JoinResponse> => {
+  return customFetch<JoinResponse>(`/api/invites/${token}/accept`, { ...options, method: 'POST', body: JSON.stringify(body) });
 };
 
 export const useAcceptInvite = <TError = ErrorType<unknown>, TContext = unknown>(
-  options?: { mutation?: UseMutationOptions<Awaited<ReturnType<typeof acceptInvite>>, TError, { token: string }, TContext>, request?: SecondParameter<typeof customFetch> }
-): UseMutationResult<Awaited<ReturnType<typeof acceptInvite>>, TError, { token: string }, TContext> => {
+  options?: { mutation?: UseMutationOptions<Awaited<ReturnType<typeof acceptInvite>>, TError, { token: string; paymentMethod?: JoinPaymentMethod }, TContext>, request?: SecondParameter<typeof customFetch> }
+): UseMutationResult<Awaited<ReturnType<typeof acceptInvite>>, TError, { token: string; paymentMethod?: JoinPaymentMethod }, TContext> => {
   const { mutation: mutationOptions, request: requestOptions } = options ?? {};
-  const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptInvite>>, { token: string }> = ({ token }) => acceptInvite(token, requestOptions);
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptInvite>>, { token: string; paymentMethod?: JoinPaymentMethod }> = ({ token, paymentMethod }) => acceptInvite(token, { paymentMethod }, requestOptions);
   return useMutation({ mutationFn, ...mutationOptions });
 };
 

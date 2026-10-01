@@ -30,24 +30,32 @@ export default function Contact() {
         </>
       ),
     },
-    {
-      icon: Phone,
-      label: tx({ fr: "Téléphone", en: "Phone", ar: "الهاتف" }),
-      value: (
-        <a href={CLUB.phoneHref} className="ulink" dir="ltr">
-          {CLUB.phone}
-        </a>
-      ),
-    },
-    {
-      icon: Mail,
-      label: "Email",
-      value: (
-        <a href={`mailto:${CLUB.email}`} className="ulink">
-          {CLUB.email}
-        </a>
-      ),
-    },
+    ...(CLUB.phone
+      ? [
+          {
+            icon: Phone,
+            label: tx({ fr: "Téléphone", en: "Phone", ar: "الهاتف" }),
+            value: (
+              <a href={CLUB.phoneHref} className="ulink" dir="ltr">
+                {CLUB.phone}
+              </a>
+            ),
+          },
+        ]
+      : []),
+    ...(CLUB.email
+      ? [
+          {
+            icon: Mail,
+            label: "Email",
+            value: (
+              <a href={`mailto:${CLUB.email}`} className="ulink">
+                {CLUB.email}
+              </a>
+            ),
+          },
+        ]
+      : []),
   ];
   return (
     <Page wide>
@@ -61,18 +69,22 @@ export default function Contact() {
         })}
         actions={
           <>
-            <Button asChild variant="lime">
-              <a href={CLUB.whatsappHref} target="_blank" rel="noreferrer">
-                <MessageCircle />
-                WhatsApp
-              </a>
-            </Button>
-            <Button asChild variant="dark">
-              <a href={CLUB.phoneHref}>
-                <Phone />
-                {tx({ fr: "Appeler", en: "Call", ar: "اتصل" })}
-              </a>
-            </Button>
+            {CLUB.whatsappHref && (
+              <Button asChild variant="lime">
+                <a href={CLUB.whatsappHref} target="_blank" rel="noreferrer">
+                  <MessageCircle />
+                  WhatsApp
+                </a>
+              </Button>
+            )}
+            {CLUB.phoneHref && (
+              <Button asChild variant="dark">
+                <a href={CLUB.phoneHref}>
+                  <Phone />
+                  {tx({ fr: "Appeler", en: "Call", ar: "اتصل" })}
+                </a>
+              </Button>
+            )}
           </>
         }
       />

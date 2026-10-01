@@ -11,10 +11,11 @@ import { Redirect } from "wouter";
 import { syncUser } from "@/lib/user-sync";
 import { getAccessToken } from "@/services/api";
 import { I18nProvider } from "@/lib/i18n";
-import { DEMO } from "@/lib/demo";
+import { DEMO } from "@/lib/demo-flag";
 import { useHashLocation } from "wouter/use-hash-location";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth";
+import ResetPassword from "@/pages/reset-password";
 import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
 const AdminDashboard = lazy(() => import("@/pages/admin"));
@@ -126,6 +127,7 @@ function AppRoutes() {
             <Route path="/" component={HomeRedirect} />
             <Route path="/sign-in/*?" component={() => <AuthPage mode="sign-in" />} />
             <Route path="/sign-up/*?" component={() => <AuthPage mode="sign-up" />} />
+            <Route path="/reset-password" component={ResetPassword} />
 
             {/* Protected Player Routes */}
             <Route path="/dashboard">

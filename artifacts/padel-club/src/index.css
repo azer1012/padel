@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -583,6 +582,11 @@
     border: 2px dashed #e1e6f7;
     color: #a3aacb;
     cursor: default;
+  }
+  .slot[data-state="blocked"] {
+    background: repeating-linear-gradient(135deg, #1c2450 0 7px, #232c5e 7px 14px);
+    color: #c9cff0;
+    cursor: pointer;
   }
   .slot:active:not(:disabled) {
     transform: scale(0.96);

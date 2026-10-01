@@ -1,19 +1,28 @@
 /**
- * Club identity and contact details, in one place.
- * Change the name here and it updates the nav, footer, auth pages and titles.
+ * Club identity and contact details, in one place (set them in .env, VITE_CLUB_*).
+ * Contact channels left empty are simply not shown: the site never displays a
+ * placeholder phone number or a dead social link.
  */
+const env = import.meta.env;
+const digits = (v: string) => v.replace(/[^\d+]/g, "");
+const phone = (env.VITE_CLUB_PHONE as string | undefined)?.trim() ?? "";
+const whatsapp = digits((env.VITE_CLUB_WHATSAPP as string | undefined) ?? phone).replace(/^\+/, "");
+
 export const CLUB = {
-  name: "Smash Padel",
-  city: "Tunis",
-  address: "Les Berges du Lac",
-  postal: "1053 Tunis, Tunisie",
-  phone: "+216 71 123 456",
-  phoneHref: "tel:+21671123456",
-  whatsappHref: "https://wa.me/21671123456",
-  email: "contact@padelclub.tn",
-  hours: "06:00 – 00:00",
-  mapsQuery: "Les Berges du Lac, Tunis",
-  social: { instagram: "#", facebook: "#" },
+  name: (env.VITE_CLUB_NAME as string | undefined) || "Smash Padel",
+  city: (env.VITE_CLUB_CITY as string | undefined) || "Tunis",
+  address: (env.VITE_CLUB_ADDRESS as string | undefined) || "Les Berges du Lac",
+  postal: (env.VITE_CLUB_POSTAL as string | undefined) || "1053 Tunis, Tunisie",
+  phone,
+  phoneHref: phone ? `tel:${digits(phone)}` : "",
+  whatsappHref: whatsapp ? `https://wa.me/${whatsapp}` : "",
+  email: (env.VITE_CLUB_EMAIL as string | undefined)?.trim() ?? "",
+  hours: (env.VITE_CLUB_HOURS as string | undefined) || "08:00 – 23:00",
+  mapsQuery: (env.VITE_CLUB_MAPS_QUERY as string | undefined) || "Les Berges du Lac, Tunis",
+  social: {
+    instagram: (env.VITE_CLUB_INSTAGRAM as string | undefined)?.trim() ?? "",
+    facebook: (env.VITE_CLUB_FACEBOOK as string | undefined)?.trim() ?? "",
+  },
   /** Business rules shown in the UI (the API is the source of truth when booking). */
   tokensFullCourt: 4,
   tokensOwnSpot: 1,

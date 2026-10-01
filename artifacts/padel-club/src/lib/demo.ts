@@ -8,13 +8,13 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const DEMO = import.meta.env.VITE_DEMO === "true";
+import { DEMO } from "./demo-flag";
 
 type Player = {
   id: number;
   userId: number | null;
   name: string;
-  paymentType: "token" | "cash";
+  paymentType: "token" | "cash_club" | "invited_free";
   paymentStatus: "paid" | "pending";
 };
 type Booking = {
@@ -294,7 +294,7 @@ function seed(day: string) {
         id: nextId++,
         userId: 100 + k,
         name: NAMES[(r + k * 3 + t.id) % NAMES.length],
-        paymentType: k % 3 ? "token" : "cash",
+        paymentType: k % 3 ? "token" : "cash_club",
         paymentStatus: k % 4 === 3 ? "pending" : "paid",
       }));
       bookings.set(key(t.id, start), {
@@ -342,7 +342,7 @@ function seed(day: string) {
           id: 9003,
           userId: 103,
           name: "Ines Tlili",
-          paymentType: "cash",
+          paymentType: "cash_club",
           paymentStatus: "pending",
         },
         { id: 9004, userId: 104, name: "Omar Sassi", paymentType: "token", paymentStatus: "paid" },
@@ -475,6 +475,13 @@ function calendarSlot(t: (typeof terrains)[number], start: Date, end: Date) {
     players: live?.players ?? [],
     creatorName: live?.creator ?? null,
     seriesId: (live as any)?.seriesId ?? null,
+    isPast: start.getTime() <= Date.now(),
+    isMine: !!live?.players.some((p) => p.userId === ME_ID),
+    isOrganizer: !!live && live.players[0]?.userId === ME_ID,
+    invitedSeats: live?.mode === "full_court" ? Math.max(0, 4 - live.players.length) : 0,
+    isBlocked: false,
+    guestPhone: null,
+    notes: null,
     ...priceAt(t.id, start),
   };
 }
@@ -728,7 +735,7 @@ const routes: [string, RegExp, Handler][] = [
               id: nextId++,
               userId: b.userId ?? null,
               name: who,
-              paymentType: "cash",
+              paymentType: "cash_club",
               paymentStatus: "pending",
             },
           ],
@@ -1024,7 +1031,13 @@ const routes: [string, RegExp, Handler][] = [
           isPublic: false,
           desc: null,
           players: [
-            { id: nextId++, userId: null, name, paymentType: "cash", paymentStatus: "pending" },
+            {
+              id: nextId++,
+              userId: null,
+              name,
+              paymentType: "cash_club",
+              paymentStatus: "pending",
+            },
           ],
           creator: name,
           createdAt: new Date().toISOString(),
@@ -1097,19 +1110,23 @@ const routes: [string, RegExp, Handler][] = [
   [
     "POST",
     /^\/api\/reservations\/(\d+)\/join$/,
-    (m) => {
+    (m, _u, body) => {
       const b = byId(+m[1]);
       if (!b) return [404, { error: "Introuvable" }];
-      if (balance < 1) return [400, { error: "Solde insuffisant" }];
+      const cash = body?.paymentMethod === "cash_club";
+      if (!cash && balance < 1) return [400, { error: "Solde insuffisant" }];
       b.players.push({
         id: nextId++,
         userId: ME_ID,
         name: "Yasmine Ben Ali",
-        paymentType: "token",
-        paymentStatus: "paid",
+        paymentType: cash ? "cash_club" : "token",
+        paymentStatus: cash ? "pending" : "paid",
       });
-      charge(1, `Open match · ${terrainOf(b.terrainId).name}`);
-      return [200, { message: "ok" }];
+      if (!cash) charge(1, `Open match · ${terrainOf(b.terrainId).name}`);
+      return [
+        200,
+        { message: "ok", tokensCharged: cash ? 0 : 1, paymentType: cash ? "cash_club" : "token" },
+      ];
     },
   ],
   [
@@ -1118,9 +1135,11 @@ const routes: [string, RegExp, Handler][] = [
     (m) => {
       const b = byId(+m[1]);
       if (!b) return [404, { error: "Introuvable" }];
+      const mine = b.players.find((p) => p.userId === ME_ID);
       b.players = b.players.filter((p) => p.userId !== ME_ID);
-      charge(1, "Remboursement", true);
-      return [200, { message: "ok" }];
+      const refunded = mine?.paymentType === "token" ? 1 : 0;
+      if (refunded) charge(1, "Remboursement", true);
+      return [200, { message: "ok", refunded }];
     },
   ],
   [
@@ -1130,6 +1149,8 @@ const routes: [string, RegExp, Handler][] = [
       200,
       {
         invite: { id: 1, inviteToken: "demo-invite", reservationId: +m[1] },
+        token: "demo-invite",
+        free: byId(+m[1])?.mode === "full_court",
         inviteUrl: `${location.origin}${location.pathname.replace(/\/$/, "")}/join/demo-invite`,
       },
     ],
@@ -1185,9 +1206,14 @@ const routes: [string, RegExp, Handler][] = [
                 terrainName: terrainOf(b.terrainId).name,
                 startTime: b.start.toISOString(),
                 endTime: b.end.toISOString(),
+                bookingMode: b.mode,
                 totalSpots: 4,
                 filledSpots: b.players.length,
                 openSpots: 4 - b.players.length,
+                players: b.players.map((p) => ({ name: p.name.split(" ")[0] })),
+                free: false,
+                tokensPerSpot: 1,
+                pricePerPerson: 25,
               },
             },
           ]
@@ -1197,9 +1223,13 @@ const routes: [string, RegExp, Handler][] = [
   [
     "POST",
     /^\/api\/invites\/[^/]+\/accept$/,
-    () => {
-      charge(1, "Invitation acceptée");
-      return [200, { message: "ok" }];
+    (_m, _u, body) => {
+      const cash = body?.paymentMethod === "cash_club";
+      if (!cash) charge(1, "Invitation acceptée");
+      return [
+        200,
+        { message: "ok", tokensCharged: cash ? 0 : 1, paymentType: cash ? "cash_club" : "token" },
+      ];
     },
   ],
   ["GET", /^\/api\/tournaments$/, () => [200, tournaments]],

@@ -159,7 +159,8 @@ export const ReservationBookingType = {
 export interface Reservation {
   id: number;
   terrainId: number;
-  userId: number;
+  /** Organiser (null for a phone/walk-in guest booking) */
+  userId: number | null;
   /** @nullable */
   guestName?: string | null;
   /** @nullable */
@@ -169,10 +170,16 @@ export interface Reservation {
   status: ReservationStatus;
   tokensCharged: number;
   bookingType: ReservationBookingType;
+  bookingMode: CalendarBookingMode;
+  totalSpots: number;
+  isPublic: boolean;
+  /** @nullable */
+  publicDescription?: string | null;
   /** @nullable */
   notes?: string | null;
   terrain?: Terrain;
-  user?: User;
+  user?: User | null;
+  players?: ReservationPlayer[];
   createdAt: string;
 }
 
@@ -570,8 +577,8 @@ export interface CalendarSlotPlayer {
   id: number;
   userId: number | null;
   name: string;
-  paymentType: 'token' | 'cash' | null;
-  paymentStatus: 'paid' | 'pending' | 'refunded' | null;
+  paymentType: PlayerPaymentType | null;
+  paymentStatus: PlayerPaymentStatus | null;
 }
 
 export interface CalendarSlot {
@@ -587,6 +594,25 @@ export interface CalendarSlot {
   publicDescription: string | null;
   players: CalendarSlotPlayer[];
   creatorName: string | null;
+  /** Slot start is in the past (booked past slots stay openable for staff). */
+  isPast: boolean;
+  /** Current user booked or plays in this match. */
+  isMine: boolean;
+  /** Current user is the organiser (may cancel, invite on a full court). */
+  isOrganizer: boolean;
+  /** Full court: spots the booker can still hand out by invite. */
+  invitedSeats: number;
+  /** Staff-blocked slot (maintenance, event). */
+  isBlocked: boolean;
+  /** Admin only. */
+  guestPhone: string | null;
+  /** Admin only. */
+  notes: string | null;
+  seriesId?: number | null;
+  tokensPerSpot: number;
+  pricePerPerson: number;
+  isPeak: boolean;
+  priceLabel: string | null;
 }
 
 export interface CalendarTerrain {
@@ -616,9 +642,11 @@ export type GetCalendarParams = {
 // ─── Reservation Players ──────────────────────────────────────────────────────
 
 export type PlayerPaymentType = typeof PlayerPaymentType[keyof typeof PlayerPaymentType];
+/** token = own token · cash_club = pays at the desk · invited_free = covered by the full-court booker */
 export const PlayerPaymentType = {
   token: 'token',
-  cash: 'cash',
+  cash_club: 'cash_club',
+  invited_free: 'invited_free',
 } as const;
 
 export type PlayerPaymentStatus = typeof PlayerPaymentStatus[keyof typeof PlayerPaymentStatus];
@@ -671,11 +699,18 @@ export interface InviteResponse {
   reservation: {
     id: number;
     terrainName: string;
+    terrainType?: string;
     startTime: string;
     endTime: string;
+    bookingMode: CalendarBookingMode;
     totalSpots: number;
     filledSpots: number;
     openSpots: number;
+    players: { name: string }[];
+    /** Full court: the booker already paid, joining is free. */
+    free: boolean;
+    tokensPerSpot: number;
+    pricePerPerson: number;
   };
 }
 
@@ -683,6 +718,16 @@ export interface CreateInviteResponse {
   invite: PlayerInvite;
   inviteUrl: string;
   token: string;
+  free: boolean;
+}
+
+export type JoinPaymentMethod = 'token' | 'cash_club';
+
+export interface JoinResponse {
+  message: string;
+  tokensCharged: number;
+  paymentType: PlayerPaymentType;
+  reservationId?: number;
 }
 
 // ─── Open Matches ─────────────────────────────────────────────────────────────
@@ -696,7 +741,9 @@ export interface OpenMatch {
   filledSpots: number;
   openSpots: number;
   publicDescription: string | null;
-  players: { name: string; paymentStatus: string }[];
+  tokensPerSpot: number;
+  isPeak: boolean;
+  players: { name: string }[];
 }
 
 export type ReservationBookingMode = typeof ReservationBookingMode[keyof typeof ReservationBookingMode];

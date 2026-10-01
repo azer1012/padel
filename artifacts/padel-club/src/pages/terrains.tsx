@@ -41,13 +41,18 @@ export default function Terrains() {
       <PageHeader
         eyebrow={tx({ fr: "Réserver", en: "Book a court", ar: "احجز ملعبًا" })}
         title={tx({ fr: "Choisissez votre terrain", en: "Pick your court", ar: "اختر ملعبك" })}
-        subtitle={tx({
-          fr: "Les créneaux verts sont libres. Touchez-en un pour réserver le terrain ou juste votre place.",
-          en: "Green slots are free. Tap one to book the whole court or just your spot.",
-          ar: "المواعيد الخضراء متاحة. اضغط لحجز الملعب أو مكانك فقط.",
-        })}
+        subtitle={
+          <span className="hidden sm:inline">
+            {tx({
+              fr: "Les créneaux verts sont libres. Touchez-en un pour réserver le terrain ou juste votre place.",
+              en: "Green slots are free. Tap one to book the whole court or just your spot.",
+              ar: "المواعيد الخضراء متاحة. اضغط لحجز الملعب أو مكانك فقط.",
+            })}
+          </span>
+        }
       />
-      <ul className="enter m-0 -mt-3 flex list-none flex-wrap gap-2 p-0">
+      {/* On phones the grid comes first: the booking dialog explains prices anyway */}
+      <ul className="enter m-0 -mt-3 hidden list-none flex-wrap gap-2 p-0 sm:flex">
         {rules.map((r) => (
           <li
             key={r.text}

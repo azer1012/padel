@@ -9,9 +9,10 @@ import { CourtLines, LiveDot } from "@/components/smash/primitives";
 import { useTx } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { CLUB } from "@/config/club";
+import { clubTime } from "@/lib/club-time";
 
 type CourtState = "free" | "partial" | "busy" | "selected";
-const hhmm = (iso: string) => format(new Date(iso), "HH:mm");
+const hhmm = (iso: string) => clubTime(iso);
 
 function isBookable(s?: CalendarSlot) {
   return !!s && s.status === "available";

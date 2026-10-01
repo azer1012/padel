@@ -92,24 +92,28 @@ export default function Wallet() {
           </span>
           <span className="text-[15px]">
             {tx({
-              fr: "Paiement en espèces ou carte au club. Les tokens apparaissent ici tout de suite.",
-              en: "Pay cash or card at the club. Tokens show up here immediately.",
-              ar: "ادفع نقدًا أو بالبطاقة في النادي. يظهر الرصيد هنا فورًا.",
+              fr: "Payez en espèces à l'accueil du club. Les tokens apparaissent ici tout de suite.",
+              en: "Pay cash at the club front desk. Tokens show up here immediately.",
+              ar: "ادفع نقدًا في استقبال النادي. يظهر الرصيد هنا فورًا.",
             })}
           </span>
           <div className="mt-auto flex flex-wrap gap-2">
-            <Button asChild variant="dark" size="sm">
-              <a href={CLUB.phoneHref}>
-                <Phone />
-                {tx({ fr: "Appeler", en: "Call", ar: "اتصل" })}
-              </a>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <a href={CLUB.whatsappHref} target="_blank" rel="noreferrer">
-                <MessageCircle />
-                WhatsApp
-              </a>
-            </Button>
+            {CLUB.phoneHref && (
+              <Button asChild variant="dark" size="sm">
+                <a href={CLUB.phoneHref}>
+                  <Phone />
+                  {tx({ fr: "Appeler", en: "Call", ar: "اتصل" })}
+                </a>
+              </Button>
+            )}
+            {CLUB.whatsappHref && (
+              <Button asChild variant="outline" size="sm">
+                <a href={CLUB.whatsappHref} target="_blank" rel="noreferrer">
+                  <MessageCircle />
+                  WhatsApp
+                </a>
+              </Button>
+            )}
           </div>
         </section>
       </div>

@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { NotificationSettings } from "@/components/smash/notification-settings";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { authErrorMessage } from "@/lib/auth-errors";
 import { useI18n, useTx, type Lang } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -77,11 +78,11 @@ export default function Profile() {
   async function sendReset() {
     if (!user?.email) return;
     const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-      redirectTo: `${window.location.origin}/profile`,
+      redirectTo: `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "")}/reset-password`,
     });
     toast(
       error
-        ? { title: error.message, variant: "destructive" }
+        ? { title: authErrorMessage(error, tx), variant: "destructive" }
         : {
             title: tx({
               fr: "Lien envoyé par email",

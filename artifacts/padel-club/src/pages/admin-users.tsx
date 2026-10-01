@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { useListUsers, getListUsersQueryKey } from "@workspace/api-client-react";
+import {
+  useListUsers,
+  getListUsersQueryKey,
+  useGetMe,
+  useAdminUpdateUser,
+  apiErrorMessage,
+} from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "@workspace/api-client-react";
-import { Coins, Users as UsersIcon, Mail, Phone } from "lucide-react";
+import { Coins, Users as UsersIcon, Mail, Phone, ShieldCheck, ShieldOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, Page, PageHeader } from "@/components/smash/primitives";
 import {
@@ -13,7 +20,9 @@ import {
   Toolbar,
   displayName,
   type Column,
+  useConfirm,
 } from "@/components/smash/admin";
+import { useToast } from "@/hooks/use-toast";
 import { TokenAdjustDialog } from "@/components/smash/token-adjust";
 import { useTx, useDateLocale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -27,6 +36,51 @@ export default function AdminUsers() {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [tokenUser, setTokenUser] = useState<number | null>(null);
+  const { data: me } = useGetMe();
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const updateUser = useAdminUpdateUser();
+  const { confirm, dialog } = useConfirm();
+
+  async function toggleAdmin(u: User) {
+    const promote = u.role !== "admin";
+    const ok = await confirm({
+      title: promote
+        ? tx({
+            fr: `Donner l'accès admin à ${displayName(u)} ?`,
+            en: `Give ${displayName(u)} admin access?`,
+            ar: "منح صلاحية المسؤول؟",
+          })
+        : tx({
+            fr: `Retirer l'accès admin de ${displayName(u)} ?`,
+            en: `Remove ${displayName(u)}'s admin access?`,
+            ar: "سحب صلاحية المسؤول؟",
+          }),
+      description: promote
+        ? tx({
+            fr: "Un admin gère les réservations, les tokens, les membres et les réglages du club.",
+            en: "Admins manage bookings, tokens, members and club settings.",
+            ar: "المسؤول يدير الحجوزات والرصيد والأعضاء والإعدادات.",
+          })
+        : undefined,
+      confirmLabel: promote
+        ? tx({ fr: "Donner l'accès", en: "Grant access", ar: "منح" })
+        : tx({ fr: "Retirer", en: "Remove", ar: "سحب" }),
+      destructive: !promote,
+    });
+    if (!ok) return;
+    updateUser.mutate(
+      { id: u.id, data: { role: promote ? "admin" : "player" } },
+      {
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: getListUsersQueryKey() });
+          toast({ title: tx({ fr: "Rôle mis à jour", en: "Role updated", ar: "تم تحديث الدور" }) });
+        },
+        onError: (e) =>
+          toast({ title: "Oups", description: apiErrorMessage(e, ""), variant: "destructive" }),
+      },
+    );
+  }
 
   // Debounce so we don't hit the API on every keystroke
   useEffect(() => {
@@ -118,15 +172,45 @@ export default function AdminUsers() {
       header: <span className="sr-only">Actions</span>,
       align: "end",
       cell: (u) => (
-        <Button
-          data-testid={`btn-manage-tokens-${u.id}`}
-          variant="outline"
-          size="sm"
-          onClick={() => setTokenUser(u.id)}
-        >
-          <Coins />
-          {tx({ fr: "Tokens", en: "Tokens", ar: "الرصيد" })}
-        </Button>
+        <span className="flex justify-end gap-2">
+          <Button
+            data-testid={`btn-manage-tokens-${u.id}`}
+            variant="outline"
+            size="sm"
+            onClick={() => setTokenUser(u.id)}
+          >
+            <Coins />
+            {tx({ fr: "Tokens", en: "Tokens", ar: "الرصيد" })}
+          </Button>
+          {u.id !== me?.id && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => toggleAdmin(u)}
+              disabled={updateUser.isPending}
+              aria-label={
+                u.role === "admin"
+                  ? tx({
+                      fr: "Retirer l'accès admin",
+                      en: "Remove admin access",
+                      ar: "سحب صلاحية المسؤول",
+                    })
+                  : tx({ fr: "Donner l'accès admin", en: "Make admin", ar: "منح صلاحية المسؤول" })
+              }
+              title={
+                u.role === "admin"
+                  ? tx({
+                      fr: "Retirer l'accès admin",
+                      en: "Remove admin access",
+                      ar: "سحب صلاحية المسؤول",
+                    })
+                  : tx({ fr: "Donner l'accès admin", en: "Make admin", ar: "منح صلاحية المسؤول" })
+              }
+            >
+              {u.role === "admin" ? <ShieldOff /> : <ShieldCheck />}
+            </Button>
+          )}
+        </span>
       ),
     },
   ];
@@ -150,7 +234,11 @@ export default function AdminUsers() {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder={tx({ fr: "Nom ou email…", en: "Name or email…", ar: "الاسم أو البريد…" })}
+          placeholder={tx({
+            fr: "Nom, email ou téléphone…",
+            en: "Name, email or phone…",
+            ar: "الاسم أو البريد أو الهاتف…",
+          })}
         />
       </Toolbar>
       <DataTable
@@ -185,6 +273,7 @@ export default function AdminUsers() {
         onOpenChange={(o) => !o && setTokenUser(null)}
         userId={tokenUser}
       />
+      {dialog}
     </Page>
   );
 }

@@ -10,7 +10,8 @@ import {
   getListReservationsQueryKey,
   getCalendarQueryKey,
 } from "@workspace/api-client-react";
-import type { Reservation } from "@workspace/api-client-react";
+import type { Reservation, User } from "@workspace/api-client-react";
+import { MemberPicker } from "@/components/smash/member-picker";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, LayoutGrid, List, X, CalendarDays, Phone, Repeat } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -48,18 +49,31 @@ import {
 } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
 import { useTx, useDateLocale } from "@/lib/i18n";
+import { clubTime } from "@/lib/club-time";
 
 const PAGE = 20;
 type BookingType = "manual" | "phone" | "online";
 const emptyBooking = {
   terrainId: "",
-  startTime: "",
-  userId: "",
+  date: format(new Date(), "yyyy-MM-dd"),
+  time: "",
+  member: null as User | null,
+  paymentMethod: "cash_club" as "cash_club" | "token",
+  bookingMode: "full_court" as "full_court" | "own_spot",
   guestName: "",
   guestPhone: "",
   bookingType: "phone" as BookingType,
   notes: "",
 };
+
+/** Start times on a court's 90-minute grid ("08:00", "09:30", …). */
+function gridTimes(opening = "08:00", closing = "23:00") {
+  const m = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+  const out: string[] = [];
+  for (let t = m(opening); t + 90 <= m(closing); t += 90)
+    out.push(`${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`);
+  return out;
+}
 
 export default function AdminReservations() {
   const tx = useTx();
@@ -91,7 +105,6 @@ export default function AdminReservations() {
     query: { queryKey: getListReservationsQueryKey(params), enabled: view === "list" },
   });
   const { data: terrains } = useListTerrains();
-  const { data: usersData } = useListUsers({ limit: 100 } as any);
   const cancelMutation = useCancelReservation();
   const createMutation = useCreateReservation();
 
@@ -136,7 +149,8 @@ export default function AdminReservations() {
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!nb.terrainId || !nb.startTime) {
+    const startTime = nb.date && nb.time ? new Date(`${nb.date}T${nb.time}:00`).toISOString() : "";
+    if (!nb.terrainId || !startTime) {
       toast({
         title: tx({
           fr: "Choisissez un terrain et une heure",
@@ -151,13 +165,15 @@ export default function AdminReservations() {
       {
         data: {
           terrainId: parseInt(nb.terrainId),
-          startTime: new Date(nb.startTime).toISOString(),
-          userId: nb.userId ? parseInt(nb.userId) : undefined,
-          guestName: !nb.userId ? nb.guestName || undefined : undefined,
-          guestPhone: !nb.userId ? nb.guestPhone || undefined : undefined,
+          startTime,
+          bookingMode: nb.bookingMode,
+          userId: nb.member?.id,
+          paymentMethod: nb.member ? nb.paymentMethod : undefined,
+          guestName: !nb.member ? nb.guestName || undefined : undefined,
+          guestPhone: !nb.member ? nb.guestPhone || undefined : undefined,
           bookingType: nb.bookingType,
           notes: nb.notes || undefined,
-        },
+        } as any,
       },
       {
         onSuccess: () => {
@@ -166,7 +182,7 @@ export default function AdminReservations() {
           });
           setCreateOpen(false);
           setNb(emptyBooking);
-          refresh(new Date(nb.startTime).toISOString());
+          refresh(startTime);
         },
         onError: (e: any) =>
           toast({
@@ -240,7 +256,7 @@ export default function AdminReservations() {
             {format(new Date(r.startTime), "EEE d MMM", { locale })}
           </span>
           <span className="text-xs text-muted-foreground" dir="ltr">
-            {format(new Date(r.startTime), "HH:mm")} – {format(new Date(r.endTime), "HH:mm")}
+            {clubTime(r.startTime)} – {clubTime(r.endTime)}
           </span>
         </span>
       ),
@@ -393,7 +409,7 @@ export default function AdminReservations() {
                 </div>
                 <span className="text-sm font-semibold capitalize">
                   {format(new Date(sr.firstStart), "EEEE", { locale })} ·{" "}
-                  <span dir="ltr">{format(new Date(sr.firstStart), "HH:mm")}</span>
+                  <span dir="ltr">{clubTime(sr.firstStart)}</span>
                   {sr.intervalWeeks > 1
                     ? tx({
                         fr: ` · toutes les ${sr.intervalWeeks} semaines`,
@@ -581,53 +597,94 @@ export default function AdminReservations() {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field
-                label={tx({ fr: "Début", en: "Start", ar: "البداية" })}
-                htmlFor="nb-start"
-                required
-              >
+              <Field label={tx({ fr: "Jour", en: "Day", ar: "اليوم" })} htmlFor="nb-date" required>
                 <Input
-                  id="nb-start"
-                  data-testid="input-start-time"
-                  type="datetime-local"
-                  step={1800}
-                  value={nb.startTime}
-                  onChange={(e) => setNb((b) => ({ ...b, startTime: e.target.value }))}
+                  id="nb-date"
+                  data-testid="input-date"
+                  type="date"
+                  min={format(new Date(), "yyyy-MM-dd")}
+                  value={nb.date}
+                  onChange={(e) => setNb((b) => ({ ...b, date: e.target.value }))}
                 />
               </Field>
             </div>
             <Field
+              label={tx({ fr: "Créneau (90 min)", en: "Slot (90 min)", ar: "الموعد (90 دقيقة)" })}
+              required
+            >
+              <div className="flex flex-wrap gap-2" role="radiogroup" data-testid="slot-times">
+                {gridTimes(
+                  terrains?.find((t) => String(t.id) === nb.terrainId)?.openingTime,
+                  terrains?.find((t) => String(t.id) === nb.terrainId)?.closingTime,
+                ).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    role="radio"
+                    aria-checked={nb.time === t}
+                    onClick={() => setNb((b) => ({ ...b, time: t }))}
+                    className={`h-10 rounded-full border-2 px-3.5 text-sm font-bold ${nb.time === t ? "border-court bg-court text-white" : "border-[#E4E8F7] hover:border-[#C6CEF6]"}`}
+                    dir="ltr"
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <Field label={tx({ fr: "Formule", en: "Booking type", ar: "النوع" })}>
+              <Segmented
+                label={tx({ fr: "Formule", en: "Booking type", ar: "النوع" })}
+                value={nb.bookingMode}
+                onChange={(v) =>
+                  setNb((b) => ({ ...b, bookingMode: v as "full_court" | "own_spot" }))
+                }
+                options={[
+                  {
+                    value: "full_court",
+                    label: tx({ fr: "Terrain complet (4)", en: "Full court (4)", ar: "ملعب كامل" }),
+                  },
+                  {
+                    value: "own_spot",
+                    label: tx({ fr: "1 place", en: "1 spot", ar: "مكان واحد" }),
+                  },
+                ]}
+              />
+            </Field>
+            <Field
               label={tx({ fr: "Membre", en: "Member", ar: "العضو" })}
               hint={tx({
-                fr: "Laissez « Invité » pour un joueur sans compte.",
-                en: "Keep “Guest” for a player without an account.",
-                ar: "اترك «ضيف» للاعب بدون حساب.",
+                fr: "Laissez vide pour un joueur sans compte (invité).",
+                en: "Leave empty for a player without an account (guest).",
+                ar: "اتركه فارغًا للاعب بدون حساب.",
               })}
             >
-              <Select
-                value={nb.userId || "guest"}
-                onValueChange={(v) => setNb((b) => ({ ...b, userId: v === "guest" ? "" : v }))}
-              >
-                <SelectTrigger data-testid="select-user">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="guest">
-                    {tx({
-                      fr: "Invité (sans compte)",
-                      en: "Guest (no account)",
-                      ar: "ضيف (بدون حساب)",
-                    })}
-                  </SelectItem>
-                  {usersData?.data?.map((u) => (
-                    <SelectItem key={u.id} value={String(u.id)}>
-                      {displayName(u)} · {u.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <MemberPicker
+                value={nb.member}
+                onChange={(m) => setNb((b) => ({ ...b, member: m }))}
+              />
             </Field>
-            {!nb.userId && (
+            {nb.member && (
+              <Field label={tx({ fr: "Paiement", en: "Payment", ar: "الدفع" })}>
+                <Segmented
+                  label={tx({ fr: "Paiement", en: "Payment", ar: "الدفع" })}
+                  value={nb.paymentMethod}
+                  onChange={(v) =>
+                    setNb((b) => ({ ...b, paymentMethod: v as "cash_club" | "token" }))
+                  }
+                  options={[
+                    {
+                      value: "cash_club",
+                      label: tx({ fr: "Espèces au club", en: "Cash at the club", ar: "نقدًا" }),
+                    },
+                    {
+                      value: "token",
+                      label: tx({ fr: "Ses tokens", en: "Their tokens", ar: "رصيده" }),
+                    },
+                  ]}
+                />
+              </Field>
+            )}
+            {!nb.member && (
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field
                   label={tx({ fr: "Nom de l'invité", en: "Guest name", ar: "اسم الضيف" })}

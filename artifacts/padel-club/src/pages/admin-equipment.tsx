@@ -35,6 +35,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTx, useDateLocale } from "@/lib/i18n";
 import { CLUB } from "@/config/club";
 import { cn } from "@/lib/utils";
+import { clubTime } from "@/lib/club-time";
 
 type Form = {
   name: string;
@@ -252,7 +253,7 @@ export default function AdminEquipment() {
                 >
                   <span className="flex w-full shrink-0 items-center gap-3 sm:w-[180px] sm:flex-col sm:items-start sm:gap-1">
                     <span className="disp text-3xl leading-none" dir="ltr">
-                      {format(new Date(res.startTime), "HH:mm")}
+                      {clubTime(res.startTime)}
                     </span>
                     <span className="text-sm font-bold">{res.terrainName}</span>
                     <span className="text-xs text-muted-foreground">

@@ -277,30 +277,55 @@ export function SiteFooter() {
           </div>
           <div className="flex flex-col gap-3 text-[15px] text-soft-d lg:col-span-3">
             <span className="label text-[#8A93C4]">{t("contact")}</span>
-            <a href={CLUB.phoneHref} className="ulink flex items-center gap-2 self-start">
-              <Phone className="size-4 text-ball" />
-              <span dir="ltr">{CLUB.phone}</span>
-            </a>
-            <a href={`mailto:${CLUB.email}`} className="ulink flex items-center gap-2 self-start">
-              <Mail className="size-4 text-ball" />
-              {CLUB.email}
-            </a>
+            {CLUB.phone && (
+              <a href={CLUB.phoneHref} className="ulink flex items-center gap-2 self-start">
+                <Phone className="size-4 text-ball" />
+                <span dir="ltr">{CLUB.phone}</span>
+              </a>
+            )}
+            {CLUB.email && (
+              <a href={`mailto:${CLUB.email}`} className="ulink flex items-center gap-2 self-start">
+                <Mail className="size-4 text-ball" />
+                {CLUB.email}
+              </a>
+            )}
             <div className="mt-1 flex gap-2.5">
-              <Button asChild variant="outline-dark" size="icon">
-                <a href={CLUB.social.instagram} aria-label="Instagram">
-                  <Instagram />
-                </a>
-              </Button>
-              <Button asChild variant="outline-dark" size="icon">
-                <a href={CLUB.whatsappHref} aria-label="WhatsApp">
-                  <MessageCircle />
-                </a>
-              </Button>
-              <Button asChild variant="outline-dark" size="icon">
-                <a href={CLUB.social.facebook} aria-label="Facebook">
-                  <Facebook />
-                </a>
-              </Button>
+              {CLUB.social.instagram && (
+                <Button asChild variant="outline-dark" size="icon">
+                  <a
+                    href={CLUB.social.instagram}
+                    aria-label="Instagram"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Instagram />
+                  </a>
+                </Button>
+              )}
+              {CLUB.whatsappHref && (
+                <Button asChild variant="outline-dark" size="icon">
+                  <a
+                    href={CLUB.whatsappHref}
+                    aria-label="WhatsApp"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <MessageCircle />
+                  </a>
+                </Button>
+              )}
+              {CLUB.social.facebook && (
+                <Button asChild variant="outline-dark" size="icon">
+                  <a
+                    href={CLUB.social.facebook}
+                    aria-label="Facebook"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Facebook />
+                  </a>
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -707,6 +732,7 @@ export function NavLayout({ children }: { children: ReactNode }) {
   const isAuthRoute =
     location.startsWith("/sign-in") ||
     location.startsWith("/sign-up") ||
+    location.startsWith("/reset-password") ||
     location.startsWith("/join/");
   if (isAuthRoute) return <>{children}</>;
   if (!isLoaded) {

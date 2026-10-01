@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { Eye, EyeOff, ArrowRight, Check, Mail } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -9,6 +9,9 @@ import { Logo } from "@/components/smash/brand";
 import { Eyebrow } from "@/components/smash/primitives";
 import { useTx } from "@/lib/i18n";
 import { PHOTOS } from "@/config/club";
+import { authErrorMessage } from "@/lib/auth-errors";
+
+const GOOGLE_ENABLED = import.meta.env.VITE_AUTH_GOOGLE_ENABLED === "true";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -27,6 +30,10 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [canResend, setCanResend] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -37,19 +44,29 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
     setError(null);
     setNotice(null);
     setIsSubmitting(true);
+    setCanResend(false);
     const result = isSignUp
       ? await supabase.auth.signUp({
-          email,
+          email: email.trim(),
           password,
-          options: { emailRedirectTo: `${window.location.origin}${basePath}${redirect}` },
+          options: {
+            emailRedirectTo: `${window.location.origin}${basePath}${redirect}`,
+            data: {
+              first_name: firstName.trim(),
+              last_name: lastName.trim(),
+              ...(phone.trim() ? { phone: phone.trim() } : {}),
+            },
+          },
         })
-      : await supabase.auth.signInWithPassword({ email, password });
+      : await supabase.auth.signInWithPassword({ email: email.trim(), password });
     setIsSubmitting(false);
     if (result.error) {
-      setError(result.error.message);
+      setError(authErrorMessage(result.error, tx));
+      if (result.error.code === "email_not_confirmed") setCanResend(true);
       return;
     }
     if (isSignUp && !result.data.session) {
+      setCanResend(true);
       setNotice(
         tx({
           fr: "Vérifiez votre boîte mail pour confirmer votre compte.",
@@ -74,10 +91,10 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
       );
       return;
     }
-    const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}${basePath}/profile`,
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}${basePath}/reset-password`,
     });
-    if (err) setError(err.message);
+    if (err) setError(authErrorMessage(err, tx));
     else
       setNotice(
         tx({
@@ -88,12 +105,47 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
       );
   };
 
-  const handleOAuth = async (provider: "google" | "apple") => {
-    await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo: `${window.location.origin}${basePath}${redirect}` },
+  const resend = async () => {
+    setError(null);
+    const { error: err } = await supabase.auth.resend({
+      type: "signup",
+      email: email.trim(),
+      options: { emailRedirectTo: `${window.location.origin}${basePath}${redirect}` },
     });
+    if (err) setError(authErrorMessage(err, tx));
+    else
+      setNotice(
+        tx({
+          fr: "Email de confirmation renvoyé.",
+          en: "Confirmation email sent again.",
+          ar: "تمت إعادة إرسال بريد التأكيد.",
+        }),
+      );
   };
+
+  const handleGoogle = async () => {
+    setError(null);
+    const { error: err } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}${basePath}${redirect}`,
+        queryParams: { prompt: "select_account" },
+      },
+    });
+    if (err) setError(authErrorMessage(err, tx));
+  };
+
+  // Errors sent back by Supabase after an OAuth / email-link redirect
+  useEffect(() => {
+    const params = new URLSearchParams(
+      window.location.search || window.location.hash.replace(/^#/, ""),
+    );
+    const desc = params.get("error_description");
+    if (desc)
+      setError(
+        authErrorMessage({ message: desc, code: params.get("error_code") ?? undefined }, tx),
+      );
+  }, [tx]);
 
   const perks = [
     tx({
@@ -187,43 +239,93 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
             </p>
           </div>
 
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            <Button type="button" variant="outline" onClick={() => handleOAuth("google")}>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  fill="#4285F4"
-                  d="M22.5 12.3c0-.8-.1-1.5-.2-2.3H12v4.4h5.9a5 5 0 0 1-2.2 3.3v2.7h3.5c2.1-1.9 3.3-4.8 3.3-8.1z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c3 0 5.5-1 7.3-2.7l-3.5-2.7c-1 .7-2.3 1-3.8 1-2.9 0-5.4-2-6.3-4.6H2.1v2.8A11 11 0 0 0 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.7 14c-.2-.7-.4-1.4-.4-2s.1-1.4.4-2V7.2H2.1a11 11 0 0 0 0 9.6L5.7 14z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.1-3.1A11 11 0 0 0 2.1 7.2L5.7 10c.9-2.6 3.4-4.6 6.3-4.6z"
-                />
-              </svg>
-              Google
-            </Button>
-            <Button type="button" variant="outline" onClick={() => handleOAuth("apple")}>
-              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9a4.8 4.8 0 0 0-3.8-2c-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9a5 5 0 0 0-4.2 2.6c-1.8 3.1-.5 7.7 1.3 10.2.8 1.2 1.8 2.6 3.1 2.6 1.2-.1 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4a10 10 0 0 0 1.4-2.8 4.3 4.3 0 0 1-2.1-4.3zM13.9 5a4.4 4.4 0 0 0 1-3.2 4.5 4.5 0 0 0-2.9 1.5 4.2 4.2 0 0 0-1.1 3.1c1.1.1 2.2-.6 3-1.4z" />
-              </svg>
-              Apple
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-[.14em] text-muted-foreground">
-            <span className="h-px flex-1 bg-border" />
-            {tx({ fr: "ou par email", en: "or with email", ar: "أو عبر البريد" })}
-            <span className="h-px flex-1 bg-border" />
-          </div>
+          {GOOGLE_ENABLED && (
+            <>
+              <Button type="button" variant="outline" size="lg" onClick={handleGoogle}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="#4285F4"
+                    d="M22.5 12.3c0-.8-.1-1.5-.2-2.3H12v4.4h5.9a5 5 0 0 1-2.2 3.3v2.7h3.5c2.1-1.9 3.3-4.8 3.3-8.1z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c3 0 5.5-1 7.3-2.7l-3.5-2.7c-1 .7-2.3 1-3.8 1-2.9 0-5.4-2-6.3-4.6H2.1v2.8A11 11 0 0 0 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.7 14c-.2-.7-.4-1.4-.4-2s.1-1.4.4-2V7.2H2.1a11 11 0 0 0 0 9.6L5.7 14z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.1-3.1A11 11 0 0 0 2.1 7.2L5.7 10c.9-2.6 3.4-4.6 6.3-4.6z"
+                  />
+                </svg>
+                {tx({
+                  fr: "Continuer avec Google",
+                  en: "Continue with Google",
+                  ar: "المتابعة عبر Google",
+                })}
+              </Button>
+              <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-[.14em] text-muted-foreground">
+                <span className="h-px flex-1 bg-border" />
+                {tx({ fr: "ou par email", en: "or with email", ar: "أو عبر البريد" })}
+                <span className="h-px flex-1 bg-border" />
+              </div>
+            </>
+          )}
 
           <form className="flex flex-col gap-4" onSubmit={handlePasswordAuth} noValidate={false}>
+            {isSignUp && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="first-name">
+                      {tx({ fr: "Prénom", en: "First name", ar: "الاسم" })}
+                    </Label>
+                    <Input
+                      id="first-name"
+                      autoComplete="given-name"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      maxLength={80}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="last-name">
+                      {tx({ fr: "Nom", en: "Last name", ar: "اللقب" })}
+                    </Label>
+                    <Input
+                      id="last-name"
+                      autoComplete="family-name"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      maxLength={80}
+                      required
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="phone">
+                    {tx({
+                      fr: "Téléphone (optionnel)",
+                      en: "Phone (optional)",
+                      ar: "الهاتف (اختياري)",
+                    })}
+                  </Label>
+                  <Input
+                    id="phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+216 20 000 000"
+                    maxLength={30}
+                  />
+                </div>
+              </>
+            )}
             <div>
               <Label htmlFor="email">Email</Label>
               <Input
@@ -303,6 +405,19 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
                 <Mail className="size-4" />
                 {notice}
               </p>
+            )}
+            {canResend && (
+              <button
+                type="button"
+                onClick={resend}
+                className="self-start text-sm font-bold text-court hover:underline"
+              >
+                {tx({
+                  fr: "Renvoyer l'email de confirmation",
+                  en: "Resend confirmation email",
+                  ar: "إعادة إرسال بريد التأكيد",
+                })}
+              </button>
             )}
             <Button type="submit" size="lg" className="mt-2 w-full" disabled={isSubmitting}>
               {isSubmitting

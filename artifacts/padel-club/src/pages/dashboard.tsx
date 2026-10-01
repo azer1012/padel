@@ -24,6 +24,7 @@ import { useJoinMatch } from "@/hooks/use-join-match";
 import { InstallBanner } from "@/components/smash/install-banner";
 import { useTx, useDateLocale } from "@/lib/i18n";
 import { CLUB } from "@/config/club";
+import { clubTime } from "@/lib/club-time";
 
 export default function Dashboard() {
   const tx = useTx();
@@ -104,7 +105,7 @@ export default function Dashboard() {
             </span>
             <div className="relative flex flex-col gap-2">
               <span className="disp text-[clamp(44px,6vw,72px)] leading-[0.9]" dir="ltr">
-                {format(new Date(next.startTime), "HH:mm")}
+                {clubTime(next.startTime)}
               </span>
               <span className="text-lg font-semibold capitalize text-soft-d">
                 {format(new Date(next.startTime), "EEEE d MMMM", { locale })}
@@ -241,7 +242,7 @@ export default function Dashboard() {
                   <span className="font-extrabold">{r.terrain?.name}</span>
                   <span className="text-sm capitalize text-muted-foreground">
                     {format(new Date(r.startTime), "EEEE", { locale })} ·{" "}
-                    <span dir="ltr">{format(new Date(r.startTime), "HH:mm")}</span>
+                    <span dir="ltr">{clubTime(r.startTime)}</span>
                   </span>
                 </span>
               </li>

@@ -5,6 +5,9 @@ import {
   useListReservations,
   useListUpcomingReservations,
   useCancelReservation,
+  useLeaveSession,
+  useGetMe,
+  apiErrorMessage,
   getListReservationsQueryKey,
   getListUpcomingReservationsQueryKey,
   getGetTokenBalanceQueryKey,
@@ -12,7 +15,17 @@ import {
 } from "@workspace/api-client-react";
 import type { Reservation } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { CalendarPlus, CalendarDays, MapPin, Coins, X, Download } from "lucide-react";
+import {
+  CalendarPlus,
+  CalendarDays,
+  MapPin,
+  X,
+  Download,
+  LogOut,
+  UserPlus,
+  Users,
+  UserRound,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,10 +40,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
+import { PaymentBadge } from "@/components/smash/payment-badge";
+import { InvitePanel } from "@/components/smash/invite-panel";
 import { useToast } from "@/hooks/use-toast";
 import { useI18n, useTx, useDateLocale } from "@/lib/i18n";
 import { CLUB } from "@/config/club";
 import { cn } from "@/lib/utils";
+import { clubTime } from "@/lib/club-time";
 
 /** Build a tiny .ics so players can add the match to their calendar. */
 function downloadIcs(r: Reservation) {
@@ -108,8 +124,46 @@ export default function PlayerReservations() {
   const { data: upcoming, isLoading: loadingUp } = useListUpcomingReservations();
   const { data: historyResponse, isLoading: loadingHistory } = useListReservations({ limit: 30 });
   const cancelReservation = useCancelReservation();
+  const leaveSession = useLeaveSession();
+  const { data: me } = useGetMe();
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
   const [toCancel, setToCancel] = useState<Reservation | null>(null);
+  const [inviteFor, setInviteFor] = useState<number | null>(null);
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: getListUpcomingReservationsQueryKey() });
+    qc.invalidateQueries({ queryKey: getListReservationsQueryKey() });
+    qc.invalidateQueries({ queryKey: getGetTokenBalanceQueryKey() });
+    qc.invalidateQueries({ queryKey: getOpenMatchesQueryKey() });
+  };
+  const leave = (r: Reservation) =>
+    leaveSession.mutate(
+      { id: r.id },
+      {
+        onSuccess: (res: any) => {
+          toast({
+            title: tx({
+              fr: "Vous avez quitté le match",
+              en: "You left the match",
+              ar: "غادرت المباراة",
+            }),
+            description: res?.refunded
+              ? tx({
+                  fr: `${res.refunded} token(s) remboursé(s).`,
+                  en: `${res.refunded} token(s) refunded.`,
+                  ar: "تمت إعادة الرصيد.",
+                })
+              : undefined,
+          });
+          refresh();
+        },
+        onError: (e) =>
+          toast({
+            title: tx({ fr: "Impossible de quitter", en: "Couldn't leave", ar: "تعذر المغادرة" }),
+            description: apiErrorMessage(e, ""),
+            variant: "destructive",
+          }),
+      },
+    );
 
   const history = (historyResponse?.data ?? []).filter(
     (r) => r.status !== "confirmed" || isPast(new Date(r.startTime)),
@@ -133,16 +187,13 @@ export default function PlayerReservations() {
               ar: "تمت إعادة رصيدك.",
             }),
           });
-          qc.invalidateQueries({ queryKey: getListUpcomingReservationsQueryKey() });
-          qc.invalidateQueries({ queryKey: getListReservationsQueryKey() });
-          qc.invalidateQueries({ queryKey: getGetTokenBalanceQueryKey() });
-          qc.invalidateQueries({ queryKey: getOpenMatchesQueryKey() });
+          refresh();
           setToCancel(null);
         },
         onError: (e: any) => {
           toast({
             title: tx({ fr: "Annulation impossible", en: "Couldn't cancel", ar: "تعذر الإلغاء" }),
-            description: e?.data?.error,
+            description: apiErrorMessage(e, ""),
             variant: "destructive",
           });
           setToCancel(null);
@@ -221,47 +272,110 @@ export default function PlayerReservations() {
           />
         ) : (
           <ul className="m-0 flex list-none flex-col gap-3 p-0">
-            {list.map((r, i) => (
-              <li
-                key={r.id}
-                className="lift flex flex-col gap-4 rounded-[26px] bg-card p-4 shadow-sm sm:flex-row sm:items-center sm:pe-5"
-              >
-                <div className="flex flex-1 items-center gap-4">
-                  <DateBlock date={r.startTime} dark={i === 0} />
-                  <span className="flex min-w-0 flex-col gap-1">
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="text-lg font-extrabold">{r.terrain?.name ?? "Court"}</span>
-                      <StatusBadge status={r.status} />
-                    </span>
-                    <span className="text-[15px] capitalize text-muted-foreground">
-                      {format(new Date(r.startTime), "EEEE", { locale })} ·{" "}
-                      <span dir="ltr">
-                        {format(new Date(r.startTime), "HH:mm")} –{" "}
-                        {format(new Date(r.endTime), "HH:mm")}
+            {list.map((r, i) => {
+              const mine = r.players?.find((p) => p.userId === me?.id);
+              const organiser = r.userId === me?.id;
+              const full = r.bookingMode === "full_court";
+              const seats = r.players?.length ?? 0;
+              const started = isPast(new Date(r.startTime));
+              const canInvite = !started && (organiser || !full) && seats < r.totalSpots;
+              return (
+                <li
+                  key={r.id}
+                  className="lift flex flex-col gap-4 rounded-[26px] bg-card p-4 shadow-sm sm:pe-5"
+                >
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                    <div className="flex flex-1 items-center gap-4">
+                      <DateBlock date={r.startTime} dark={i === 0} />
+                      <span className="flex min-w-0 flex-col gap-1">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span className="text-lg font-extrabold">
+                            {r.terrain?.name ?? "Court"}
+                          </span>
+                          <StatusBadge status={r.status} />
+                        </span>
+                        <span className="text-[15px] capitalize text-muted-foreground">
+                          {format(new Date(r.startTime), "EEEE", { locale })} ·{" "}
+                          <span dir="ltr">
+                            {clubTime(r.startTime)} – {clubTime(r.endTime)}
+                          </span>
+                        </span>
+                        <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            {full ? (
+                              <Users className="size-3.5" />
+                            ) : (
+                              <UserRound className="size-3.5" />
+                            )}
+                            {full
+                              ? tx({ fr: "Terrain complet", en: "Full court", ar: "ملعب كامل" })
+                              : tx({ fr: "Place individuelle", en: "Own spot", ar: "مكان فردي" })}
+                            {" · "}
+                            {tx({
+                              fr: `${seats}/${r.totalSpots} joueurs`,
+                              en: `${seats}/${r.totalSpots} players`,
+                              ar: `${seats}/${r.totalSpots} لاعبين`,
+                            })}
+                          </span>
+                          {mine && (
+                            <PaymentBadge type={mine.paymentType} status={mine.paymentStatus} />
+                          )}
+                        </span>
                       </span>
-                    </span>
-                    {r.tokensCharged ? (
-                      <span className="flex items-center gap-1.5 text-sm font-semibold text-court">
-                        <Coins className="size-3.5" />
-                        {r.tokensCharged} token{r.tokensCharged > 1 ? "s" : ""}
-                      </span>
-                    ) : null}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="secondary" size="sm" onClick={() => downloadIcs(r)}>
-                    <Download />
-                    {tx({ fr: "Calendrier", en: "Calendar", ar: "التقويم" })}
-                  </Button>
-                  {r.status === "confirmed" && (
-                    <Button variant="outline-destructive" size="sm" onClick={() => setToCancel(r)}>
-                      <X />
-                      {t("cancel")}
-                    </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="secondary" size="sm" onClick={() => downloadIcs(r)}>
+                        <Download />
+                        {tx({ fr: "Calendrier", en: "Calendar", ar: "التقويم" })}
+                      </Button>
+                      {canInvite && (
+                        <Button
+                          variant="dark"
+                          size="sm"
+                          onClick={() => setInviteFor(inviteFor === r.id ? null : r.id)}
+                          aria-expanded={inviteFor === r.id}
+                        >
+                          <UserPlus />
+                          {tx({ fr: "Inviter", en: "Invite", ar: "دعوة" })}
+                        </Button>
+                      )}
+                      {r.status === "confirmed" && !started && organiser && (
+                        <Button
+                          variant="outline-destructive"
+                          size="sm"
+                          onClick={() => setToCancel(r)}
+                        >
+                          <X />
+                          {t("cancel")}
+                        </Button>
+                      )}
+                      {r.status === "confirmed" && !started && !organiser && mine && (
+                        <Button
+                          variant="outline-destructive"
+                          size="sm"
+                          onClick={() => leave(r)}
+                          disabled={leaveSession.isPending}
+                        >
+                          <LogOut />
+                          {tx({ fr: "Quitter", en: "Leave", ar: "مغادرة" })}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  {inviteFor === r.id && (
+                    <InvitePanel
+                      reservationId={r.id}
+                      free={full}
+                      shareText={tx({
+                        fr: `Padel ${r.terrain?.name ?? ""}, ${format(new Date(r.startTime), "dd/MM")} à ${clubTime(r.startTime)}. Rejoins-moi :`,
+                        en: `Padel ${r.terrain?.name ?? ""}, ${format(new Date(r.startTime), "dd/MM")} at ${clubTime(r.startTime)}. Join me:`,
+                        ar: `بادل ${r.terrain?.name ?? ""}، ${format(new Date(r.startTime), "dd/MM")} على ${clubTime(r.startTime)}. انضم إليّ:`,
+                      })}
+                    />
                   )}
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )
       ) : loadingHistory ? (
@@ -281,7 +395,7 @@ export default function PlayerReservations() {
                 <span className="font-extrabold">{r.terrain?.name ?? "Court"}</span>
                 <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                   <MapPin className="size-3.5" />
-                  <span dir="ltr">{format(new Date(r.startTime), "HH:mm")}</span>
+                  <span dir="ltr">{clubTime(r.startTime)}</span>
                 </span>
               </span>
               <StatusBadge status={r.status} />
@@ -304,9 +418,9 @@ export default function PlayerReservations() {
               {toCancel &&
                 `${toCancel.terrain?.name ?? ""}, ${format(new Date(toCancel.startTime), "EEEE d MMMM HH:mm", { locale })}. `}
               {tx({
-                fr: "Vos tokens seront remboursés.",
-                en: "Your tokens will be refunded.",
-                ar: "سيتم إرجاع رصيدك.",
+                fr: "Tous les tokens payés pour ce match seront remboursés, et les joueurs prévenus.",
+                en: "Every token paid for this match is refunded and the players are notified.",
+                ar: "سيتم إرجاع كل الرصيد المدفوع وإبلاغ اللاعبين.",
               })}
             </AlertDialogDescription>
           </AlertDialogHeader>

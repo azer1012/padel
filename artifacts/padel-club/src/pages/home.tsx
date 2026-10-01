@@ -15,6 +15,7 @@ import { Avatar, Eyebrow, LiveDot } from "@/components/smash/primitives";
 import { useTx, useDateLocale } from "@/lib/i18n";
 import { CLUB, PHOTOS } from "@/config/club";
 import { cn } from "@/lib/utils";
+import { clubTime } from "@/lib/club-time";
 
 const signInTo = (path: string) => `/sign-in?redirect=${encodeURIComponent(path)}`;
 
@@ -54,9 +55,9 @@ export default function Home() {
     (matches ?? []).slice(0, 3).forEach((m) =>
       items.push(
         tx({
-          fr: `Open match ${format(new Date(m.startTime), "HH:mm")}, ${m.openSpots} place(s)`,
-          en: `Open match ${format(new Date(m.startTime), "HH:mm")}, ${m.openSpots} spot(s)`,
-          ar: `مباراة مفتوحة ${format(new Date(m.startTime), "HH:mm")}`,
+          fr: `Open match ${clubTime(m.startTime)}, ${m.openSpots} place(s)`,
+          en: `Open match ${clubTime(m.startTime)}, ${m.openSpots} spot(s)`,
+          ar: `مباراة مفتوحة ${clubTime(m.startTime)}`,
         }),
       ),
     );
@@ -461,7 +462,7 @@ export default function Home() {
               <div className="flex items-start justify-between gap-3">
                 <span className="flex flex-col">
                   <span className="disp text-[52px] leading-[0.9] lg:text-[60px]" dir="ltr">
-                    {format(new Date(m.startTime), "HH:mm")}
+                    {clubTime(m.startTime)}
                   </span>
                   <span className="mt-1 text-sm font-semibold capitalize text-[#DCE3FF]">
                     {format(new Date(m.startTime), "EEEE d MMM", { locale })}

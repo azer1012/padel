@@ -1,46 +1,54 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { format, addDays, isSameDay } from "date-fns";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { format } from "date-fns";
 import {
   useGetCalendar,
   useCreateReservation,
   useJoinSession,
-  useCreateInvite,
   useMakeSessionPublic,
   useMakeSessionPrivate,
+  useLeaveSession,
+  useUpdatePlayerPayment,
+  useCancelReservation,
+  useGetTokenBalance,
+  useAddPlayer,
+  useRemovePlayer,
+  useBlockSlot,
   getCalendarQueryKey,
   getListReservationsQueryKey,
   getListUpcomingReservationsQueryKey,
   getGetTokenBalanceQueryKey,
-  useLeaveSession,
-  useUpdatePlayerPayment,
   getOpenMatchesQueryKey,
-  useCancelReservation,
-  useGetTokenBalance,
+  apiErrorMessage,
+  apiErrorCode,
 } from "@workspace/api-client-react";
-import type { CalendarSlot, CalendarTerrain } from "@workspace/api-client-react";
+import type {
+  CalendarSlot,
+  CalendarTerrain,
+  EquipmentLine,
+  Reservation,
+  User,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import type { EquipmentLine, SlotPricing } from "@workspace/api-client-react";
-import { EquipmentPicker } from "@/components/smash/equipment-picker";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
-  Users,
   Coins,
-  Link2,
   Globe,
   Lock,
   CheckCircle2,
-  Clock3,
   X,
-  Copy,
-  Check,
   ShieldAlert,
   UserPlus,
   LogOut,
   CalendarX2,
   Sun,
   Warehouse,
-  MessageCircle,
   Zap,
+  Users,
+  Banknote,
+  PartyPopper,
+  Phone,
+  Wrench,
+  UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,338 +62,66 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
-import { apiFetch } from "@/services/api";
-import { useTx, useDateLocale } from "@/lib/i18n";
+import { useTx, useDateLocale, useI18n } from "@/lib/i18n";
+import { clubDate, clubDay, clubDays, clubTime } from "@/lib/club-time";
 import { cn } from "@/lib/utils";
 import { Avatar, CourtLines, EmptyState, LiveDot } from "@/components/smash/primitives";
+import { EquipmentPicker } from "@/components/smash/equipment-picker";
+import { PaymentBadge } from "@/components/smash/payment-badge";
+import { InvitePanel } from "@/components/smash/invite-panel";
+import { MemberPicker } from "@/components/smash/member-picker";
 import { CLUB } from "@/config/club";
 
 type Terrain = CalendarTerrain["terrain"];
-type BookingModalState =
+type Modal =
   | { type: "book"; slot: CalendarSlot; terrain: Terrain }
-  | { type: "session"; slot: CalendarSlot; terrain: Terrain }
+  | { type: "match"; slot: CalendarSlot; terrain: Terrain }
   | null;
+type SlotState = "available" | "partial" | "full" | "mine" | "past" | "blocked";
 
-type SlotState = "available" | "partial" | "full" | "mine" | "past";
-
+/** Local key of a day from the day strip (built from club days). */
 const dayKey = (d: Date) => format(d, "yyyy-MM-dd");
-/** Slot price from the API (peak / off-peak), falling back to the flat token model. */
-const priced = (slot: CalendarSlot) => slot as CalendarSlot & Partial<SlotPricing>;
-const spotCost = (slot: CalendarSlot) => priced(slot).tokensPerSpot ?? CLUB.tokensOwnSpot;
-const hhmm = (iso: string) => format(new Date(iso), "HH:mm");
+/** Times are club times, whatever the visitor's timezone. */
+const hhmm = clubTime;
+const tokens = (n: number) => `${n} token${n > 1 ? "s" : ""}`;
 
-function slotState(slot: CalendarSlot, currentUserId: number | null): SlotState {
-  if (slot.status === "past") return "past";
-  if (currentUserId != null && slot.players.some((p) => p.userId === currentUserId)) return "mine";
+function slotState(slot: CalendarSlot): SlotState {
+  if (slot.isMine) return "mine";
+  if (slot.isBlocked) return "blocked";
+  if (slot.isPast || slot.status === "past") return "past";
   if (slot.status === "available") return "available";
   if (slot.status === "full") return "full";
   return "partial";
 }
 
-/* ───────────────────────────── Booking / session dialog ───────────────────────────── */
-
-function BookingModal({
-  modal,
-  onClose,
-  currentUserId,
-  isAdmin,
-}: {
-  modal: BookingModalState;
-  onClose: () => void;
-  currentUserId: number | null;
-  isAdmin: boolean;
-}) {
-  const tx = useTx();
-  const locale = useDateLocale();
-  const [bookingMode, setBookingMode] = useState<"full_court" | "own_spot">("full_court");
-  const [isPublic, setIsPublic] = useState(false);
-  const [publicDescription, setPublicDescription] = useState("");
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
-  const [copiedInvite, setCopiedInvite] = useState(false);
-  const [assignUserId, setAssignUserId] = useState("");
-  const [isAssigning, setIsAssigning] = useState(false);
-  const [equipment, setEquipment] = useState<EquipmentLine[]>([]);
-
-  const { toast } = useToast();
+/** Invalidate everything a booking action can change. */
+function useRefreshBookings() {
   const qc = useQueryClient();
-  const { isSignedIn } = useAuth();
-  const { data: balance } = useGetTokenBalance({ query: { enabled: isSignedIn } as any });
-
-  const createReservation = useCreateReservation();
-  const joinSession = useJoinSession();
-  const leaveSession = useLeaveSession();
-  const createInvite = useCreateInvite();
-  const makePublic = useMakeSessionPublic();
-  const makePrivate = useMakeSessionPrivate();
-  const updatePlayerPayment = useUpdatePlayerPayment();
-  const cancelReservation = useCancelReservation();
-
-  useEffect(() => {
-    setBookingMode("full_court");
-    setEquipment([]);
-    setIsPublic(false);
-    setPublicDescription("");
-    setInviteUrl(null);
-  }, [modal]);
-
-  if (!modal) return null;
-  const { slot, terrain } = modal;
-  const when = `${format(new Date(slot.startTime), "EEEE d MMMM", { locale })}`;
-  const range = `${hhmm(slot.startTime)} – ${hhmm(slot.endTime)}`;
-  const err = (e: any, fallback: string) =>
-    toast({
-      title: tx({ fr: "Oups", en: "Oops", ar: "عذرًا" }),
-      description: e?.data?.error ?? fallback,
-      variant: "destructive",
-    });
-
-  const invalidateAll = () => {
-    qc.invalidateQueries({ queryKey: ["/api/equipment"] }); // rental stock changed
-    const dateStr = dayKey(new Date(slot.startTime));
-    qc.invalidateQueries({ queryKey: getCalendarQueryKey({ date: dateStr }) });
+  return (startTime: string) => {
+    qc.invalidateQueries({ queryKey: getCalendarQueryKey({ date: clubDay(startTime) }) });
     qc.invalidateQueries({ queryKey: getListReservationsQueryKey() });
     qc.invalidateQueries({ queryKey: getListUpcomingReservationsQueryKey() });
     qc.invalidateQueries({ queryKey: getGetTokenBalanceQueryKey() });
     qc.invalidateQueries({ queryKey: getOpenMatchesQueryKey() });
+    qc.invalidateQueries({ queryKey: ["/api/equipment"] });
   };
+}
 
-  const userIsInSession = slot.players.some((p) => p.userId === currentUserId);
-  const perSpot = spotCost(slot);
-  const isPeak = !!priced(slot).isPeak;
-  const cost = bookingMode === "own_spot" ? perSpot : perSpot * 4;
-  const bal = balance?.balance ?? null;
-  const short = bal !== null && bal < cost;
-
-  const handleBook = () => {
-    createReservation.mutate(
-      {
-        data: {
-          terrainId: terrain.id,
-          startTime: slot.startTime,
-          bookingMode,
-          isPublic: bookingMode === "own_spot" ? isPublic : false,
-          publicDescription: bookingMode === "own_spot" && isPublic ? publicDescription : undefined,
-          equipment: equipment.length ? equipment : undefined,
-        } as any,
-      },
-      {
-        onSuccess: () => {
-          toast({
-            title: tx({ fr: "C'est réservé !", en: "You're booked!", ar: "تم الحجز!" }),
-            description: `${terrain.name}, ${when}, ${range}`,
-          });
-          invalidateAll();
-          onClose();
-        },
-        onError: (e: any) =>
-          err(
-            e,
-            tx({ fr: "Erreur lors de la réservation", en: "Booking failed", ar: "فشل الحجز" }),
-          ),
-      },
-    );
-  };
-  const handleJoin = () => {
-    if (!slot.reservationId) return;
-    joinSession.mutate(
-      { id: slot.reservationId },
-      {
-        onSuccess: () => {
-          toast({
-            title: tx({
-              fr: "Vous êtes dans le match !",
-              en: "You're in the match!",
-              ar: "أنت في المباراة!",
-            }),
-            description: tx({
-              fr: "1 token débité.",
-              en: "1 token charged.",
-              ar: "تم خصم رصيد واحد.",
-            }),
-          });
-          invalidateAll();
-          onClose();
-        },
-        onError: (e: any) =>
-          err(e, tx({ fr: "Impossible de rejoindre", en: "Couldn't join", ar: "تعذر الانضمام" })),
-      },
-    );
-  };
-  const handleLeave = () => {
-    if (!slot.reservationId) return;
-    leaveSession.mutate(
-      { id: slot.reservationId },
-      {
-        onSuccess: () => {
-          toast({
-            title: tx({ fr: "Place libérée", en: "Spot released", ar: "تم تحرير المكان" }),
-            description: tx({
-              fr: "Token remboursé.",
-              en: "Token refunded.",
-              ar: "تم استرجاع الرصيد.",
-            }),
-          });
-          invalidateAll();
-          onClose();
-        },
-        onError: (e: any) =>
-          err(e, tx({ fr: "Impossible de quitter", en: "Couldn't leave", ar: "تعذر المغادرة" })),
-      },
-    );
-  };
-  const handleInvite = () => {
-    if (!slot.reservationId) return;
-    createInvite.mutate(
-      { id: slot.reservationId },
-      {
-        onSuccess: (data: any) => {
-          setInviteUrl(
-            data.inviteUrl ||
-              `${window.location.origin}/join/${data.token ?? data.invite?.inviteToken}`,
-          );
-        },
-        onError: () =>
-          err(
-            null,
-            tx({
-              fr: "Impossible de créer l'invitation",
-              en: "Couldn't create the invite",
-              ar: "تعذر إنشاء الدعوة",
-            }),
-          ),
-      },
-    );
-  };
-  const copyInvite = () => {
-    if (!inviteUrl) return;
-    navigator.clipboard.writeText(inviteUrl).then(() => {
-      setCopiedInvite(true);
-      setTimeout(() => setCopiedInvite(false), 2000);
-    });
-  };
-  const handleTogglePublic = () => {
-    if (!slot.reservationId) return;
-    const m = slot.isPublic ? makePrivate : makePublic;
-    m.mutate(
-      { id: slot.reservationId },
-      {
-        onSuccess: () => {
-          toast({
-            title: slot.isPublic
-              ? tx({ fr: "Session privée", en: "Session is private", ar: "الجلسة خاصة" })
-              : tx({ fr: "Session publique", en: "Session is public", ar: "الجلسة عامة" }),
-          });
-          invalidateAll();
-          onClose();
-        },
-        onError: () => err(null, "Erreur"),
-      },
-    );
-  };
-  const handleAdminPayment = (playerId: number, paymentStatus: string) => {
-    if (!slot.reservationId) return;
-    updatePlayerPayment.mutate(
-      { reservationId: slot.reservationId, playerId, paymentStatus } as any,
-      {
-        onSuccess: () => {
-          toast({
-            title: tx({ fr: "Paiement mis à jour", en: "Payment updated", ar: "تم تحديث الدفع" }),
-          });
-          invalidateAll();
-        },
-        onError: () => err(null, "Erreur"),
-      },
-    );
-  };
-  const handleAdminCancel = () => {
-    if (!slot.reservationId) return;
-    cancelReservation.mutate(
-      { id: slot.reservationId },
-      {
-        onSuccess: () => {
-          toast({
-            title: tx({
-              fr: "Réservation annulée",
-              en: "Reservation cancelled",
-              ar: "تم إلغاء الحجز",
-            }),
-          });
-          invalidateAll();
-          onClose();
-        },
-        onError: (e: any) =>
-          err(e, tx({ fr: "Impossible d'annuler", en: "Couldn't cancel", ar: "تعذر الإلغاء" })),
-      },
-    );
-  };
-  const handleAdminAssignPlayer = async () => {
-    if (!slot.reservationId || !assignUserId.trim()) return;
-    setIsAssigning(true);
-    try {
-      const res = await apiFetch(`/api/reservations/${slot.reservationId}/players`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: parseInt(assignUserId),
-          paymentType: "cash",
-          paymentStatus: "pending",
-        }),
-      });
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        err({ data: e }, "Impossible d'assigner");
-        return;
-      }
-      toast({ title: tx({ fr: "Joueur ajouté", en: "Player added", ar: "تمت إضافة اللاعب" }) });
-      setAssignUserId("");
-      invalidateAll();
-    } catch {
-      err(null, tx({ fr: "Erreur réseau", en: "Network error", ar: "خطأ في الشبكة" }));
-    } finally {
-      setIsAssigning(false);
-    }
-  };
-  const handleAdminBlockSlot = async () => {
-    try {
-      const res = await apiFetch("/api/admin/slots/block", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          terrainId: terrain.id,
-          startTime: slot.startTime,
-          reason: "Maintenance",
-        }),
-      });
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        err({ data: e }, "Impossible de bloquer");
-        return;
-      }
-      toast({
-        title: tx({
-          fr: "Créneau bloqué pour maintenance",
-          en: "Slot blocked for maintenance",
-          ar: "تم حجب الموعد للصيانة",
-        }),
-      });
-      invalidateAll();
-      onClose();
-    } catch {
-      err(null, tx({ fr: "Erreur réseau", en: "Network error", ar: "خطأ في الشبكة" }));
-    }
-  };
-
-  const isLoading =
-    createReservation.isPending ||
-    joinSession.isPending ||
-    leaveSession.isPending ||
-    cancelReservation.isPending;
-  const typeIcon =
-    terrain.type === "outdoor" ? <Sun className="size-4" /> : <Warehouse className="size-4" />;
-
-  const header = (
+function DialogHero({
+  terrain,
+  slot,
+  children,
+}: {
+  terrain: Terrain;
+  slot: CalendarSlot;
+  children?: React.ReactNode;
+}) {
+  const tx = useTx();
+  const { lang } = useI18n();
+  return (
     <div className="on-dark relative -mx-6 -mt-6 overflow-hidden rounded-t-[32px] bg-night px-6 pb-6 pt-7 text-white sm:-mx-8 sm:-mt-8 sm:px-8">
       <div
         aria-hidden="true"
@@ -395,477 +131,940 @@ function BookingModal({
       </div>
       <DialogHeader className="relative text-start">
         <span className="label flex items-center gap-2 text-ball">
-          {typeIcon}
+          {terrain.type === "outdoor" ? (
+            <Sun className="size-4" />
+          ) : (
+            <Warehouse className="size-4" />
+          )}
           {terrain.type === "outdoor" ? "Outdoor" : "Indoor"}
+          {slot.isPeak && (
+            <span className="flex items-center gap-1 rounded-full bg-coral px-2.5 py-0.5 text-[11px] font-extrabold normal-case tracking-normal text-night">
+              <Zap className="size-3" />
+              {slot.priceLabel ||
+                tx({ fr: "Heures pleines", en: "Peak hours", ar: "ساعات الذروة" })}
+            </span>
+          )}
         </span>
         <DialogTitle className="text-[32px] leading-none text-white">{terrain.name}</DialogTitle>
-        {isPeak && (
-          <span className="flex w-fit items-center gap-1.5 rounded-full bg-coral px-3 py-1 text-xs font-extrabold text-night">
-            <Zap className="size-3.5" />
-            {priced(slot).priceLabel ||
-              tx({ fr: "Heures pleines", en: "Peak hours", ar: "ساعات الذروة" })}
-          </span>
-        )}
         <DialogDescription className="text-base capitalize text-soft-d">
-          {when} ·{" "}
+          {clubDate(slot.startTime, lang)} ·{" "}
           <span className="font-bold text-white" dir="ltr">
-            {range}
+            {hhmm(slot.startTime)} – {hhmm(slot.endTime)}
           </span>
         </DialogDescription>
+        {children}
       </DialogHeader>
     </div>
   );
+}
 
-  if (modal.type === "book") {
-    const modes = [
+/* ───────────────────────────── Book a free slot ───────────────────────────── */
+
+function BookDialog({
+  slot,
+  terrain,
+  isAdmin,
+  onClose,
+}: {
+  slot: CalendarSlot;
+  terrain: Terrain;
+  isAdmin: boolean;
+  onClose: () => void;
+}) {
+  const tx = useTx();
+  const { toast } = useToast();
+  const refresh = useRefreshBookings();
+  const { data: balance } = useGetTokenBalance();
+  const createReservation = useCreateReservation();
+  const blockSlot = useBlockSlot();
+
+  const [mode, setMode] = useState<"full_court" | "own_spot">("full_court");
+  const [isPublic, setIsPublic] = useState(true);
+  const [publicDescription, setPublicDescription] = useState("");
+  const [equipment, setEquipment] = useState<EquipmentLine[]>([]);
+  const [booked, setBooked] = useState<Reservation | null>(null);
+  // Admin desk
+  const [forWho, setForWho] = useState<"member" | "guest">("member");
+  const [member, setMember] = useState<User | null>(null);
+  const [payment, setPayment] = useState<"token" | "cash_club">("cash_club");
+  const [guestName, setGuestName] = useState("");
+  const [guestPhone, setGuestPhone] = useState("");
+
+  const perSpot = slot.tokensPerSpot ?? CLUB.tokensOwnSpot;
+  const cost = mode === "own_spot" ? perSpot : perSpot * 4;
+  const cash = (mode === "own_spot" ? 1 : 4) * (slot.pricePerPerson ?? terrain.pricePerPerson);
+  const payer = isAdmin ? (forWho === "member" ? member : null) : null;
+  const paysTokens = isAdmin ? forWho === "member" && payment === "token" : true;
+  const wallet = isAdmin ? (payer?.tokenBalance ?? null) : (balance?.balance ?? null);
+  const short = paysTokens && wallet !== null && wallet < cost;
+  const adminIncomplete = isAdmin && (forWho === "member" ? !member : !guestName.trim());
+
+  const book = () =>
+    createReservation.mutate(
       {
-        id: "full_court" as const,
-        title: tx({ fr: "Terrain complet", en: "Full court", ar: "ملعب كامل" }),
-        text: tx({
-          fr: "Les 4 places pour vous et vos amis",
-          en: "All 4 spots for you and friends",
-          ar: "الأماكن الأربعة لك ولأصدقائك",
-        }),
-        cost: perSpot * 4,
+        data: {
+          terrainId: terrain.id,
+          startTime: slot.startTime,
+          bookingMode: mode,
+          isPublic: mode === "own_spot" && isPublic,
+          publicDescription: mode === "own_spot" && isPublic ? publicDescription : undefined,
+          equipment: equipment.length ? equipment : undefined,
+          ...(isAdmin
+            ? forWho === "member"
+              ? { userId: member?.id, paymentMethod: payment }
+              : { guestName, guestPhone, bookingType: "phone" }
+            : {}),
+        } as any,
       },
       {
-        id: "own_spot" as const,
-        title: tx({ fr: "Ma place", en: "Just my spot", ar: "مكاني فقط" }),
-        text: tx({
-          fr: "1 place, 3 ouvertes à d'autres",
-          en: "1 spot, 3 open to others",
-          ar: "مكان واحد و3 مفتوحة",
-        }),
-        cost: perSpot,
+        onSuccess: (r) => {
+          refresh(slot.startTime);
+          setBooked(r);
+        },
+        onError: (e) => {
+          refresh(slot.startTime);
+          const taken = apiErrorCode(e) === "SLOT_TAKEN";
+          toast({
+            title: taken
+              ? tx({
+                  fr: "Ce créneau vient d'être réservé",
+                  en: "This slot was just booked",
+                  ar: "تم حجز هذا الموعد للتو",
+                })
+              : tx({ fr: "Réservation impossible", en: "Booking failed", ar: "تعذر الحجز" }),
+            description: taken
+              ? tx({
+                  fr: "Aucun token n'a été débité. Choisissez un autre créneau.",
+                  en: "No token was charged. Pick another slot.",
+                  ar: "لم يتم خصم أي رصيد. اختر موعدًا آخر.",
+                })
+              : apiErrorMessage(
+                  e,
+                  tx({ fr: "Réessayez.", en: "Please try again.", ar: "حاول مجددًا." }),
+                ),
+            variant: "destructive",
+          });
+          if (taken) onClose();
+        },
       },
-    ];
+    );
+
+  const block = () =>
+    blockSlot.mutate(
+      { terrainId: terrain.id, startTime: slot.startTime, reason: "Maintenance" },
+      {
+        onSuccess: () => {
+          refresh(slot.startTime);
+          toast({ title: tx({ fr: "Créneau bloqué", en: "Slot blocked", ar: "تم حجب الموعد" }) });
+          onClose();
+        },
+        onError: (e) =>
+          toast({ title: "Oups", description: apiErrorMessage(e, ""), variant: "destructive" }),
+      },
+    );
+
+  if (booked) {
+    const invitable = !!booked.userId && !isAdmin;
     return (
-      <Dialog open onOpenChange={(o) => !o && onClose()}>
-        <DialogContent className="max-w-[520px]">
-          {header}
-          <div className="flex flex-col gap-5">
-            <div
-              role="radiogroup"
-              aria-label={tx({ fr: "Mode de réservation", en: "Booking mode", ar: "نوع الحجز" })}
-              className="grid grid-cols-2 gap-3"
-            >
-              {modes.map((m) => {
-                const on = bookingMode === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={on}
-                    onClick={() => setBookingMode(m.id)}
-                    className={cn(
-                      "flex flex-col gap-1.5 rounded-[22px] border-[3px] p-4 text-start transition-[border-color,background-color,transform] active:scale-[.98]",
-                      on ? "border-court bg-[#EEF1FF]" : "border-[#E4E8F7] hover:border-[#C6CEF6]",
-                    )}
-                  >
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="text-base font-extrabold">{m.title}</span>
-                      <span
-                        className={cn(
-                          "size-5 rounded-full border-[3px]",
-                          on ? "border-court bg-court" : "border-[#C6CEF6]",
-                        )}
-                      />
-                    </span>
-                    <span className="text-[13px] leading-snug text-muted-foreground">{m.text}</span>
-                    <span className="mt-1 flex items-center gap-1.5 text-lg font-extrabold text-court">
-                      <Coins className="size-4" />
-                      {m.cost} token{m.cost > 1 ? "s" : ""}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {bookingMode === "own_spot" && (
-              <div className="flex flex-col gap-3 rounded-[22px] bg-secondary p-4">
-                <label className="flex cursor-pointer items-center justify-between gap-4">
-                  <span className="flex flex-col">
-                    <span className="font-bold">
-                      {tx({
-                        fr: "En faire un open match",
-                        en: "Make it an open match",
-                        ar: "اجعلها مباراة مفتوحة",
-                      })}
-                    </span>
-                    <span className="text-[13px] text-muted-foreground">
-                      {tx({
-                        fr: "Les joueurs du club pourront prendre les places libres.",
-                        en: "Club players can take the open spots.",
-                        ar: "يمكن لأعضاء النادي أخذ الأماكن الشاغرة.",
-                      })}
-                    </span>
-                  </span>
-                  <Switch checked={isPublic} onCheckedChange={setIsPublic} />
-                </label>
-                {isPublic && (
-                  <Input
-                    value={publicDescription}
-                    onChange={(e) => setPublicDescription(e.target.value)}
-                    placeholder={tx({
-                      fr: "Ex : niveau 3, débutants bienvenus",
-                      en: "e.g. level 3, beginners welcome",
-                      ar: "مثال: مستوى 3، المبتدئون مرحب بهم",
-                    })}
-                  />
-                )}
-              </div>
-            )}
-
-            <EquipmentPicker startTime={slot.startTime} value={equipment} onChange={setEquipment} />
-
-            <dl className="m-0 flex flex-col gap-2.5 rounded-[22px] border border-[#E4E8F7] p-4 text-[15px]">
-              <div className="flex justify-between">
-                <dt className="text-muted-foreground">
-                  {tx({ fr: "Durée", en: "Duration", ar: "المدة" })}
-                </dt>
-                <dd className="m-0 font-bold">{CLUB.slotMinutes} min</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-muted-foreground">
-                  {tx({ fr: "Par joueur", en: "Per player", ar: "لكل لاعب" })}
-                </dt>
-                <dd className="m-0 font-bold">
-                  {perSpot} token{perSpot > 1 ? "s" : ""}
-                  {(priced(slot).pricePerPerson ?? terrain.pricePerPerson) ? (
-                    <span className="font-semibold text-muted-foreground">
-                      {" "}
-                      · {priced(slot).pricePerPerson ?? terrain.pricePerPerson} {CLUB.currency}
-                    </span>
-                  ) : null}
-                </dd>
-              </div>
-              {bal !== null && (
-                <div className="flex justify-between">
-                  <dt className="text-muted-foreground">
-                    {tx({ fr: "Votre solde", en: "Your balance", ar: "رصيدك" })}
-                  </dt>
-                  <dd className={cn("m-0 font-bold", short && "text-destructive")}>{bal} tokens</dd>
-                </div>
-              )}
-              <div className="flex items-end justify-between border-t border-[#E4E8F7] pt-3">
-                <dt className="font-bold">Total</dt>
-                <dd className="disp m-0 text-3xl">
-                  {cost} token{cost > 1 ? "s" : ""}
-                </dd>
-              </div>
-            </dl>
-
-            {short && (
-              <p
-                role="alert"
-                className="m-0 flex items-start gap-2 rounded-2xl bg-[#FFEBD9] px-4 py-3 text-sm font-semibold text-[#7A3A0D]"
-              >
-                <ShieldAlert className="mt-0.5 size-4 shrink-0" />
-                {tx({
-                  fr: "Solde insuffisant. Rechargez vos tokens à l'accueil du club.",
-                  en: "Not enough tokens. Top up at the club front desk.",
-                  ar: "رصيد غير كافٍ. اشحن رصيدك في استقبال النادي.",
-                })}
-              </p>
-            )}
-
-            <div className="flex gap-2.5">
-              <Button variant="outline" className="flex-1" onClick={onClose} disabled={isLoading}>
-                {tx({ fr: "Annuler", en: "Cancel", ar: "إلغاء" })}
-              </Button>
-              <Button className="flex-[1.4]" onClick={handleBook} disabled={isLoading}>
-                {isLoading
-                  ? tx({ fr: "Réservation…", en: "Booking…", ar: "جارٍ الحجز…" })
-                  : tx({ fr: "Confirmer", en: "Confirm booking", ar: "تأكيد الحجز" })}
-              </Button>
-            </div>
-            {isAdmin && (
-              <Button
-                variant="outline-destructive"
-                onClick={handleAdminBlockSlot}
-                disabled={isLoading}
-              >
-                <CalendarX2 />
-                {tx({
-                  fr: "Bloquer pour maintenance",
-                  en: "Block for maintenance",
-                  ar: "حجب للصيانة",
-                })}
-              </Button>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-col items-center gap-2 text-center">
+          <span className="flex size-16 animate-[pop_.45s_var(--ease-out-soft)_both] items-center justify-center rounded-full bg-ball text-night">
+            <PartyPopper className="size-7" />
+          </span>
+          <h3 className="disp m-0 text-3xl">
+            {tx({ fr: "C'est réservé !", en: "You're booked!", ar: "تم الحجز!" })}
+          </h3>
+          <p className="m-0 text-muted-foreground">
+            {terrain.name} ·{" "}
+            <span dir="ltr">
+              {hhmm(slot.startTime)} – {hhmm(slot.endTime)}
+            </span>
+            {booked.tokensCharged ? ` · ${tokens(booked.tokensCharged)}` : ""}
+          </p>
+        </div>
+        {invitable && (
+          <InvitePanel
+            reservationId={booked.id}
+            free={booked.bookingMode === "full_court"}
+            shareText={tx({
+              fr: `Padel ${terrain.name}, ${clubDate(slot.startTime, "fr", { day: "2-digit", month: "2-digit" })} à ${hhmm(slot.startTime)}. Rejoins-moi :`,
+              en: `Padel ${terrain.name}, ${clubDate(slot.startTime, "fr", { day: "2-digit", month: "2-digit" })} at ${hhmm(slot.startTime)}. Join me:`,
+              ar: `بادل ${terrain.name}، ${clubDate(slot.startTime, "fr", { day: "2-digit", month: "2-digit" })} على ${hhmm(slot.startTime)}. انضم إليّ:`,
+            })}
+          />
+        )}
+        <div className="flex gap-2.5">
+          {!isAdmin && (
+            <Button variant="outline" className="flex-1" asChild>
+              <Link href="/reservations">
+                {tx({ fr: "Mes réservations", en: "My bookings", ar: "حجوزاتي" })}
+              </Link>
+            </Button>
+          )}
+          <Button className="flex-1" onClick={onClose}>
+            {tx({ fr: "Terminé", en: "Done", ar: "تم" })}
+          </Button>
+        </div>
+      </div>
     );
   }
 
-  /* Session details */
-  const canJoin = !userIsInSession && slot.openSpots > 0 && slot.bookingMode === "own_spot";
-  const shareText = inviteUrl
-    ? `${tx({ fr: "Rejoins mon match de padel", en: "Join my padel match", ar: "انضم إلى مباراتي" })}: ${terrain.name}, ${when} ${range}. ${inviteUrl}`
-    : "";
+  const modes = [
+    {
+      id: "full_court" as const,
+      icon: <Users className="size-5" />,
+      title: tx({ fr: "Terrain complet", en: "Full court", ar: "ملعب كامل" }),
+      text: tx({
+        fr: "Je paie les 4 places, mes 3 amis jouent gratuitement",
+        en: "I pay all 4 spots, my 3 friends play free",
+        ar: "أدفع الأماكن الأربعة وأصدقائي يلعبون مجانًا",
+      }),
+      cost: perSpot * 4,
+    },
+    {
+      id: "own_spot" as const,
+      icon: <UserRound className="size-5" />,
+      title: tx({ fr: "Ma place", en: "Just my spot", ar: "مكاني فقط" }),
+      text: tx({
+        fr: "Je paie 1 place, les 3 autres restent ouvertes",
+        en: "I pay 1 spot, the other 3 stay open",
+        ar: "أدفع مكانًا واحدًا والثلاثة الباقية مفتوحة",
+      }),
+      cost: perSpot,
+    },
+  ];
+
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-[560px]">
-        {header}
-        <div className="flex flex-col gap-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={slot.status === "full" ? "muted" : "lime"}>
-              {slot.status === "full"
-                ? tx({ fr: "Complet", en: "Full", ar: "مكتمل" })
-                : tx({
-                    fr: `${slot.openSpots} place(s) libre(s)`,
-                    en: `${slot.openSpots} open spot(s)`,
-                    ar: `${slot.openSpots} مكان شاغر`,
-                  })}
-            </Badge>
-            {slot.isPublic && (
-              <Badge variant="outline" className="gap-1">
-                <Globe className="size-3" />
-                Open match
-              </Badge>
-            )}
-            {userIsInSession && (
-              <Badge>{tx({ fr: "Vous jouez", en: "You're playing", ar: "أنت تلعب" })}</Badge>
-            )}
-          </div>
-          {slot.publicDescription && (
-            <p className="m-0 rounded-2xl bg-secondary px-4 py-3 text-[15px] italic text-body">
-              “{slot.publicDescription}”
-            </p>
-          )}
-
-          <div className="flex flex-col gap-2">
-            <span className="label text-muted-foreground">
-              {tx({ fr: "Joueurs", en: "Players", ar: "اللاعبون" })} · {slot.filledSpots}/
-              {slot.totalSpots}
-            </span>
-            <ul className="m-0 flex list-none flex-col gap-2 p-0">
-              {slot.players.map((p, i) => (
-                <li
-                  key={p.id}
-                  className="flex items-center gap-3 rounded-2xl bg-secondary/70 p-2.5 pe-3"
-                >
-                  <Avatar name={p.name} index={i} size={40} />
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate font-bold">
-                      {p.name}
-                      {p.userId === currentUserId && (
-                        <span className="ms-2 text-xs font-extrabold text-court">
-                          ({tx({ fr: "vous", en: "you", ar: "أنت" })})
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-xs capitalize text-muted-foreground">
-                      {p.paymentType ?? "—"}
-                    </span>
-                  </span>
-                  {p.paymentStatus === "paid" ? (
-                    <Badge variant="success" className="gap-1">
-                      <CheckCircle2 className="size-3" />
-                      {tx({ fr: "Payé", en: "Paid", ar: "مدفوع" })}
-                    </Badge>
-                  ) : (
-                    <Badge variant="warning" className="gap-1">
-                      <Clock3 className="size-3" />
-                      {tx({ fr: "En attente", en: "Pending", ar: "قيد الانتظار" })}
-                    </Badge>
-                  )}
-                  {isAdmin && p.paymentStatus === "pending" && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="h-8 px-3 text-xs"
-                      onClick={() => handleAdminPayment(p.id, "paid")}
-                      disabled={updatePlayerPayment.isPending}
-                    >
-                      {tx({ fr: "Marquer payé", en: "Mark paid", ar: "تعليم كمدفوع" })}
-                    </Button>
-                  )}
-                  {isAdmin && p.paymentType === "token" && p.paymentStatus === "paid" && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 px-2 text-xs text-muted-foreground"
-                      onClick={() => handleAdminPayment(p.id, "pending")}
-                      disabled={updatePlayerPayment.isPending}
-                      aria-label={tx({
-                        fr: "Remettre en attente",
-                        en: "Set back to pending",
-                        ar: "إرجاع إلى الانتظار",
-                      })}
-                    >
-                      ···
-                    </Button>
-                  )}
-                </li>
-              ))}
-              {Array.from({ length: slot.openSpots }, (_, i) => (
-                <li
-                  key={`open-${i}`}
-                  className="flex items-center gap-3 rounded-2xl border-2 border-dashed border-[#DCE2F8] p-2.5"
-                >
-                  <span className="flex size-10 items-center justify-center rounded-full border-2 border-dashed border-[#C6CEF6] text-lg text-muted-foreground">
-                    +
-                  </span>
-                  <span className="text-[15px] text-muted-foreground">
-                    {tx({ fr: "Place libre", en: "Open spot", ar: "مكان شاغر" })}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="flex flex-wrap gap-2.5">
-            {canJoin && (
-              <Button className="flex-1" onClick={handleJoin} disabled={isLoading}>
-                <Coins />
-                {tx({
-                  fr: `Rejoindre · ${perSpot} token${perSpot > 1 ? "s" : ""}`,
-                  en: `Join · ${perSpot} token${perSpot > 1 ? "s" : ""}`,
-                  ar: `انضم · ${perSpot} رصيد`,
-                })}
-              </Button>
-            )}
-            {userIsInSession && (
-              <>
-                <Button
-                  variant="dark"
-                  className="flex-1"
-                  onClick={handleInvite}
-                  disabled={createInvite.isPending}
-                >
-                  <Link2 />
-                  {tx({ fr: "Inviter des amis", en: "Invite friends", ar: "ادعُ أصدقاءك" })}
-                </Button>
-                <Button variant="outline-destructive" onClick={handleLeave} disabled={isLoading}>
-                  <LogOut />
-                  {tx({ fr: "Quitter", en: "Leave", ar: "مغادرة" })}
-                </Button>
-              </>
-            )}
-            {isAdmin && (
-              <Button
-                variant="outline"
-                onClick={handleTogglePublic}
-                disabled={makePublic.isPending || makePrivate.isPending}
+    <div className="flex flex-col gap-5">
+      {isAdmin && (
+        <fieldset className="m-0 flex flex-col gap-3 rounded-[22px] border border-[#E4E8F7] p-4">
+          <legend className="label px-1 text-muted-foreground">
+            {tx({
+              fr: "Réservation au comptoir",
+              en: "Front-desk booking",
+              ar: "حجز من الاستقبال",
+            })}
+          </legend>
+          <div className="flex rounded-full bg-secondary p-1" role="group">
+            {(["member", "guest"] as const).map((w) => (
+              <button
+                key={w}
+                type="button"
+                className="pill-tab h-9 flex-1"
+                aria-pressed={forWho === w}
+                onClick={() => setForWho(w)}
               >
-                {slot.isPublic ? (
-                  <>
-                    <Lock />
-                    {tx({ fr: "Rendre privé", en: "Make private", ar: "اجعلها خاصة" })}
-                  </>
-                ) : (
-                  <>
-                    <Globe />
-                    {tx({ fr: "Rendre public", en: "Make public", ar: "اجعلها عامة" })}
-                  </>
-                )}
-              </Button>
-            )}
-            {isAdmin && slot.reservationId && (
-              <Button
-                variant="outline-destructive"
-                onClick={handleAdminCancel}
-                disabled={isLoading}
-              >
-                <X />
-                {tx({ fr: "Annuler la réservation", en: "Cancel booking", ar: "إلغاء الحجز" })}
-              </Button>
-            )}
+                {w === "member"
+                  ? tx({ fr: "Membre", en: "Member", ar: "عضو" })
+                  : tx({ fr: "Invité / téléphone", en: "Guest / phone", ar: "زائر / هاتف" })}
+              </button>
+            ))}
           </div>
-
-          {inviteUrl && (
-            <div className="flex flex-col gap-3 rounded-[22px] bg-ball p-4 text-night">
-              <span className="font-extrabold">
-                {tx({
-                  fr: "Lien d'invitation prêt",
-                  en: "Invite link ready",
-                  ar: "رابط الدعوة جاهز",
-                })}
-              </span>
-              <code className="truncate rounded-xl bg-white/70 px-3 py-2 text-xs" dir="ltr">
-                {inviteUrl}
-              </code>
-              <div className="flex gap-2">
-                <Button size="sm" variant="dark" onClick={copyInvite}>
-                  {copiedInvite ? (
-                    <>
-                      <Check />
-                      {tx({ fr: "Copié", en: "Copied", ar: "تم النسخ" })}
-                    </>
-                  ) : (
-                    <>
-                      <Copy />
-                      {tx({ fr: "Copier", en: "Copy", ar: "نسخ" })}
-                    </>
-                  )}
-                </Button>
-                <Button size="sm" variant="outline" asChild>
-                  <a
-                    href={`https://wa.me/?text=${encodeURIComponent(shareText)}`}
-                    target="_blank"
-                    rel="noreferrer"
+          {forWho === "member" ? (
+            <>
+              <MemberPicker value={member} onChange={setMember} />
+              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Payment">
+                {(["cash_club", "token"] as const).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    role="radio"
+                    aria-checked={payment === p}
+                    onClick={() => setPayment(p)}
+                    className={cn(
+                      "flex items-center justify-center gap-2 rounded-2xl border-2 px-3 py-2.5 text-sm font-bold",
+                      payment === p ? "border-court bg-[#EEF1FF]" : "border-[#E4E8F7]",
+                    )}
                   >
-                    <MessageCircle />
-                    WhatsApp
-                  </a>
-                </Button>
+                    {p === "token" ? <Coins className="size-4" /> : <Banknote className="size-4" />}
+                    {p === "token"
+                      ? tx({ fr: "Ses tokens", en: "Their tokens", ar: "رصيده" })
+                      : tx({ fr: "Espèces au club", en: "Cash at club", ar: "نقدًا في النادي" })}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="guest-name">{tx({ fr: "Nom", en: "Name", ar: "الاسم" })}</Label>
+                <Input
+                  id="guest-name"
+                  value={guestName}
+                  onChange={(e) => setGuestName(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="guest-phone">
+                  {tx({ fr: "Téléphone", en: "Phone", ar: "الهاتف" })}
+                </Label>
+                <Input
+                  id="guest-phone"
+                  type="tel"
+                  inputMode="tel"
+                  value={guestPhone}
+                  onChange={(e) => setGuestPhone(e.target.value)}
+                />
               </div>
             </div>
           )}
+        </fieldset>
+      )}
 
-          {isAdmin &&
-            slot.openSpots > 0 &&
-            slot.bookingMode !== "full_court" &&
-            slot.reservationId && (
-              <div className="flex flex-col gap-2 border-t border-[#E4E8F7] pt-4">
-                <span className="label text-muted-foreground">
-                  {tx({
-                    fr: "Ajouter un joueur (admin)",
-                    en: "Add a player (admin)",
-                    ar: "إضافة لاعب (مسؤول)",
-                  })}
+      <div
+        role="radiogroup"
+        aria-label={tx({ fr: "Formule", en: "Booking type", ar: "نوع الحجز" })}
+        className="grid grid-cols-2 gap-3"
+      >
+        {modes.map((m) => {
+          const on = mode === m.id;
+          return (
+            <button
+              key={m.id}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => setMode(m.id)}
+              className={cn(
+                "flex flex-col gap-1.5 rounded-[22px] border-[3px] p-4 text-start transition-[border-color,background-color,transform] active:scale-[.98]",
+                on ? "border-court bg-[#EEF1FF]" : "border-[#E4E8F7] hover:border-[#C6CEF6]",
+              )}
+            >
+              <span className="flex items-center justify-between gap-2">
+                <span
+                  className={cn(
+                    "flex size-9 items-center justify-center rounded-full",
+                    on ? "bg-court text-white" : "bg-secondary",
+                  )}
+                >
+                  {m.icon}
                 </span>
-                <div className="flex gap-2">
-                  <Input
-                    type="number"
-                    inputMode="numeric"
-                    placeholder="User ID"
-                    value={assignUserId}
-                    onChange={(e) => setAssignUserId(e.target.value)}
-                  />
-                  <Button
-                    onClick={handleAdminAssignPlayer}
-                    disabled={isAssigning || !assignUserId.trim()}
-                  >
-                    <UserPlus />
-                    {isAssigning ? "…" : tx({ fr: "Ajouter", en: "Add", ar: "إضافة" })}
-                  </Button>
-                </div>
-              </div>
-            )}
+                <span
+                  className={cn(
+                    "size-5 rounded-full border-[3px]",
+                    on ? "border-court bg-court" : "border-[#C6CEF6]",
+                  )}
+                />
+              </span>
+              <span className="text-base font-extrabold">{m.title}</span>
+              <span className="text-[13px] leading-snug text-muted-foreground">{m.text}</span>
+              <span className="mt-1 flex items-center gap-1.5 text-lg font-extrabold text-court">
+                <Coins className="size-4" />
+                {tokens(m.cost)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {mode === "own_spot" && (
+        <div className="flex flex-col gap-3 rounded-[22px] bg-secondary p-4">
+          <label className="flex cursor-pointer items-center justify-between gap-4">
+            <span className="flex flex-col">
+              <span className="font-bold">
+                {tx({
+                  fr: "Ouvrir aux joueurs du club",
+                  en: "Open to club players",
+                  ar: "مفتوح لأعضاء النادي",
+                })}
+              </span>
+              <span className="text-[13px] text-muted-foreground">
+                {tx({
+                  fr: "Votre match apparaît dans les open matches.",
+                  en: "Your match shows up in open matches.",
+                  ar: "تظهر مباراتك في المباريات المفتوحة.",
+                })}
+              </span>
+            </span>
+            <Switch checked={isPublic} onCheckedChange={setIsPublic} />
+          </label>
+          {isPublic && (
+            <Input
+              value={publicDescription}
+              maxLength={200}
+              onChange={(e) => setPublicDescription(e.target.value)}
+              placeholder={tx({
+                fr: "Ex : niveau 3, débutants bienvenus",
+                en: "e.g. level 3, beginners welcome",
+                ar: "مثال: مستوى 3",
+              })}
+            />
+          )}
         </div>
-      </DialogContent>
-    </Dialog>
+      )}
+
+      <EquipmentPicker startTime={slot.startTime} value={equipment} onChange={setEquipment} />
+
+      <dl className="m-0 flex flex-col gap-2.5 rounded-[22px] border border-[#E4E8F7] p-4 text-[15px]">
+        <div className="flex justify-between">
+          <dt className="text-muted-foreground">
+            {tx({ fr: "Durée", en: "Duration", ar: "المدة" })}
+          </dt>
+          <dd className="m-0 font-bold">{CLUB.slotMinutes} min</dd>
+        </div>
+        <div className="flex justify-between">
+          <dt className="text-muted-foreground">
+            {tx({ fr: "Prix au club", en: "Club price", ar: "السعر في النادي" })}
+          </dt>
+          <dd className="m-0 font-bold">
+            {cash} {CLUB.currency}
+          </dd>
+        </div>
+        {wallet !== null && paysTokens && (
+          <div className="flex justify-between">
+            <dt className="text-muted-foreground">
+              {tx({ fr: "Solde", en: "Balance", ar: "الرصيد" })}
+            </dt>
+            <dd className={cn("m-0 font-bold", short && "text-destructive")}>{tokens(wallet)}</dd>
+          </div>
+        )}
+        <div className="flex items-end justify-between border-t border-[#E4E8F7] pt-3">
+          <dt className="font-bold">Total</dt>
+          <dd className="disp m-0 text-3xl">
+            {paysTokens ? tokens(cost) : `${cash} ${CLUB.currency}`}
+          </dd>
+        </div>
+      </dl>
+
+      {short && (
+        <p
+          role="alert"
+          className="m-0 flex items-start gap-2 rounded-2xl bg-[#FFEBD9] px-4 py-3 text-sm font-semibold text-[#7A3A0D]"
+        >
+          <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+          {tx({
+            fr: "Solde insuffisant. Les tokens s'achètent en espèces à l'accueil du club.",
+            en: "Not enough tokens. Buy tokens with cash at the club front desk.",
+            ar: "رصيد غير كافٍ. يُشترى الرصيد نقدًا من استقبال النادي.",
+          })}
+        </p>
+      )}
+
+      <div className="flex gap-2.5">
+        <Button
+          variant="outline"
+          className="flex-1"
+          onClick={onClose}
+          disabled={createReservation.isPending}
+        >
+          {tx({ fr: "Annuler", en: "Cancel", ar: "إلغاء" })}
+        </Button>
+        <Button
+          className="flex-[1.4]"
+          onClick={book}
+          disabled={createReservation.isPending || short || adminIncomplete}
+        >
+          {createReservation.isPending
+            ? tx({ fr: "Réservation…", en: "Booking…", ar: "جارٍ الحجز…" })
+            : tx({ fr: "Confirmer", en: "Confirm", ar: "تأكيد" })}
+        </Button>
+      </div>
+      {isAdmin && (
+        <Button variant="outline-destructive" onClick={block} disabled={blockSlot.isPending}>
+          <Wrench />
+          {tx({ fr: "Bloquer (maintenance)", en: "Block (maintenance)", ar: "حجب (صيانة)" })}
+        </Button>
+      )}
+    </div>
   );
 }
 
-/* ───────────────────────────── Calendar ───────────────────────────── */
+/* ───────────────────────────── A booked match ───────────────────────────── */
 
-function slotLabel(state: SlotState, slot: CalendarSlot, tx: ReturnType<typeof useTx>) {
+function MatchDialog({
+  slot,
+  terrain,
+  isAdmin,
+  currentUserId,
+  onClose,
+}: {
+  slot: CalendarSlot;
+  terrain: Terrain;
+  isAdmin: boolean;
+  currentUserId: number | null;
+  onClose: () => void;
+}) {
+  const tx = useTx();
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  const { isSignedIn } = useAuth();
+  const refresh = useRefreshBookings();
+  const joinSession = useJoinSession();
+  const leaveSession = useLeaveSession();
+  const cancelReservation = useCancelReservation();
+  const makePublic = useMakeSessionPublic();
+  const makePrivate = useMakeSessionPrivate();
+  const updatePayment = useUpdatePlayerPayment();
+  const addPlayer = useAddPlayer();
+  const removePlayer = useRemovePlayer();
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const [newPlayer, setNewPlayer] = useState<User | null>(null);
+
+  const id = slot.reservationId!;
+  const full = slot.bookingMode === "full_court";
+  const perSpot = slot.tokensPerSpot ?? CLUB.tokensOwnSpot;
+  const meInMatch = slot.players.some((p) => p.userId != null && p.userId === currentUserId);
+  const canJoin = !slot.isMine && !full && slot.openSpots > 0 && !slot.isPast && !slot.isBlocked;
+  const canInvite =
+    !slot.isPast &&
+    (slot.isOrganizer || (!full && meInMatch)) &&
+    (full ? slot.players.length < slot.totalSpots : slot.openSpots > 0);
+  const canLeave = meInMatch && !slot.isPast && !(full && slot.isOrganizer);
+  const canCancel = !slot.isPast && slot.isOrganizer;
+  const fail = (title: string) => (e: unknown) =>
+    toast({ title, description: apiErrorMessage(e, ""), variant: "destructive" });
+  const done =
+    (title: string, description?: string, close = true) =>
+    () => {
+      refresh(slot.startTime);
+      toast({ title, description });
+      if (close) onClose();
+    };
+
+  const join = (paymentMethod: "token" | "cash_club") => {
+    if (!isSignedIn) {
+      setLocation(`/sign-in?redirect=${encodeURIComponent("/terrains")}`);
+      return;
+    }
+    joinSession.mutate(
+      { id, paymentMethod },
+      {
+        onSuccess: done(
+          tx({
+            fr: "Vous êtes dans le match !",
+            en: "You're in the match!",
+            ar: "أنت في المباراة!",
+          }),
+          paymentMethod === "token"
+            ? tx({
+                fr: `${tokens(perSpot)} débité(s).`,
+                en: `${tokens(perSpot)} charged.`,
+                ar: `تم خصم ${perSpot}.`,
+              })
+            : tx({
+                fr: "Place réservée, à régler au club.",
+                en: "Spot held, pay at the club.",
+                ar: "تم حجز المكان، الدفع في النادي.",
+              }),
+        ),
+        onError: fail(
+          tx({ fr: "Impossible de rejoindre", en: "Couldn't join", ar: "تعذر الانضمام" }),
+        ),
+      },
+    );
+  };
+
+  const players = slot.players;
+  const reservedSeats = full ? Math.max(0, slot.totalSpots - players.length) : 0;
+  const openSeats = full ? 0 : slot.openSpots;
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-center gap-2">
+        {slot.isBlocked ? (
+          <Badge variant="muted">{tx({ fr: "Bloqué", en: "Blocked", ar: "محجوب" })}</Badge>
+        ) : full ? (
+          <Badge variant="muted">
+            {tx({
+              fr: "Terrain complet réservé",
+              en: "Full court booked",
+              ar: "ملعب محجوز بالكامل",
+            })}
+          </Badge>
+        ) : (
+          <Badge variant={slot.openSpots ? "lime" : "muted"}>
+            {slot.openSpots
+              ? tx({
+                  fr: `${slot.openSpots} place(s) libre(s)`,
+                  en: `${slot.openSpots} open spot(s)`,
+                  ar: `${slot.openSpots} مكان شاغر`,
+                })
+              : tx({ fr: "Complet", en: "Full", ar: "مكتمل" })}
+          </Badge>
+        )}
+        {slot.isPublic && (
+          <Badge variant="outline" className="gap-1">
+            <Globe className="size-3" />
+            Open match
+          </Badge>
+        )}
+        {slot.isMine && (
+          <Badge>{tx({ fr: "Vous jouez", en: "You're playing", ar: "أنت تلعب" })}</Badge>
+        )}
+      </div>
+
+      {slot.publicDescription && (
+        <p className="m-0 rounded-2xl bg-secondary px-4 py-3 text-[15px] italic">
+          “{slot.publicDescription}”
+        </p>
+      )}
+
+      {isAdmin && (slot.guestPhone || slot.notes || (!players.length && slot.creatorName)) && (
+        <div className="flex flex-col gap-1 rounded-2xl bg-secondary px-4 py-3 text-sm">
+          {slot.creatorName && <span className="font-bold">{slot.creatorName}</span>}
+          {slot.guestPhone && (
+            <a
+              href={`tel:${slot.guestPhone}`}
+              className="flex items-center gap-1.5 font-semibold text-court"
+              dir="ltr"
+            >
+              <Phone className="size-3.5" />
+              {slot.guestPhone}
+            </a>
+          )}
+          {slot.notes && <span className="text-muted-foreground">{slot.notes}</span>}
+        </div>
+      )}
+
+      {!slot.isBlocked && (
+        <div className="flex flex-col gap-2">
+          <span className="label text-muted-foreground">
+            {tx({ fr: "Joueurs", en: "Players", ar: "اللاعبون" })} ·{" "}
+            {players.length + reservedSeats}/{slot.totalSpots}
+          </span>
+          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+            {players.map((p, i) => (
+              <li
+                key={p.id}
+                className="flex items-center gap-3 rounded-2xl bg-secondary/70 p-2.5 pe-3"
+              >
+                <Avatar name={p.name} index={i} size={40} />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate font-bold">
+                    {p.name}
+                    {p.userId != null && p.userId === currentUserId && (
+                      <span className="ms-2 text-xs font-extrabold text-court">
+                        ({tx({ fr: "vous", en: "you", ar: "أنت" })})
+                      </span>
+                    )}
+                  </span>
+                  <PaymentBadge
+                    type={p.paymentType}
+                    status={p.paymentStatus}
+                    className="mt-1 w-fit"
+                  />
+                </span>
+                {isAdmin && p.paymentType === "cash_club" && (
+                  <Button
+                    size="sm"
+                    variant={p.paymentStatus === "paid" ? "ghost" : "secondary"}
+                    className="h-8 px-3 text-xs"
+                    disabled={updatePayment.isPending}
+                    onClick={() =>
+                      updatePayment.mutate(
+                        {
+                          reservationId: id,
+                          playerId: p.id,
+                          paymentStatus: p.paymentStatus === "paid" ? "pending" : "paid",
+                        },
+                        {
+                          onSuccess: done(
+                            tx({
+                              fr: "Paiement mis à jour",
+                              en: "Payment updated",
+                              ar: "تم تحديث الدفع",
+                            }),
+                            undefined,
+                            false,
+                          ),
+                          onError: fail("Oups"),
+                        },
+                      )
+                    }
+                  >
+                    {p.paymentStatus === "paid"
+                      ? tx({ fr: "Annuler", en: "Undo", ar: "تراجع" })
+                      : tx({ fr: "Encaisser", en: "Mark paid", ar: "تحصيل" })}
+                  </Button>
+                )}
+                {isAdmin && !slot.isPast && (
+                  <button
+                    type="button"
+                    className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-white hover:text-destructive"
+                    aria-label={tx({
+                      fr: `Retirer ${p.name}`,
+                      en: `Remove ${p.name}`,
+                      ar: `إزالة ${p.name}`,
+                    })}
+                    disabled={removePlayer.isPending}
+                    onClick={() =>
+                      removePlayer.mutate(
+                        { reservationId: id, playerId: p.id },
+                        {
+                          onSuccess: done(
+                            tx({
+                              fr: "Joueur retiré",
+                              en: "Player removed",
+                              ar: "تمت إزالة اللاعب",
+                            }),
+                            undefined,
+                            false,
+                          ),
+                          onError: fail("Oups"),
+                        },
+                      )
+                    }
+                  >
+                    <X className="size-4" />
+                  </button>
+                )}
+              </li>
+            ))}
+            {Array.from({ length: reservedSeats }, (_, i) => (
+              <li
+                key={`r-${i}`}
+                className="flex items-center gap-3 rounded-2xl border-2 border-dashed border-[#DCE2F8] p-2.5"
+              >
+                <span className="flex size-10 items-center justify-center rounded-full bg-ball/60 text-night">
+                  <UserPlus className="size-4" />
+                </span>
+                <span className="text-[15px] text-muted-foreground">
+                  {tx({
+                    fr: "Place payée · pour un ami",
+                    en: "Paid spot · for a friend",
+                    ar: "مكان مدفوع · لصديق",
+                  })}
+                </span>
+              </li>
+            ))}
+            {Array.from({ length: openSeats }, (_, i) => (
+              <li
+                key={`o-${i}`}
+                className="flex items-center gap-3 rounded-2xl border-2 border-dashed border-[#DCE2F8] p-2.5"
+              >
+                <span className="flex size-10 items-center justify-center rounded-full border-2 border-dashed border-[#C6CEF6] text-lg text-muted-foreground">
+                  +
+                </span>
+                <span className="text-[15px] text-muted-foreground">
+                  {tx({ fr: "Place libre", en: "Open spot", ar: "مكان شاغر" })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {canJoin && (
+        <div className="flex flex-col gap-2">
+          <span className="label text-muted-foreground">
+            {tx({ fr: "Prendre une place", en: "Take a spot", ar: "احجز مكانًا" })}
+          </span>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button onClick={() => join("token")} disabled={joinSession.isPending}>
+              <Coins />
+              {tx({
+                fr: `Payer ${tokens(perSpot)}`,
+                en: `Pay ${tokens(perSpot)}`,
+                ar: `ادفع ${perSpot} رصيد`,
+              })}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => join("cash_club")}
+              disabled={joinSession.isPending}
+            >
+              <Banknote />
+              {tx({ fr: "Payer au club", en: "Pay at the club", ar: "الدفع في النادي" })}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {canInvite &&
+        (showInvite ? (
+          <InvitePanel
+            reservationId={id}
+            free={full}
+            shareText={tx({
+              fr: `Padel ${terrain.name}, ${clubDate(slot.startTime, "fr", { day: "2-digit", month: "2-digit" })} à ${hhmm(slot.startTime)}. Rejoins-moi :`,
+              en: `Padel ${terrain.name}, ${clubDate(slot.startTime, "fr", { day: "2-digit", month: "2-digit" })} at ${hhmm(slot.startTime)}. Join me:`,
+              ar: `بادل ${terrain.name}، ${clubDate(slot.startTime, "fr", { day: "2-digit", month: "2-digit" })} على ${hhmm(slot.startTime)}. انضم إليّ:`,
+            })}
+          />
+        ) : (
+          <Button variant="dark" onClick={() => setShowInvite(true)}>
+            <UserPlus />
+            {tx({ fr: "Inviter des joueurs", en: "Invite players", ar: "ادعُ لاعبين" })}
+          </Button>
+        ))}
+
+      {isAdmin && !slot.isPast && !slot.isBlocked && players.length < slot.totalSpots && (
+        <div className="flex flex-col gap-2 border-t border-[#E4E8F7] pt-4">
+          <span className="label text-muted-foreground">
+            {tx({ fr: "Ajouter un joueur", en: "Add a player", ar: "إضافة لاعب" })}
+            {full
+              ? ` · ${tx({ fr: "gratuit (terrain payé)", en: "free (court paid)", ar: "مجانًا" })}`
+              : ` · ${tx({ fr: "espèces au club", en: "cash at the club", ar: "نقدًا" })}`}
+          </span>
+          <MemberPicker
+            value={newPlayer}
+            onChange={setNewPlayer}
+            excludeIds={players.map((p) => p.userId ?? -1)}
+          />
+          {newPlayer && (
+            <Button
+              disabled={addPlayer.isPending}
+              onClick={() =>
+                addPlayer.mutate(
+                  { reservationId: id, userId: newPlayer.id, paymentType: "cash_club" },
+                  {
+                    onSuccess: () => {
+                      setNewPlayer(null);
+                      done(
+                        tx({ fr: "Joueur ajouté", en: "Player added", ar: "تمت إضافة اللاعب" }),
+                        undefined,
+                        false,
+                      )();
+                    },
+                    onError: fail("Oups"),
+                  },
+                )
+              }
+            >
+              <UserPlus />
+              {tx({ fr: "Ajouter", en: "Add", ar: "إضافة" })}
+            </Button>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2.5">
+        {(slot.isOrganizer || isAdmin) && !full && !slot.isPast && (
+          <Button
+            variant="outline"
+            disabled={makePublic.isPending || makePrivate.isPending}
+            onClick={() =>
+              (slot.isPublic ? makePrivate : makePublic).mutate(
+                { id },
+                {
+                  onSuccess: done(
+                    slot.isPublic
+                      ? tx({ fr: "Match privé", en: "Match is private", ar: "المباراة خاصة" })
+                      : tx({
+                          fr: "Match ouvert au club",
+                          en: "Match open to the club",
+                          ar: "المباراة مفتوحة",
+                        }),
+                    undefined,
+                    false,
+                  ),
+                  onError: fail("Oups"),
+                },
+              )
+            }
+          >
+            {slot.isPublic ? <Lock /> : <Globe />}
+            {slot.isPublic
+              ? tx({ fr: "Rendre privé", en: "Make private", ar: "اجعلها خاصة" })
+              : tx({ fr: "Ouvrir au club", en: "Open to the club", ar: "افتحها للنادي" })}
+          </Button>
+        )}
+        {canLeave && (
+          <Button
+            variant="outline-destructive"
+            disabled={leaveSession.isPending}
+            onClick={() =>
+              leaveSession.mutate(
+                { id },
+                {
+                  onSuccess: done(
+                    tx({
+                      fr: "Vous avez quitté le match",
+                      en: "You left the match",
+                      ar: "غادرت المباراة",
+                    }),
+                  ),
+                  onError: fail(
+                    tx({ fr: "Impossible de quitter", en: "Couldn't leave", ar: "تعذر المغادرة" }),
+                  ),
+                },
+              )
+            }
+          >
+            <LogOut />
+            {tx({ fr: "Quitter", en: "Leave", ar: "مغادرة" })}
+          </Button>
+        )}
+        {(canCancel || (isAdmin && !slot.isPast)) &&
+          (confirmCancel ? (
+            <Button
+              variant="destructive"
+              disabled={cancelReservation.isPending}
+              onClick={() =>
+                cancelReservation.mutate(
+                  { id },
+                  {
+                    onSuccess: done(
+                      tx({
+                        fr: "Réservation annulée",
+                        en: "Booking cancelled",
+                        ar: "تم إلغاء الحجز",
+                      }),
+                      tx({
+                        fr: "Les tokens payés ont été remboursés.",
+                        en: "Tokens paid were refunded.",
+                        ar: "تم إرجاع الرصيد المدفوع.",
+                      }),
+                    ),
+                    onError: fail(
+                      tx({
+                        fr: "Annulation impossible",
+                        en: "Couldn't cancel",
+                        ar: "تعذر الإلغاء",
+                      }),
+                    ),
+                  },
+                )
+              }
+            >
+              <CheckCircle2 />
+              {tx({
+                fr: "Confirmer l'annulation",
+                en: "Confirm cancellation",
+                ar: "تأكيد الإلغاء",
+              })}
+            </Button>
+          ) : (
+            <Button variant="outline-destructive" onClick={() => setConfirmCancel(true)}>
+              <X />
+              {slot.isBlocked
+                ? tx({ fr: "Débloquer", en: "Unblock", ar: "إلغاء الحجب" })
+                : tx({ fr: "Annuler la réservation", en: "Cancel booking", ar: "إلغاء الحجز" })}
+            </Button>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+/* ───────────────────────────── Planning grid ───────────────────────────── */
+
+function cellLabel(
+  state: SlotState,
+  slot: CalendarSlot,
+  isAdmin: boolean,
+  tx: ReturnType<typeof useTx>,
+) {
   switch (state) {
     case "available":
       return tx({ fr: "Libre", en: "Free", ar: "متاح" });
     case "mine":
-      return tx({ fr: "Vous", en: "You", ar: "أنت" });
+      return tx({ fr: "Mon match", en: "My match", ar: "مباراتي" });
+    case "blocked":
+      return tx({ fr: "Fermé", en: "Closed", ar: "مغلق" });
     case "full":
-      return tx({ fr: "Complet", en: "Full", ar: "مكتمل" });
+      return isAdmin && slot.creatorName
+        ? slot.creatorName
+        : tx({ fr: "Complet", en: "Full", ar: "مكتمل" });
     case "partial":
-      return `${slot.openSpots} ${tx({ fr: "pl.", en: "open", ar: "شاغر" })}`;
+      return tx({
+        fr: `${slot.openSpots} place${slot.openSpots > 1 ? "s" : ""}`,
+        en: `${slot.openSpots} open`,
+        ar: `${slot.openSpots} شاغر`,
+      });
     default:
-      return "";
+      return slot.reservationId ? `${slot.filledSpots}/${slot.totalSpots}` : "";
   }
 }
 
@@ -880,16 +1079,16 @@ export default function CourtCalendar({
   const locale = useDateLocale();
   const [, setLocation] = useLocation();
   const { isSignedIn } = useAuth();
-  const days = useMemo(() => Array.from({ length: 14 }, (_, i) => addDays(new Date(), i)), []);
+  const days = useMemo(() => clubDays(14), []);
   const [dayIndex, setDayIndex] = useState(0);
   const [filter, setFilter] = useState<"all" | "indoor" | "outdoor">("all");
-  const [mobileTime, setMobileTime] = useState<string | null>(null);
-  const [modal, setModal] = useState<BookingModalState>(null);
+  const [modal, setModal] = useState<Modal>(null);
+  const scroller = useRef<HTMLDivElement>(null);
 
   const date = dayKey(days[dayIndex]);
   const { data, isLoading, isError, refetch } = useGetCalendar(
     { date },
-    { query: { refetchInterval: 60_000 } as any },
+    { query: { refetchInterval: 30_000, refetchOnWindowFocus: true } as any },
   );
 
   const terrains = (data?.terrains ?? []).filter(
@@ -899,55 +1098,63 @@ export default function CourtCalendar({
     const s = new Set<string>();
     terrains.forEach(({ slots }) =>
       slots.forEach((sl) => {
-        if (isSameDay(new Date(sl.startTime), days[dayIndex])) s.add(hhmm(sl.startTime));
+        if (clubDay(sl.startTime) === date) s.add(hhmm(sl.startTime));
       }),
     );
     return Array.from(s).sort();
-  }, [terrains, days, dayIndex]);
+  }, [terrains, date]);
   const slotAt = (t: CalendarTerrain, time: string) =>
-    t.slots.find(
-      (s) => hhmm(s.startTime) === time && isSameDay(new Date(s.startTime), days[dayIndex]),
-    );
+    t.slots.find((s) => hhmm(s.startTime) === time && clubDay(s.startTime) === date);
+  const rowIsPast = (time: string) => terrains.every((t) => slotAt(t, time)?.isPast ?? true);
 
-  const upcomingTimes = times.filter((time) =>
-    terrains.some((t) => {
-      const s = slotAt(t, time);
-      return s && s.status !== "past";
-    }),
-  );
-  const activeMobileTime =
-    mobileTime && upcomingTimes.includes(mobileTime) ? mobileTime : (upcomingTimes[0] ?? null);
-  const freeCount = (time: string) =>
-    terrains.filter((t) => {
-      const s = slotAt(t, time);
-      return (
-        s && (s.status === "available" || (s.status === "partial" && s.bookingMode === "own_spot"))
-      );
-    }).length;
+  // Late evening: nothing left to book today, open tomorrow instead
+  // (once, for players: staff still open today's past matches to collect cash)
+  const autoAdvanced = useRef(false);
+  const todayOver =
+    !isAdmin && dayIndex === 0 && !!data && times.length > 0 && times.every((t) => rowIsPast(t));
+  useEffect(() => {
+    if (todayOver && !autoAdvanced.current) {
+      autoAdvanced.current = true;
+      setDayIndex(1);
+    }
+  }, [todayOver]);
+
+  // Today: scroll the first upcoming row into view
+  useEffect(() => {
+    const el = scroller.current?.querySelector<HTMLElement>("[data-upcoming='true']");
+    if (el && scroller.current) scroller.current.scrollTop = Math.max(0, el.offsetTop - 64);
+  }, [date, times.length]);
+
+  // Keep an open dialog in sync with fresh data (another player joined, paid…)
+  const live = (m: NonNullable<Modal>) => {
+    const t = data?.terrains.find((x) => x.terrain.id === m.terrain.id);
+    return t?.slots.find((s) => s.startTime === m.slot.startTime) ?? m.slot;
+  };
 
   const open = (slot: CalendarSlot, terrain: Terrain) => {
-    const st = slotState(slot, currentUserId);
-    if (st === "past") return;
-    if (st === "available") {
+    const st = slotState(slot);
+    if (st === "past" && !slot.reservationId) return;
+    if (!slot.reservationId) {
       if (!isSignedIn) {
         setLocation(`/sign-in?redirect=${encodeURIComponent("/terrains")}`);
         return;
       }
       setModal({ type: "book", slot, terrain });
-    } else setModal({ type: "session", slot, terrain });
+    } else setModal({ type: "match", slot, terrain });
   };
 
   const legend: { state: SlotState; label: string }[] = [
     { state: "available", label: tx({ fr: "Libre", en: "Free", ar: "متاح" }) },
     { state: "partial", label: tx({ fr: "Places ouvertes", en: "Open spots", ar: "أماكن شاغرة" }) },
-    { state: "mine", label: tx({ fr: "Votre match", en: "Your match", ar: "مباراتك" }) },
+    { state: "mine", label: tx({ fr: "Mon match", en: "My match", ar: "مباراتي" }) },
     { state: "full", label: tx({ fr: "Complet", en: "Full", ar: "مكتمل" }) },
   ];
   const filters = [
-    { id: "all" as const, label: tx({ fr: "Tous", en: "All courts", ar: "الكل" }) },
+    { id: "all" as const, label: tx({ fr: "Tous", en: "All", ar: "الكل" }) },
     { id: "indoor" as const, label: "Indoor" },
     { id: "outdoor" as const, label: "Outdoor" },
   ];
+  const current = modal ? { ...modal, slot: live(modal) } : null;
 
   return (
     <div className="flex flex-col gap-5">
@@ -965,8 +1172,9 @@ export default function CourtCalendar({
               type="button"
               onClick={() => setDayIndex(i)}
               aria-pressed={on}
+              aria-label={format(d, "EEEE d MMMM", { locale })}
               className={cn(
-                "flex h-[74px] w-[68px] flex-col items-center justify-center gap-0.5 rounded-[22px] border-2 transition-[background-color,border-color,color,transform] active:scale-95",
+                "flex h-[74px] w-[64px] flex-col items-center justify-center gap-0.5 rounded-[22px] border-2 transition-[background-color,border-color,color,transform] active:scale-95",
                 on
                   ? "border-ink bg-ink text-white"
                   : "border-[#E4E8F7] bg-card hover:border-[#C6CEF6]",
@@ -1001,7 +1209,7 @@ export default function CourtCalendar({
             </button>
           ))}
         </div>
-        <ul className="m-0 hidden list-none flex-wrap gap-4 p-0 text-[13px] font-semibold text-muted-foreground md:flex">
+        <ul className="-mx-4 m-0 flex list-none gap-x-4 gap-y-2 overflow-x-auto whitespace-nowrap px-4 pb-1 text-[13px] font-semibold text-muted-foreground sm:mx-0 sm:flex-wrap sm:px-0">
           {legend.map((l) => (
             <li key={l.state} className="flex items-center gap-2">
               <span className="slot size-4 rounded-md" data-state={l.state} />
@@ -1014,7 +1222,7 @@ export default function CourtCalendar({
           </li>
           <li className="flex items-center gap-2">
             <Zap className="size-4 text-[#B1452A]" />
-            {tx({ fr: "Heures pleines", en: "Peak hours", ar: "ساعات الذروة" })}
+            {tx({ fr: "Heures pleines", en: "Peak", ar: "ذروة" })}
           </li>
         </ul>
       </div>
@@ -1034,9 +1242,9 @@ export default function CourtCalendar({
           }
         />
       ) : isLoading ? (
-        <div className="flex flex-col gap-2.5" aria-busy="true">
-          {Array.from({ length: 5 }, (_, i) => (
-            <Skeleton key={i} className="h-[72px] w-full" />
+        <div className="grid grid-cols-4 gap-2" aria-busy="true">
+          {Array.from({ length: 16 }, (_, i) => (
+            <Skeleton key={i} className="h-[62px] w-full" />
           ))}
         </div>
       ) : terrains.length === 0 || times.length === 0 ? (
@@ -1055,94 +1263,106 @@ export default function CourtCalendar({
         />
       ) : (
         <>
-          {/* Desktop: courts × times */}
-          <div className="hidden overflow-hidden rounded-[28px] bg-card shadow-sm lg:block">
-            <div className="overflow-x-auto p-5">
-              <table className="w-full border-separate border-spacing-1.5">
-                <caption className="sr-only">
-                  {tx({ fr: "Disponibilités", en: "Availability", ar: "المواعيد المتاحة" })}{" "}
-                  {format(days[dayIndex], "PPPP", { locale })}
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col" className="sticky start-0 z-10 w-[170px] bg-card" />
-                    {times.map((time) => (
-                      <th
-                        key={time}
-                        scope="col"
-                        className="min-w-[78px] pb-1 text-center text-[13px] font-extrabold text-muted-foreground"
-                        dir="ltr"
-                      >
-                        {time}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
+          {/* Courts as columns, times as rows. Both headers stay visible while scrolling. */}
+          <div
+            ref={scroller}
+            className="-mx-4 max-h-[min(72vh,760px)] overflow-auto overscroll-x-contain bg-card shadow-sm sm:mx-0 sm:rounded-[28px]"
+          >
+            <table
+              className="w-full table-fixed border-separate border-spacing-1.5 p-1.5"
+              style={{ minWidth: 64 + terrains.length * 104 }}
+            >
+              <caption className="sr-only">
+                {tx({ fr: "Disponibilités", en: "Availability", ar: "المواعيد المتاحة" })}{" "}
+                {format(days[dayIndex], "PPPP", { locale })}
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col" className="sticky start-0 top-0 z-30 w-[52px] bg-card" />
                   {terrains.map((ct) => (
-                    <tr key={ct.terrain.id}>
+                    <th
+                      key={ct.terrain.id}
+                      scope="col"
+                      className="sticky top-0 z-20 bg-card px-1 pb-1.5 pt-2 text-start align-bottom"
+                    >
+                      <span className="flex flex-col">
+                        <span className="truncate text-[15px] font-extrabold leading-tight">
+                          {ct.terrain.name}
+                        </span>
+                        <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                          {ct.terrain.type === "outdoor" ? (
+                            <Sun className="size-3" />
+                          ) : (
+                            <Warehouse className="size-3" />
+                          )}
+                          {ct.terrain.type === "outdoor" ? "Outdoor" : "Indoor"}
+                        </span>
+                      </span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {times.map((time, row) => {
+                  const past = rowIsPast(time);
+                  const firstUpcoming = !past && (row === 0 || rowIsPast(times[row - 1]));
+                  return (
+                    <tr key={time} data-upcoming={firstUpcoming || undefined}>
                       <th
                         scope="row"
-                        className="sticky start-0 z-10 bg-card pe-3 text-start align-middle"
+                        className="sticky start-0 z-10 bg-card pe-1 text-start align-middle"
                       >
-                        <span className="flex flex-col">
-                          <span className="text-base font-extrabold">{ct.terrain.name}</span>
-                          <span className="flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground">
-                            {ct.terrain.type === "outdoor" ? (
-                              <Sun className="size-3.5" />
-                            ) : (
-                              <Warehouse className="size-3.5" />
-                            )}
-                            {ct.terrain.type === "outdoor" ? "Outdoor" : "Indoor"}
-                            {ct.terrain.pricePerPerson
-                              ? ` · ${ct.terrain.pricePerPerson} ${CLUB.currency}`
-                              : ""}
-                          </span>
+                        <span
+                          className={cn(
+                            "text-[13px] font-extrabold",
+                            past ? "text-[#A3AACB]" : "text-ink",
+                          )}
+                          dir="ltr"
+                        >
+                          {time}
                         </span>
                       </th>
-                      {times.map((time) => {
+                      {terrains.map((ct) => {
                         const slot = slotAt(ct, time);
                         if (!slot)
                           return (
-                            <td key={time}>
-                              <span className="block h-[58px] rounded-2xl bg-secondary/40" />
+                            <td key={ct.terrain.id}>
+                              <span className="block h-[62px] rounded-2xl bg-secondary/40" />
                             </td>
                           );
-                        const st = slotState(slot, currentUserId);
+                        const st = slotState(slot);
+                        const clickable = st !== "past" || !!slot.reservationId;
+                        const label = cellLabel(st, slot, isAdmin, tx);
                         return (
-                          <td key={time}>
+                          <td key={ct.terrain.id}>
                             <button
                               type="button"
-                              className="slot flex h-[58px] w-full flex-col justify-center px-2.5"
+                              className={cn(
+                                "slot flex h-[62px] w-full flex-col justify-center px-2",
+                                slot.isPast && st !== "past" && "opacity-60",
+                              )}
                               data-state={st}
                               data-public={slot.isPublic || undefined}
-                              disabled={st === "past"}
+                              disabled={!clickable}
                               onClick={() => open(slot, ct.terrain)}
-                              aria-label={`${ct.terrain.name} ${time}: ${st === "past" ? tx({ fr: "passé", en: "past", ar: "انتهى" }) : slotLabel(st, slot, tx)}${st === "available" ? `, ${spotCost(slot) * 4} tokens${priced(slot).isPeak ? ` (${tx({ fr: "heures pleines", en: "peak", ar: "ذروة" })})` : ""}` : ""}`}
+                              aria-label={`${ct.terrain.name} ${time}: ${label || tx({ fr: "passé", en: "past", ar: "انتهى" })}${st === "available" ? `, ${tokens(slot.tokensPerSpot * 4)}` : ""}`}
                             >
-                              {st !== "past" && (
+                              {st !== "past" || slot.reservationId ? (
                                 <>
-                                  <span className="flex items-center justify-between text-[13px] font-extrabold">
-                                    {slotLabel(st, slot, tx)}
+                                  <span className="flex items-center justify-between gap-1 text-[13px] font-extrabold leading-tight">
+                                    <span className="truncate">{label}</span>
                                     {slot.isPublic && st !== "mine" ? (
-                                      <Globe className="size-3.5 text-[#7B5CF0]" />
-                                    ) : priced(slot).isPeak && st === "available" ? (
-                                      <span
-                                        className="flex items-center gap-0.5 text-[11px] font-extrabold text-[#B1452A]"
-                                        title={priced(slot).priceLabel ?? undefined}
-                                      >
-                                        <Zap className="size-3" />
-                                        {spotCost(slot)}
-                                      </span>
+                                      <Globe className="size-3.5 shrink-0 text-[#7B5CF0]" />
+                                    ) : slot.isPeak && st === "available" ? (
+                                      <Zap className="size-3.5 shrink-0 text-[#B1452A]" />
                                     ) : null}
                                   </span>
-                                  {st === "available" && (
+                                  {st === "available" ? (
                                     <span className="mt-0.5 text-[11px] font-semibold opacity-75">
-                                      {spotCost(slot) * 4} tokens
+                                      {tokens(slot.tokensPerSpot * 4)}
                                     </span>
-                                  )}
-                                  {st !== "available" && (
-                                    <span className="mt-1 flex gap-0.5" aria-hidden="true">
+                                  ) : st !== "blocked" ? (
+                                    <span className="mt-1.5 flex gap-0.5" aria-hidden="true">
                                       {Array.from({ length: slot.totalSpots }, (_, k) => (
                                         <span
                                           key={k}
@@ -1159,145 +1379,63 @@ export default function CourtCalendar({
                                         />
                                       ))}
                                     </span>
-                                  )}
+                                  ) : null}
                                 </>
-                              )}
+                              ) : null}
                             </button>
                           </td>
                         );
                       })}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Mobile: time first, then courts */}
-          <div className="flex flex-col gap-4 lg:hidden">
-            {upcomingTimes.length === 0 ? (
-              <EmptyState
-                title={tx({ fr: "Journée terminée", en: "Day is over", ar: "انتهى اليوم" })}
-                text={tx({
-                  fr: "Choisissez demain dans la barre du dessus.",
-                  en: "Pick tomorrow above.",
-                  ar: "اختر الغد في الأعلى.",
+                  );
                 })}
-              />
-            ) : (
-              <>
-                <div
-                  role="group"
-                  aria-label={tx({ fr: "Heure", en: "Time", ar: "الوقت" })}
-                  className="hscroll -mx-4 gap-2 px-4"
-                >
-                  {upcomingTimes.map((time) => {
-                    const on = time === activeMobileTime;
-                    const n = freeCount(time);
-                    return (
-                      <button
-                        key={time}
-                        type="button"
-                        onClick={() => setMobileTime(time)}
-                        aria-pressed={on}
-                        className={cn(
-                          "flex h-[60px] min-w-[84px] flex-col items-center justify-center rounded-[18px] px-3 transition-colors",
-                          on ? "bg-court text-white" : "bg-card",
-                        )}
-                      >
-                        <span className="text-base font-extrabold" dir="ltr">
-                          {time}
-                        </span>
-                        <span
-                          className={cn(
-                            "text-xs font-semibold",
-                            on ? "text-white/80" : n ? "text-[#3E7A1E]" : "text-[#B1452A]",
-                          )}
-                        >
-                          {n
-                            ? tx({ fr: `${n} dispo`, en: `${n} free`, ar: `${n} متاح` })
-                            : tx({ fr: "Complet", en: "Full", ar: "مكتمل" })}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
-                  {terrains.map((ct) => {
-                    const slot = activeMobileTime ? slotAt(ct, activeMobileTime) : undefined;
-                    if (!slot) return null;
-                    const st = slotState(slot, currentUserId);
-                    const free = st === "available";
-                    return (
-                      <li key={ct.terrain.id}>
-                        <button
-                          type="button"
-                          onClick={() => open(slot, ct.terrain)}
-                          disabled={st === "past"}
-                          className={cn(
-                            "flex w-full items-center gap-3.5 rounded-[24px] border-[3px] bg-card p-3 text-start transition-transform active:scale-[.98]",
-                            st === "mine" ? "border-court" : "border-transparent",
-                            st === "full" && "opacity-70",
-                          )}
-                        >
-                          <span
-                            className="relative h-[52px] w-[78px] shrink-0 rounded-lg border-2 border-white shadow-[0_0_0_1px_#E4E8F7]"
-                            style={{
-                              background: free
-                                ? "var(--color-court)"
-                                : st === "mine"
-                                  ? "var(--color-ball)"
-                                  : "var(--color-night-3)",
-                            }}
-                          >
-                            <CourtLines thick={2} />
-                          </span>
-                          <span className="flex min-w-0 flex-1 flex-col">
-                            <span className="text-[17px] font-extrabold">{ct.terrain.name}</span>
-                            <span className="flex items-center gap-1 text-[13px] text-muted-foreground">
-                              {ct.terrain.type === "outdoor" ? "Outdoor" : "Indoor"}
-                              {st === "available" && <> · {spotCost(slot) * 4} tokens</>}
-                              {priced(slot).isPeak && st === "available" && (
-                                <Zap
-                                  className="size-3.5 text-[#B1452A]"
-                                  aria-label={tx({ fr: "heures pleines", en: "peak", ar: "ذروة" })}
-                                />
-                              )}
-                            </span>
-                          </span>
-                          <span
-                            className="slot flex h-9 items-center rounded-full px-3 text-[13px] font-extrabold"
-                            data-state={st}
-                            data-public={slot.isPublic || undefined}
-                          >
-                            {slotLabel(st, slot, tx)}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </>
-            )}
+              </tbody>
+            </table>
           </div>
 
           <p className="m-0 flex items-center gap-2 text-[13px] text-muted-foreground">
             <LiveDot color="#1F9D5B" />
             {tx({
-              fr: "Mis à jour en direct toutes les minutes.",
-              en: "Updates live every minute.",
-              ar: "يتم التحديث كل دقيقة.",
+              fr: "Disponibilités mises à jour en direct.",
+              en: "Availability updates live.",
+              ar: "يتم تحديث المواعيد مباشرة.",
             })}
+            {terrains.length > 3 && (
+              <span className="sm:hidden">
+                {tx({
+                  fr: " Glissez pour voir tous les terrains.",
+                  en: " Swipe to see every court.",
+                  ar: " اسحب لرؤية كل الملاعب.",
+                })}
+              </span>
+            )}
           </p>
         </>
       )}
 
-      <BookingModal
-        modal={modal}
-        onClose={() => setModal(null)}
-        currentUserId={currentUserId}
-        isAdmin={isAdmin}
-      />
+      <Dialog open={!!current} onOpenChange={(o) => !o && setModal(null)}>
+        {current && (
+          <DialogContent className="max-w-[540px]">
+            <DialogHero terrain={current.terrain} slot={current.slot} />
+            {current.type === "book" ? (
+              <BookDialog
+                slot={current.slot}
+                terrain={current.terrain}
+                isAdmin={isAdmin}
+                onClose={() => setModal(null)}
+              />
+            ) : (
+              <MatchDialog
+                slot={current.slot}
+                terrain={current.terrain}
+                isAdmin={isAdmin}
+                currentUserId={currentUserId}
+                onClose={() => setModal(null)}
+              />
+            )}
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   );
 }

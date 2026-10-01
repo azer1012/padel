@@ -32,6 +32,8 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
+          // Loaded on demand only (invite QR code)
+          if (id.includes("qrcode-generator")) return undefined;
           if (
             /recharts|react-smooth|\/d3-|victory-vendor|decimal\.js-light|internmap|react-transition-group|dom-helpers/.test(
               id,
