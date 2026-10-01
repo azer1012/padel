@@ -182,8 +182,8 @@ plus how to roll a release out to every club.
 - [x] No double booking (overlap constraint, 10-way race, duration change)
 - [x] Token accounting reconciles (API tests + E2E)
 - [x] Access model: browsers have no table access (local copy with the exact migrations)
-- [ ] Migrations applied on the live project
-- [ ] Access model verified **on the live project**
+- [x] Migrations applied on the live project (2026-10-01, SQL editor; 6 versions in history)
+- [x] Access model verified **on the live project** (RLS on 23/23 tables, 0 policies, 0 tables reachable by anon/authenticated, realtime empty, no storage policies, no security-definer function executable by anon; advisors: only the intended "RLS enabled, no policy" notices)
 - [ ] Authentication end to end with real e-mails (needs SMTP)
 - [ ] Google login tested (needs the club's Google client)
 - [ ] Production domain configured
