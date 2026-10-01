@@ -1,14 +1,18 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { db, tokenTransactionsTable, usersTable, activityTable } from "@workspace/db";
 import { eq, desc, count, and } from "drizzle-orm";
 import { requireUser, requireAdmin } from "../lib/auth";
 import { notifyLater } from "../lib/notify";
 import { formatClubDate, type Lang } from "../lib/club-time";
+import { moveTokens } from "../lib/ledger";
+import { HttpError, cleanText, oneOf, paging, pgCode, requireId, toId } from "../lib/http";
 
 const router = Router();
+type DbUser = typeof usersTable.$inferSelect;
+const me = (req: Request) => (req as any).dbUser as DbUser;
 
 router.get("/tokens/balance", requireUser, async (req, res) => {
-  const user = (req as any).dbUser;
+  const user = me(req);
   res.json({
     userId: user.id,
     balance: user.tokenBalance,
@@ -18,151 +22,150 @@ router.get("/tokens/balance", requireUser, async (req, res) => {
 });
 
 router.get("/tokens/transactions", requireUser, async (req, res) => {
-  const user = (req as any).dbUser;
-  const { page = "1", limit = "20" } = req.query as Record<string, string>;
-  const pageNum = parseInt(page);
-  const limitNum = parseInt(limit);
-  const offset = (pageNum - 1) * limitNum;
-
-  const [{ total }] = await db
-    .select({ total: count() })
-    .from(tokenTransactionsTable)
-    .where(eq(tokenTransactionsTable.userId, user.id));
-
+  const user = me(req);
+  const { page, limit, offset } = paging(req.query as Record<string, string>, 20, 100);
+  const where = eq(tokenTransactionsTable.userId, user.id);
+  const [{ total }] = await db.select({ total: count() }).from(tokenTransactionsTable).where(where);
   const data = await db.query.tokenTransactionsTable.findMany({
-    where: eq(tokenTransactionsTable.userId, user.id),
-    with: { user: true },
-    orderBy: [desc(tokenTransactionsTable.createdAt)],
-    limit: limitNum,
+    where,
+    orderBy: [desc(tokenTransactionsTable.createdAt), desc(tokenTransactionsTable.id)],
+    limit,
     offset,
   });
-
-  res.json({ data, total: Number(total), page: pageNum, limit: limitNum });
+  res.json({ data, total: Number(total), page, limit });
 });
 
 /**
- * credit: balance + amount · debit: balance − amount (refused if it would go negative)
- * adjustment: sets the balance to `amount` exactly (the transaction stores the real delta).
+ * Admin wallet operations (cash paid at the desk → tokens):
+ *   credit: balance + amount · debit: balance − amount (never below zero)
+ *   adjustment: sets the balance to `amount` exactly (the ledger stores the real delta).
+ * `idempotencyKey` (one per dialog) makes a double click or a retried request harmless.
  */
 router.post("/tokens/admin/adjust", requireAdmin, async (req, res) => {
-  const admin = (req as any).dbUser;
-  const { userId, type, description, notes, expiresAt } = req.body;
-  const amount = Number(req.body.amount);
-
-  if (!["credit", "debit", "adjustment"].includes(type)) {
-    res.status(400).json({ error: "Invalid type" });
-    return;
-  }
+  const admin = me(req);
+  const b = req.body ?? {};
+  const userId = requireId(b.userId, "member");
+  const type = oneOf(b.type, ["credit", "debit", "adjustment"] as const);
+  const amount = Number(b.amount);
+  const description = cleanText(b.description, 200);
+  const notes = cleanText(b.notes, 500);
+  const idempotencyKey = cleanText(b.idempotencyKey, 100);
+  if (!type) throw new HttpError(400, "Invalid type", "VALIDATION_ERROR");
   if (
     !Number.isInteger(amount) ||
     amount < 0 ||
-    (type !== "adjustment" && amount === 0) ||
-    amount > 10000
-  ) {
-    res.status(400).json({ error: "Invalid amount" });
-    return;
-  }
-  if (!description || typeof description !== "string") {
-    res.status(400).json({ error: "Description is required" });
-    return;
+    amount > 1000 ||
+    (type !== "adjustment" && amount === 0)
+  )
+    throw new HttpError(
+      400,
+      "Amount must be a whole number between 1 and 1000",
+      "VALIDATION_ERROR",
+    );
+  if (!description) throw new HttpError(400, "A reason is required", "VALIDATION_ERROR");
+  const expiresAt = b.expiresAt ? new Date(b.expiresAt) : null;
+  if (expiresAt && Number.isNaN(expiresAt.getTime()))
+    throw new HttpError(400, "Invalid expiry date", "VALIDATION_ERROR");
+
+  if (idempotencyKey) {
+    const [already] = await db
+      .select()
+      .from(tokenTransactionsTable)
+      .where(eq(tokenTransactionsTable.idempotencyKey, idempotencyKey));
+    if (already) {
+      res.json(already);
+      return;
+    }
   }
 
+  let result;
   try {
-    const result = await db.transaction(async (tx) => {
+    result = await db.transaction(async (tx) => {
       const [target] = await tx
         .select()
         .from(usersTable)
-        .where(eq(usersTable.id, parseInt(userId)))
+        .where(eq(usersTable.id, userId))
         .for("update");
-      if (!target) throw new Error("NOT_FOUND");
-
-      const before = target.tokenBalance;
-      const after =
-        type === "credit" ? before + amount : type === "debit" ? before - amount : amount;
-      if (after < 0) throw new Error("NEGATIVE");
-      const delta = after - before;
-
-      await tx.update(usersTable).set({ tokenBalance: after }).where(eq(usersTable.id, target.id));
-      const [row] = await tx
-        .insert(tokenTransactionsTable)
-        .values({
-          userId: target.id,
-          adminId: admin.id,
-          type: type as any,
-          amount: type === "adjustment" ? Math.abs(delta) : amount,
-          balanceAfter: after,
-          description,
-          notes:
-            type === "adjustment"
-              ? [`${before} → ${after}`, notes].filter(Boolean).join(" · ")
-              : notes,
-          expiresAt: expiresAt ? new Date(expiresAt) : undefined,
-        })
-        .returning();
-
+      if (!target) throw new HttpError(404, "User not found", "USER_NOT_FOUND");
+      const delta =
+        type === "credit" ? amount : type === "debit" ? -amount : amount - target.tokenBalance;
+      if (type === "adjustment" && delta === 0)
+        throw new HttpError(400, "The balance is already at that value", "NO_CHANGE");
+      const moved = await moveTokens(tx, {
+        userId,
+        delta,
+        type,
+        adminId: admin.id,
+        description,
+        notes:
+          type === "adjustment"
+            ? [`${target.tokenBalance} → ${amount}`, notes].filter(Boolean).join(" · ")
+            : notes,
+        expiresAt,
+        idempotencyKey,
+      });
       await tx.insert(activityTable).values({
         type: delta >= 0 ? "token_credited" : "token_debited",
-        message: `${Math.abs(delta)} token(s) ${delta >= 0 ? "added to" : "removed from"} ${target.email}: ${description}`,
+        message: `${Math.abs(delta)} token(s) ${delta >= 0 ? "added to" : "removed from"} ${target.email}: ${description} (by ${admin.email})`,
         userId: target.id,
         userName: `${target.firstName ?? ""} ${target.lastName ?? ""}`.trim() || target.email,
       });
-      return { row, target, delta, after };
+      return { ...moved, target, delta };
     });
-
-    if (result.delta > 0) {
-      const lang = (result.target.language ?? "fr") as Lang;
-      notifyLater(
-        result.target.id,
-        {
-          kind: "tokens_added",
-          amount: result.delta,
-          balance: result.after,
-          reason: description,
-          expiresOn: expiresAt ? formatClubDate(new Date(expiresAt), lang) : null,
-        },
-        `tx:${result.row.id}`,
-      );
+  } catch (err) {
+    // Same key sent twice at the same instant: the second insert lost the race
+    if (pgCode(err) === "23505" && idempotencyKey) {
+      const [already] = await db
+        .select()
+        .from(tokenTransactionsTable)
+        .where(eq(tokenTransactionsTable.idempotencyKey, idempotencyKey));
+      if (already) {
+        res.json(already);
+        return;
+      }
     }
-
-    const full = await db.query.tokenTransactionsTable.findFirst({
-      where: eq(tokenTransactionsTable.id, result.row.id),
-      with: { user: true },
-    });
-    res.json(full);
-  } catch (err: any) {
-    if (err.message === "NOT_FOUND") res.status(404).json({ error: "User not found" });
-    else if (err.message === "NEGATIVE")
-      res.status(400).json({ error: "Balance cannot go below zero" });
-    else throw err;
+    throw err;
   }
+
+  if (result.delta > 0) {
+    const lang = (result.target.language ?? "fr") as Lang;
+    notifyLater(
+      result.target.id,
+      {
+        kind: "tokens_added",
+        amount: result.delta,
+        balance: result.balanceAfter,
+        reason: description,
+        expiresOn: expiresAt ? formatClubDate(expiresAt, lang) : null,
+      },
+      `tx:${result.row.id}`,
+    );
+  }
+  const full = await db.query.tokenTransactionsTable.findFirst({
+    where: eq(tokenTransactionsTable.id, result.row.id),
+    with: { user: true },
+  });
+  res.json(full);
 });
 
 router.get("/tokens/admin/transactions", requireAdmin, async (req, res) => {
-  const { userId, type, page = "1", limit = "20" } = req.query as Record<string, string>;
-  const pageNum = parseInt(page);
-  const limitNum = parseInt(limit);
-  const offset = (pageNum - 1) * limitNum;
+  const q = req.query as Record<string, string>;
+  const { page, limit, offset } = paging(q, 20, 100);
+  const conditions = [];
+  if (toId(q.userId)) conditions.push(eq(tokenTransactionsTable.userId, toId(q.userId)!));
+  const type = oneOf(q.type, ["credit", "debit", "adjustment"] as const);
+  if (type) conditions.push(eq(tokenTransactionsTable.type, type));
+  const where = conditions.length ? and(...conditions) : undefined;
 
-  const conditions: any[] = [];
-  if (userId) conditions.push(eq(tokenTransactionsTable.userId, parseInt(userId)));
-  if (type) conditions.push(eq(tokenTransactionsTable.type, type as any));
-
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-
-  const [{ total }] = await db
-    .select({ total: count() })
-    .from(tokenTransactionsTable)
-    .where(whereClause);
-
+  const [{ total }] = await db.select({ total: count() }).from(tokenTransactionsTable).where(where);
   const data = await db.query.tokenTransactionsTable.findMany({
-    where: whereClause,
-    with: { user: true },
-    orderBy: [desc(tokenTransactionsTable.createdAt)],
-    limit: limitNum,
+    where,
+    with: { user: true, admin: true },
+    orderBy: [desc(tokenTransactionsTable.createdAt), desc(tokenTransactionsTable.id)],
+    limit,
     offset,
   });
-
-  res.json({ data, total: Number(total), page: pageNum, limit: limitNum });
+  res.json({ data, total: Number(total), page, limit });
 });
 
 export default router;

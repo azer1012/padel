@@ -1,107 +1,177 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { notifyLater } from "../lib/notify";
-import { db, usersTable } from "@workspace/db";
-import { eq, ilike, or, count, sql } from "drizzle-orm";
+import { db, usersTable, activityTable } from "@workspace/db";
+import { and, count, desc, eq, ilike, ne, or } from "drizzle-orm";
 import { requireAuth, requireUser, requireAdmin } from "../lib/auth";
+import { HttpError, cleanText, oneOf, paging, requireId } from "../lib/http";
 
 const router = Router();
+type DbUser = typeof usersTable.$inferSelect;
+const me = (req: Request) => (req as any).dbUser as DbUser;
+const LANGS = ["fr", "ar", "en"] as const;
+
+/** Profile fields a user may edit on themselves (never role or balance). */
+function profilePatch(body: any) {
+  const patch: Partial<DbUser> = {};
+  if (body?.firstName !== undefined) patch.firstName = cleanText(body.firstName, 80);
+  if (body?.lastName !== undefined) patch.lastName = cleanText(body.lastName, 80);
+  if (body?.phone !== undefined) {
+    const phone = cleanText(body.phone, 30);
+    if (phone && !/^[+\d][\d\s().-]{5,29}$/.test(phone))
+      throw new HttpError(400, "Invalid phone number", "VALIDATION_ERROR");
+    patch.phone = phone;
+  }
+  if (body?.language !== undefined) {
+    const language = oneOf(body.language, LANGS);
+    if (!language) throw new HttpError(400, "Invalid language", "VALIDATION_ERROR");
+    patch.language = language;
+  }
+  if (typeof body?.emailNotifications === "boolean")
+    patch.emailNotifications = body.emailNotifications;
+  if (typeof body?.pushNotifications === "boolean")
+    patch.pushNotifications = body.pushNotifications;
+  return patch;
+}
 
 router.get("/users/me", requireUser, async (req, res) => {
-  const user = (req as any).dbUser;
-  res.json(user);
+  res.json(me(req));
 });
 
 router.patch("/users/me", requireUser, async (req, res) => {
-  const user = (req as any).dbUser;
-  const { firstName, lastName, phone, language, emailNotifications, pushNotifications } = req.body;
-  const prefs: Record<string, boolean> = {};
-  if (typeof emailNotifications === "boolean") prefs.emailNotifications = emailNotifications;
-  if (typeof pushNotifications === "boolean") prefs.pushNotifications = pushNotifications;
   const [updated] = await db
     .update(usersTable)
-    .set({ firstName, lastName, phone, language, ...prefs, updatedAt: new Date() })
-    .where(eq(usersTable.id, user.id))
+    .set({ ...profilePatch(req.body), updatedAt: new Date() })
+    .where(eq(usersTable.id, me(req).id))
     .returning();
   res.json(updated);
 });
 
+/**
+ * Idempotent fallback after sign-in. The database already creates the profile at
+ * signup (auth.users trigger); this only fills it in for older accounts and never
+ * overwrites what the player edited in their profile.
+ */
 router.post("/users/sync", requireAuth, async (req, res) => {
-  const authUserId = (req as any).authUserId;
-  if (!authUserId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-  const { firstName, lastName, imageUrl } = req.body;
+  const authUserId = (req as any).authUserId as string;
   // Never trust an email sent by the browser: use the one Supabase verified for this token.
   const email = (req as any).authEmail as string | undefined;
-  const existing = await db
+  const firstName = cleanText(req.body?.firstName, 80);
+  const lastName = cleanText(req.body?.lastName, 80);
+  const avatar = cleanText(req.body?.imageUrl, 500);
+  const avatarUrl = avatar && /^https:\/\//.test(avatar) ? avatar : null;
+
+  const [existing] = await db
     .select()
     .from(usersTable)
     .where(eq(usersTable.supabaseAuthId, authUserId));
-  if (existing.length > 0) {
-    const [updated] = await db
+  let user: DbUser;
+  let created = false;
+  if (existing) {
+    [user] = await db
       .update(usersTable)
-      .set({ email, firstName, lastName, avatarUrl: imageUrl, updatedAt: new Date() })
-      .where(eq(usersTable.supabaseAuthId, authUserId))
+      .set({
+        ...(email && email !== existing.email ? { email } : {}),
+        ...(!existing.firstName && firstName ? { firstName } : {}),
+        ...(!existing.lastName && lastName ? { lastName } : {}),
+        ...(!existing.avatarUrl && avatarUrl ? { avatarUrl } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(usersTable.id, existing.id))
       .returning();
-    res.json(updated);
-    return;
+  } else {
+    const inserted = await db
+      .insert(usersTable)
+      .values({
+        supabaseAuthId: authUserId,
+        email: email || `${authUserId}@placeholder.local`,
+        firstName,
+        lastName,
+        avatarUrl,
+        role: "player",
+        tokenBalance: 0,
+        language: "fr",
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (inserted[0]) {
+      user = inserted[0];
+      created = true;
+    } else {
+      [user] = await db.select().from(usersTable).where(eq(usersTable.supabaseAuthId, authUserId));
+      if (!user)
+        throw new HttpError(409, "This email is already linked to another account", "EMAIL_TAKEN");
+    }
   }
-  const [created] = await db
-    .insert(usersTable)
-    .values({
-      supabaseAuthId: authUserId,
-      email: email || `${authUserId}@placeholder.local`,
-      firstName,
-      lastName,
-      avatarUrl: imageUrl,
-      role: "player",
-      tokenBalance: 0,
-      language: "fr",
-    })
-    .returning();
-  notifyLater(created, { kind: "welcome", firstName: created.firstName }, "welcome");
-  res.status(201).json(created);
+  // Idempotent (notification_log): sent once per user, whoever created the row.
+  notifyLater(user, { kind: "welcome", firstName: user.firstName }, "welcome");
+  res.status(created ? 201 : 200).json(user);
 });
 
 router.get("/users", requireAdmin, async (req, res) => {
-  const { search, page = "1", limit = "20" } = req.query as Record<string, string>;
-  const pageNum = parseInt(page);
-  const limitNum = parseInt(limit);
-  const offset = (pageNum - 1) * limitNum;
-
-  let query = db.select().from(usersTable);
-  if (search) {
-    query = (query as any).where(
-      or(
-        ilike(usersTable.email, `%${search}%`),
-        ilike(usersTable.firstName, `%${search}%`),
-        ilike(usersTable.lastName, `%${search}%`),
-      ),
-    );
-  }
-
-  const searchCondition = search
+  const q = req.query as Record<string, string>;
+  const { page, limit, offset } = paging(q, 20, 200);
+  const search = cleanText(q.search, 80)?.replace(/[%_\\]/g, (c) => `\\${c}`);
+  const where = search
     ? or(
         ilike(usersTable.email, `%${search}%`),
         ilike(usersTable.firstName, `%${search}%`),
         ilike(usersTable.lastName, `%${search}%`),
+        ilike(usersTable.phone, `%${search}%`),
       )
     : undefined;
-  const [{ total }] = await db.select({ total: count() }).from(usersTable).where(searchCondition);
-  const data = await query.limit(limitNum).offset(offset);
-
-  res.json({ data, total: Number(total), page: pageNum, limit: limitNum });
+  const [{ total }] = await db.select({ total: count() }).from(usersTable).where(where);
+  const data = await db
+    .select()
+    .from(usersTable)
+    .where(where)
+    .orderBy(desc(usersTable.createdAt))
+    .limit(limit)
+    .offset(offset);
+  res.json({ data, total: Number(total), page, limit });
 });
 
 router.get("/users/:id", requireAdmin, async (req, res) => {
-  const id = parseInt(req.params.id as string);
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, id));
-  if (!user) {
-    res.status(404).json({ error: "User not found" });
-    return;
-  }
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.id, requireId(req.params.id)));
+  if (!user) throw new HttpError(404, "User not found", "NOT_FOUND");
   res.json(user);
+});
+
+/** Admin: edit a member's details or role. Token balances only change through /tokens/admin/adjust. */
+router.patch("/users/:id", requireAdmin, async (req, res) => {
+  const admin = me(req);
+  const id = requireId(req.params.id);
+  const patch = profilePatch(req.body);
+  const role =
+    req.body?.role === undefined ? undefined : oneOf(req.body.role, ["admin", "player"] as const);
+  if (role === null) throw new HttpError(400, "Invalid role", "VALIDATION_ERROR");
+  if (role === "player") {
+    if (id === admin.id)
+      throw new HttpError(400, "You can't remove your own admin access", "SELF_DEMOTE");
+    const [{ admins }] = await db
+      .select({ admins: count() })
+      .from(usersTable)
+      .where(and(eq(usersTable.role, "admin"), ne(usersTable.id, id)));
+    if (Number(admins) === 0)
+      throw new HttpError(400, "The club needs at least one admin", "LAST_ADMIN");
+  }
+  const [updated] = await db
+    .update(usersTable)
+    .set({ ...patch, ...(role ? { role } : {}), updatedAt: new Date() })
+    .where(eq(usersTable.id, id))
+    .returning();
+  if (!updated) throw new HttpError(404, "User not found", "NOT_FOUND");
+  if (role) {
+    await db.insert(activityTable).values({
+      type: "user_registered",
+      message: `${updated.email} is now ${role} (by ${admin.email})`,
+      userId: updated.id,
+      userName: `${updated.firstName ?? ""} ${updated.lastName ?? ""}`.trim() || updated.email,
+    });
+  }
+  res.json(updated);
 });
 
 export default router;

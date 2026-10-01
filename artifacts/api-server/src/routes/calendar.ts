@@ -55,43 +55,28 @@ function buildSlotsForTerrainDay(
     };
 
     if (reservation) {
-      // Legacy detection: bookingMode is NOT NULL (default full_court), but
-      // old single-player bookings were created before multi-player support.
-      // They have tokensCharged < 4 (only 1 token charged) and no player rows.
-      // Treat these as own_spot sessions with remaining open spots.
-      const isLegacyFullCourt =
-        reservation.bookingMode === "full_court" &&
-        reservation.tokensCharged < 4 &&
-        reservation.players.length === 0;
+      // full_court: the booker holds all 4 spots (invited friends fill them for free);
+      // own_spot: only the players who joined.
+      const isFullCourt = reservation.bookingMode === "full_court";
+      const filledSpots = isFullCourt ? reservation.totalSpots : reservation.players.length;
+      const openSpots = isFullCourt ? 0 : Math.max(0, reservation.totalSpots - filledSpots);
+      const invitedSeats = isFullCourt
+        ? Math.max(0, reservation.totalSpots - reservation.players.length)
+        : 0;
+      const isMine =
+        dbUserId != null &&
+        (reservation.userId === dbUserId ||
+          reservation.players.some((p: any) => p.userId === dbUserId));
 
-      const isFullCourt = reservation.bookingMode === "full_court" && !isLegacyFullCourt;
-      const isOwnSpot = reservation.bookingMode === "own_spot" || isLegacyFullCourt;
-
-      let filledSpots: number;
-      let openSpots: number;
-
-      if (isFullCourt) {
-        // Explicit full-court booking: all 4 spots occupied, nobody can join
-        filledSpots = reservation.totalSpots ?? 4;
-        openSpots = 0;
-      } else {
-        // own_spot or legacy single-player: spots based on actual player rows
-        // (legacy: at least 1 filled even if no player rows yet)
-        filledSpots = isLegacyFullCourt
-          ? Math.max(1, reservation.players.length)
-          : reservation.players.length;
-        openSpots = Math.max(0, (reservation.totalSpots ?? 4) - filledSpots);
-      }
-
-      // Player data: admin sees full detail; others see name + own userId only
+      // Admin and the match's own players see payment states; outsiders see first names only.
       const players = reservation.players.map((p: any) => {
         const isOwn = p.userId === dbUserId;
         return {
           id: p.id,
           name: displayName(p.user, isAdmin || isOwn, "Player"),
           userId: isAdmin || isOwn ? p.userId : null,
-          paymentType: isAdmin ? p.paymentType : null,
-          paymentStatus: isAdmin ? p.paymentStatus : null,
+          paymentType: isAdmin || isMine ? p.paymentType : null,
+          paymentStatus: isAdmin || isMine ? p.paymentStatus : null,
         };
       });
 
@@ -99,11 +84,16 @@ function buildSlotsForTerrainDay(
         startTime: cursor.toISOString(),
         endTime: slotEnd.toISOString(),
         status: openSpots <= 0 ? "full" : "partial",
+        isPast,
         reservationId: reservation.id,
         bookingMode: reservation.bookingMode,
-        totalSpots: reservation.totalSpots ?? 4,
+        totalSpots: reservation.totalSpots,
         filledSpots,
         openSpots,
+        invitedSeats,
+        isMine,
+        isOrganizer: dbUserId != null && reservation.userId === dbUserId,
+        isBlocked: !reservation.userId && (reservation.guestName ?? "").startsWith("["),
         isPublic: reservation.isPublic,
         publicDescription: reservation.publicDescription,
         players,
@@ -112,6 +102,8 @@ function buildSlotsForTerrainDay(
           : isAdmin
             ? (reservation.guestName ?? "Guest")
             : "Guest",
+        guestPhone: isAdmin ? reservation.guestPhone : null,
+        notes: isAdmin ? reservation.notes : null,
         seriesId: reservation.seriesId ?? null,
         ...price,
       });
@@ -120,15 +112,22 @@ function buildSlotsForTerrainDay(
         startTime: cursor.toISOString(),
         endTime: slotEnd.toISOString(),
         status: isPast ? "past" : "available",
+        isPast,
         reservationId: null,
         bookingMode: null,
         totalSpots: 4,
         filledSpots: 0,
         openSpots: 4,
+        invitedSeats: 0,
+        isMine: false,
+        isOrganizer: false,
+        isBlocked: false,
         isPublic: false,
         publicDescription: null,
         players: [],
         creatorName: null,
+        guestPhone: null,
+        notes: null,
         seriesId: null,
         ...price,
       });

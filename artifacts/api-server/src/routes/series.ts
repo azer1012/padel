@@ -11,6 +11,7 @@ import {
 } from "@workspace/db";
 import { and, desc, eq, gt, gte, inArray, lt } from "drizzle-orm";
 import { requireAdmin } from "../lib/auth";
+import { assertOnGrid } from "../lib/slots";
 
 const router = Router();
 const SLOT_MS = 90 * 60 * 1000;
@@ -113,6 +114,7 @@ router.post("/admin/series", requireAdmin, async (req, res) => {
     res.status(400).json({ error: "Court not available" });
     return;
   }
+  assertOnGrid(terrain, s.firstStart);
   const member = userId
     ? (
         await db
@@ -188,7 +190,7 @@ router.post("/admin/series", requireAdmin, async (req, res) => {
           await tx.insert(reservationPlayersTable).values({
             reservationId: r.id,
             userId: member.id,
-            paymentType: "cash",
+            paymentType: "cash_club",
             paymentStatus: "pending",
             tokensCharged: 0,
           });
@@ -208,7 +210,7 @@ router.post("/admin/series", requireAdmin, async (req, res) => {
   } catch (err: any) {
     if (err.message === "CONFLICTS")
       res.status(409).json({ error: `${err.count} date(s) are already booked` });
-    else if ((err.code ?? err.cause?.code) === "23505")
+    else if (["23505", "23P01"].includes(err.code ?? err.cause?.code))
       res.status(409).json({ error: "A date was booked meanwhile, please preview again" });
     else throw err;
   }

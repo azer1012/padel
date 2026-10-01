@@ -9,7 +9,9 @@ export const tokenTypeEnum = pgEnum("token_type", ["credit", "debit", "adjustmen
 
 export const tokenTransactionsTable = pgTable("token_transactions", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => usersTable.id),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => usersTable.id),
   adminId: integer("admin_id").references(() => usersTable.id),
   reservationId: integer("reservation_id").references(() => reservationsTable.id),
   type: tokenTypeEnum("type").notNull(),
@@ -18,6 +20,8 @@ export const tokenTransactionsTable = pgTable("token_transactions", {
   description: text("description").notNull(),
   notes: text("notes"),
   expiresAt: timestamp("expires_at"),
+  /** Client-generated key: the same admin action can never be recorded twice. */
+  idempotencyKey: text("idempotency_key"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -32,6 +36,9 @@ export const tokenTransactionsRelations = relations(tokenTransactionsTable, ({ o
   }),
 }));
 
-export const insertTokenTransactionSchema = createInsertSchema(tokenTransactionsTable).omit({ id: true, createdAt: true });
+export const insertTokenTransactionSchema = createInsertSchema(tokenTransactionsTable).omit({
+  id: true,
+  createdAt: true,
+});
 export type InsertTokenTransaction = z.infer<typeof insertTokenTransactionSchema>;
 export type TokenTransaction = typeof tokenTransactionsTable.$inferSelect;

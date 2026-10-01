@@ -27,6 +27,10 @@ for (const candidate of [
   }
 }
 
+// The booking grid is built in the server's local time (Date#setHours). Force the
+// club's timezone so a UTC host doesn't shift every slot by an hour.
+process.env.TZ ||= process.env.CLUB_TIMEZONE || "Africa/Tunis";
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.string().optional(),
@@ -34,6 +38,8 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().url(),
   SUPABASE_ANON_KEY: z.string().min(1),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  // Optional: verify access tokens locally instead of calling Supabase Auth on every request
+  SUPABASE_JWT_SECRET: z.string().optional(),
   CORS_ORIGIN: z.string().default("*"),
   FRONTEND_URL: z.string().optional(),
   LOG_LEVEL: z.string().optional(),
@@ -52,6 +58,12 @@ const envSchema = z.object({
   // Scheduled jobs (reminders, "match finished" emails)
   JOBS_ENABLED: z.enum(["true", "false"]).default("true"),
   CRON_SECRET: z.string().optional(),
+  // Players may cancel (full refund) until this many hours before the match. 0 = until it starts.
+  CANCELLATION_NOTICE_HOURS: z.coerce.number().min(0).max(168).default(0),
+  // Max write requests (POST/PATCH/DELETE) per IP per minute. 0 disables the limiter.
+  RATE_LIMIT_WRITES_PER_MINUTE: z.coerce.number().int().min(0).default(60),
+  // Set when the API runs behind a reverse proxy / load balancer (Render, Fly, Nginx…)
+  TRUST_PROXY: z.enum(["true", "false"]).default("false"),
 });
 
 // Normalize environment variables
@@ -73,6 +85,7 @@ export const env = {
   supabaseUrl: parsed.SUPABASE_URL,
   supabaseAnonKey: parsed.SUPABASE_ANON_KEY,
   supabaseServiceRoleKey: parsed.SUPABASE_SERVICE_ROLE_KEY,
+  supabaseJwtSecret: parsed.SUPABASE_JWT_SECRET || undefined,
   corsOrigin:
     parsed.CORS_ORIGIN === "*"
       ? true
@@ -90,4 +103,7 @@ export const env = {
   vapidSubject: parsed.VAPID_SUBJECT ?? "mailto:contact@example.com",
   jobsEnabled: parsed.JOBS_ENABLED === "true",
   cronSecret: parsed.CRON_SECRET,
+  cancellationNoticeHours: parsed.CANCELLATION_NOTICE_HOURS,
+  rateLimitWritesPerMinute: parsed.RATE_LIMIT_WRITES_PER_MINUTE,
+  trustProxy: parsed.TRUST_PROXY === "true",
 };

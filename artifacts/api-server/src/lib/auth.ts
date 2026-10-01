@@ -1,7 +1,9 @@
 import type { Request, Response, NextFunction } from "express";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import crypto from "node:crypto";
 import { supabaseAdmin } from "../config/supabase";
+import { env } from "../config/env";
 
 type AuthenticatedRequest = Request & {
   authUserId?: string;
@@ -15,15 +17,60 @@ function getBearerToken(req: Request): string | null {
   return header.slice("Bearer ".length).trim();
 }
 
-/** Verifies the Supabase JWT and returns its user, or null. Throws only on infrastructure errors. */
+type Claims = { sub: string; email?: string; exp?: number; aud?: string | string[]; role?: string };
+
+/**
+ * Verifies an HS256 Supabase access token locally with SUPABASE_JWT_SECRET
+ * (Dashboard → Project Settings → API → JWT secret). Saves a network round-trip
+ * to Supabase Auth on every API call. Returns null if invalid or expired.
+ */
+function verifyLocally(token: string, secret: string): Claims | null {
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [h, p, sig] = parts;
+  try {
+    const header = JSON.parse(Buffer.from(h, "base64url").toString("utf8"));
+    if (header.alg !== "HS256") return null;
+    const expected = crypto.createHmac("sha256", secret).update(`${h}.${p}`).digest();
+    const given = Buffer.from(sig, "base64url");
+    if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
+    const claims = JSON.parse(Buffer.from(p, "base64url").toString("utf8")) as Claims;
+    const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+    if (!claims.sub || !aud.includes("authenticated")) return null;
+    if (!claims.exp || claims.exp * 1000 <= Date.now()) return null;
+    return claims;
+  } catch {
+    return null;
+  }
+}
+
+/** Verifies the Supabase JWT and returns its user id, or null. Throws only on infrastructure errors. */
 async function verify(req: Request) {
   const token = getBearerToken(req);
   if (!token) return null;
-  const { data, error } = await supabaseAdmin.auth.getUser(token);
-  if (error || !data.user) return null;
-  (req as AuthenticatedRequest).authUserId = data.user.id;
-  (req as AuthenticatedRequest).authEmail = data.user.email ?? undefined;
-  return data.user;
+  let id: string, email: string | undefined;
+  const header = (() => {
+    try {
+      return JSON.parse(Buffer.from(token.split(".")[0] ?? "", "base64url").toString("utf8"));
+    } catch {
+      return {};
+    }
+  })();
+  if (env.supabaseJwtSecret && header.alg === "HS256") {
+    const claims = verifyLocally(token, env.supabaseJwtSecret);
+    if (!claims) return null;
+    id = claims.sub;
+    email = claims.email;
+  } else {
+    // Asymmetric keys or no secret configured: ask Supabase Auth
+    const { data, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !data.user) return null;
+    id = data.user.id;
+    email = data.user.email ?? undefined;
+  }
+  (req as AuthenticatedRequest).authUserId = id;
+  (req as AuthenticatedRequest).authEmail = email;
+  return { id, email };
 }
 
 async function loadDbUser(req: Request) {

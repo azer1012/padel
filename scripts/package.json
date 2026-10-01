@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "db:migrate": "tsx ./src/apply-migrations.ts",
-    "hello": "tsx ./src/hello.ts",
+    "db:test": "tsx ./src/test-db.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

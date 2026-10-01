@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { db, notificationsTable } from "@workspace/db";
-import { eq, and, count } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { requireUser } from "../lib/auth";
+import { requireId } from "../lib/http";
 
 const router = Router();
 
@@ -14,17 +15,21 @@ router.get("/notifications", requireUser, async (req, res) => {
     conditions.push(eq(notificationsTable.isRead, false));
   }
 
-  const notifications = await db.select().from(notificationsTable)
+  const notifications = await db
+    .select()
+    .from(notificationsTable)
     .where(and(...conditions))
-    .orderBy(notificationsTable.createdAt);
+    .orderBy(desc(notificationsTable.createdAt), desc(notificationsTable.id))
+    .limit(50);
 
-  res.json(notifications.reverse());
+  res.json(notifications);
 });
 
 router.post("/notifications/:id/read", requireUser, async (req, res) => {
-  const id = parseInt(req.params.id as string);
+  const id = requireId(req.params.id);
   const user = (req as any).dbUser;
-  const [updated] = await db.update(notificationsTable)
+  const [updated] = await db
+    .update(notificationsTable)
     .set({ isRead: true })
     .where(and(eq(notificationsTable.id, id), eq(notificationsTable.userId, user.id)))
     .returning();
@@ -37,7 +42,8 @@ router.post("/notifications/:id/read", requireUser, async (req, res) => {
 
 router.post("/notifications/read-all", requireUser, async (req, res) => {
   const user = (req as any).dbUser;
-  const result = await db.update(notificationsTable)
+  const result = await db
+    .update(notificationsTable)
     .set({ isRead: true })
     .where(and(eq(notificationsTable.userId, user.id), eq(notificationsTable.isRead, false)))
     .returning();

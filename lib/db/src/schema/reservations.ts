@@ -23,7 +23,12 @@ export const reservationStatusEnum = pgEnum("reservation_status", [
 ]);
 export const bookingTypeEnum = pgEnum("booking_type", ["online", "phone", "manual"]);
 export const bookingModeEnum = pgEnum("booking_mode", ["full_court", "own_spot"]);
-export const playerPaymentTypeEnum = pgEnum("player_payment_type", ["token", "cash"]);
+/** How a spot is paid: own token, cash at the club desk, or covered by the full-court booker. */
+export const playerPaymentTypeEnum = pgEnum("player_payment_type", [
+  "token",
+  "cash_club",
+  "invited_free",
+]);
 export const playerPaymentStatusEnum = pgEnum("player_payment_status", [
   "paid",
   "pending",
