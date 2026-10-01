@@ -5,7 +5,10 @@ import path from "path";
 
 const rawPort = process.env.PORT;
 const port =
-  rawPort && !Number.isNaN(Number(rawPort)) && Number(rawPort) > 0 ? Number(rawPort) : 3000;
+  rawPort && !Number.isNaN(Number(rawPort)) && Number(rawPort) > 0 ? Number(rawPort) : 5173;
+
+// Local dev: the app calls /api on its own origin, so forward it to the API server.
+const apiTarget = process.env.API_URL ?? `http://localhost:${process.env.API_PORT ?? 3000}`;
 
 const basePath = process.env.BASE_PATH ?? "/";
 
@@ -54,6 +57,9 @@ export default defineConfig({
     strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
+    proxy: {
+      "/api": { target: apiTarget, changeOrigin: true },
+    },
     fs: {
       strict: true,
     },

@@ -20,7 +20,9 @@ for (const candidate of [
     const value = trimmed
       .slice(separator + 1)
       .trim()
-      .replace(/^["']|["']$/g, "");
+      .replace(/^["']|["']$/g, "")
+      // Expand ${OTHER_VAR} references, as .env.example uses them
+      .replace(/\$\{(\w+)\}/g, (_, name: string) => process.env[name] ?? "");
     process.env[key] ??= value;
   }
 }

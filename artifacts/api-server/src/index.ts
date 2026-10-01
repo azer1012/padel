@@ -1,8 +1,9 @@
+// Must stay the first import: it loads .env before @workspace/db reads DATABASE_URL.
+import { env } from "./config/env";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
-import { env } from "./config/env";
 import { startScheduler } from "./jobs";
 
 const rawPort = env.port ?? "3001";
