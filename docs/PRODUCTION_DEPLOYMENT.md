@@ -47,6 +47,12 @@ supabase db push
 pnpm --silent --filter @workspace/scripts run db:bundle > apply.sql
 ```
 
+With (c), paste the **whole** file into the SQL editor (open it in a text editor
+or GitHub's Raw view and select all). A file preview that shows only the first
+lines leads to `unterminated dollar-quoted string`; nothing is applied in that case.
+The bundle used for the existing hosted project is kept in
+`supabase/bundles/2026-10-01_hosted_initial.sql`.
+
 Check afterwards:
 
 ```sql
