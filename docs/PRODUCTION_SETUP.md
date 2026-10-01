@@ -17,6 +17,30 @@ by browsers (`anon`, `authenticated`) have no access to any table.
 
 ## 1. Database (Supabase project `bnbdeymvdfrklbegwfgd`)
 
+### First time on the hosted project (do this once)
+
+The hosted project currently holds an empty prototype schema that the app doesn't
+use and that is insecure (anyone signed in can make themselves admin or set their
+own token balance). Replace it in one transaction:
+
+```bash
+pnpm --silent --filter @workspace/scripts run db:bundle > apply.sql
+```
+
+Open **Dashboard → SQL Editor**, paste `apply.sql`, **Run**. It refuses to run if
+the prototype tables contain any row, and rolls back entirely on any error. Then
+check:
+
+```sql
+select version, name from supabase_migrations.schema_migrations order by 1;  -- 5 rows, 20260527180000 … 20261002000000
+select count(*) from public.token_ledger_audit;                              -- 0
+```
+
+and **Dashboard → Advisors → Security** should no longer list the SECURITY
+DEFINER / search_path warnings of the prototype.
+
+### Later migrations
+
 Migrations live in `supabase/migrations/` and are the single source of truth for
 the schema. Apply them with either tool (both write the same history table):
 

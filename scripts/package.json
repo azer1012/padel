@@ -6,7 +6,8 @@
   "scripts": {
     "db:migrate": "tsx ./src/apply-migrations.ts",
     "db:test": "tsx ./src/test-db.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "db:bundle": "tsx ./src/bundle-migrations.ts"
   },
   "dependencies": {
     "pg": "^8.20.0"
