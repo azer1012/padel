@@ -8,26 +8,31 @@ const digits = (v: string) => v.replace(/[^\d+]/g, "");
 const phone = (env.VITE_CLUB_PHONE as string | undefined)?.trim() ?? "";
 const whatsapp = digits((env.VITE_CLUB_WHATSAPP as string | undefined) ?? phone).replace(/^\+/, "");
 
+const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+const address = text(env.VITE_CLUB_ADDRESS);
+const postal = text(env.VITE_CLUB_POSTAL);
+
+/**
+ * Branding of THIS installation (design-time, set by the developer per customer in
+ * .env → VITE_CLUB_*). Operational rules — prices, match duration, opening hours,
+ * tokens — are NOT here: admins edit them in Réglages (see useClubRules()).
+ */
 export const CLUB = {
-  name: (env.VITE_CLUB_NAME as string | undefined) || "Smash Padel",
-  city: (env.VITE_CLUB_CITY as string | undefined) || "Tunis",
-  address: (env.VITE_CLUB_ADDRESS as string | undefined) || "Les Berges du Lac",
-  postal: (env.VITE_CLUB_POSTAL as string | undefined) || "1053 Tunis, Tunisie",
+  name: text(env.VITE_CLUB_NAME) || "Padel Club",
+  city: text(env.VITE_CLUB_CITY),
+  address,
+  postal,
+  /** "Street, 1053 City" — empty when no address is configured. */
+  fullAddress: [address, postal].filter(Boolean).join(", "),
   phone,
   phoneHref: phone ? `tel:${digits(phone)}` : "",
   whatsappHref: whatsapp ? `https://wa.me/${whatsapp}` : "",
-  email: (env.VITE_CLUB_EMAIL as string | undefined)?.trim() ?? "",
-  hours: (env.VITE_CLUB_HOURS as string | undefined) || "08:00 – 23:00",
-  mapsQuery: (env.VITE_CLUB_MAPS_QUERY as string | undefined) || "Les Berges du Lac, Tunis",
+  email: text(env.VITE_CLUB_EMAIL),
+  mapsQuery: text(env.VITE_CLUB_MAPS_QUERY) || [address, postal].filter(Boolean).join(", "),
   social: {
-    instagram: (env.VITE_CLUB_INSTAGRAM as string | undefined)?.trim() ?? "",
-    facebook: (env.VITE_CLUB_FACEBOOK as string | undefined)?.trim() ?? "",
+    instagram: text(env.VITE_CLUB_INSTAGRAM),
+    facebook: text(env.VITE_CLUB_FACEBOOK),
   },
-  /** Business rules shown in the UI (the API is the source of truth when booking). */
-  tokensFullCourt: 4,
-  tokensOwnSpot: 1,
-  slotMinutes: 90,
-  currency: "TND",
 } as const;
 
 export const PHOTOS = {

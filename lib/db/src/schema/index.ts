@@ -17,3 +17,4 @@ export {
   playerInvitesTable,
   playerInvitesRelations,
 } from "./reservations";
+export * from "./settings";

@@ -1,25 +1,40 @@
 import { db, pricingRulesTable, type PricingRule } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { clubParts } from "./club-time";
+import { getSettings, type ClubSettings } from "./settings";
 
 export type SlotPrice = {
-  /** Tokens charged per player spot. A full court costs 4 × this. */
+  /** Tokens charged for one player spot. */
   tokensPerSpot: number;
-  /** Cash price per person (club currency) for walk-ins; falls back to the court's base price. */
+  /** Tokens charged to book the whole court. */
+  tokensFullCourt: number;
+  /** Cash price per person at the desk (club currency). */
   pricePerPerson: number;
+  /** Cash price of the whole court. */
+  fullCourtPrice: number;
   isPeak: boolean;
   ruleId: number | null;
   ruleName: string | null;
 };
 
-type TerrainLike = { id: number; pricePerPerson: number };
+type TerrainLike = { id: number; pricePerPerson: number | null };
 
 export async function loadActiveRules(): Promise<PricingRule[]> {
   return db.select().from(pricingRulesTable).where(eq(pricingRulesTable.isActive, true));
 }
 
-/** Pure function so it can be used for a single quote or a whole calendar without extra queries. */
-export function priceFor(rules: PricingRule[], terrain: TerrainLike, start: Date): SlotPrice {
+/**
+ * Price of one slot. Resolution, most specific first:
+ *   pricing rule (peak / off-peak / weekend, by weekday + time)  >  court override  >  club settings.
+ * A rule sets the per-spot token cost; the full court then costs that × max players.
+ * Pure, so a whole calendar is priced without extra queries.
+ */
+export function priceFor(
+  rules: PricingRule[],
+  settings: ClubSettings,
+  terrain: TerrainLike,
+  start: Date,
+): SlotPrice {
   const { weekday, time } = clubParts(start);
   const matches = rules.filter(
     (r) =>
@@ -36,9 +51,13 @@ export function priceFor(rules: PricingRule[], terrain: TerrainLike, start: Date
       b.id - a.id,
   );
   const rule = matches[0];
+  const perPersonOverride = rule?.pricePerPerson ?? terrain.pricePerPerson;
   return {
-    tokensPerSpot: rule?.tokensPerSpot ?? 1,
-    pricePerPerson: rule?.pricePerPerson ?? terrain.pricePerPerson,
+    tokensPerSpot: rule ? rule.tokensPerSpot : settings.tokenCostPlayer,
+    tokensFullCourt: rule ? rule.tokensPerSpot * settings.maxPlayers : settings.tokenCostFullCourt,
+    pricePerPerson: perPersonOverride ?? settings.playerPrice,
+    fullCourtPrice:
+      perPersonOverride != null ? perPersonOverride * settings.maxPlayers : settings.fullCourtPrice,
     isPeak: rule?.isPeak ?? false,
     ruleId: rule?.id ?? null,
     ruleName: rule?.name ?? null,
@@ -46,9 +65,9 @@ export function priceFor(rules: PricingRule[], terrain: TerrainLike, start: Date
 }
 
 export async function quote(terrain: TerrainLike, start: Date) {
-  return priceFor(await loadActiveRules(), terrain, start);
+  const [rules, settings] = await Promise.all([loadActiveRules(), getSettings()]);
+  return priceFor(rules, settings, terrain, start);
 }
 
-export const SPOTS_PER_COURT = 4;
 export const tokensFor = (price: SlotPrice, mode: "full_court" | "own_spot") =>
-  mode === "own_spot" ? price.tokensPerSpot : price.tokensPerSpot * SPOTS_PER_COURT;
+  mode === "own_spot" ? price.tokensPerSpot : price.tokensFullCourt;

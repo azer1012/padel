@@ -3,6 +3,7 @@ import { Download, Share, SquarePlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useInstallPrompt } from "@/lib/pwa";
 import { useTx } from "@/lib/i18n";
+import { CLUB } from "@/config/club";
 
 const KEY = "smash-install-dismissed";
 const SNOOZE_MS = 21 * 24 * 60 * 60 * 1000;
@@ -45,9 +46,9 @@ export function InstallBanner() {
       <div className="flex flex-1 flex-col gap-1">
         <span className="text-lg font-extrabold">
           {tx({
-            fr: "Smash Padel sur votre écran d'accueil",
-            en: "Smash Padel on your home screen",
-            ar: "Smash Padel على شاشتك الرئيسية",
+            fr: `${CLUB.name} sur votre écran d'accueil`,
+            en: `${CLUB.name} on your home screen`,
+            ar: `${CLUB.name} على شاشتك الرئيسية`,
           })}
         </span>
         {iosHelp ? (

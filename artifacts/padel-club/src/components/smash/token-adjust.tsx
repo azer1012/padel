@@ -26,6 +26,7 @@ import type { User } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTx } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 type Kind = "credit" | "debit" | "adjustment";
 
@@ -51,6 +52,10 @@ export function TokenAdjustDialog({
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
+  // Desk sale: a pack from Réglages → Tokens, and/or the cash received (accounting)
+  const [packageId, setPackageId] = useState<number | null>(null);
+  const [cash, setCash] = useState("");
+  const rules = useClubRules();
 
   useEffect(() => {
     if (open) {
@@ -59,6 +64,8 @@ export function TokenAdjustDialog({
       setAmount("");
       setDescription("");
       setNotes("");
+      setPackageId(null);
+      setCash("");
       setIdempotencyKey(crypto.randomUUID());
     }
   }, [open, userId]);
@@ -68,7 +75,11 @@ export function TokenAdjustDialog({
   const n = parseInt(amount) || 0;
   const current = member?.tokenBalance ?? 0;
   const next = kind === "credit" ? current + n : kind === "debit" ? current - n : n;
-  const presets = kind === "debit" ? [1, 4] : [4, 8, 12, 20];
+  const presets =
+    kind === "debit"
+      ? [...new Set([rules.tokenCostPlayer, rules.tokenCostFullCourt])].filter((p) => p > 0)
+      : [1, 2, 3, 5].map((k) => k * rules.tokenCostFullCourt).filter((p) => p > 0);
+  const cashValue = cash.trim() === "" ? null : Number(cash);
   const reasons =
     kind === "credit"
       ? [
@@ -104,6 +115,17 @@ export function TokenAdjustDialog({
       });
       return;
     }
+    if (cashValue !== null && (!Number.isFinite(cashValue) || cashValue < 0)) {
+      toast({
+        title: tx({
+          fr: "Montant en espèces invalide",
+          en: "Invalid cash amount",
+          ar: "مبلغ غير صالح",
+        }),
+        variant: "destructive",
+      });
+      return;
+    }
     if (kind === "debit" && next < 0) {
       toast({
         title: tx({
@@ -124,6 +146,8 @@ export function TokenAdjustDialog({
           description: description.trim(),
           notes: notes || undefined,
           idempotencyKey,
+          ...(kind === "credit" && packageId ? { packageId } : {}),
+          ...(kind === "credit" && cashValue !== null ? { cashAmount: cashValue } : {}),
         } as any,
       },
       {
@@ -174,9 +198,9 @@ export function TokenAdjustDialog({
           </DialogTitle>
           <DialogDescription>
             {tx({
-              fr: "1 token = 1 place de joueur pour un match.",
-              en: "1 token = 1 player spot for one match.",
-              ar: "رصيد واحد = مكان لاعب لمباراة.",
+              fr: `Une place = ${rules.tokenCostPlayer} token(s) · terrain complet = ${rules.tokenCostFullCourt} tokens.`,
+              en: `One spot = ${rules.tokenCostPlayer} token(s) · full court = ${rules.tokenCostFullCourt} tokens.`,
+              ar: `مكان = ${rules.tokenCostPlayer} · ملعب كامل = ${rules.tokenCostFullCourt}`,
             })}
           </DialogDescription>
         </DialogHeader>
@@ -200,6 +224,8 @@ export function TokenAdjustDialog({
             onChange={(v) => {
               setKind(v as Kind);
               setDescription("");
+              setPackageId(null);
+              setCash("");
             }}
             options={[
               { value: "credit", label: tx({ fr: "Créditer", en: "Credit", ar: "إضافة" }) },
@@ -210,6 +236,34 @@ export function TokenAdjustDialog({
               },
             ]}
           />
+          {kind === "credit" && rules.tokenPackages.length > 0 && (
+            <Field label={tx({ fr: "Vendre un pack", en: "Sell a pack", ar: "بيع باقة" })}>
+              <div className="flex flex-wrap gap-2" role="radiogroup">
+                {rules.tokenPackages.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={packageId === p.id}
+                    onClick={() => {
+                      setPackageId(p.id);
+                      setAmount(String(p.tokens));
+                      setCash(String(p.price));
+                      setDescription(`${p.name} (${p.tokens} tokens)`);
+                    }}
+                    className={cn(
+                      "h-12 rounded-full border-2 px-4 text-sm font-bold transition-colors",
+                      packageId === p.id
+                        ? "border-ink bg-ink text-white"
+                        : "border-[#E4E8F7] hover:border-[#C6CEF6]",
+                    )}
+                  >
+                    {p.name} · {p.price} {rules.currency}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
           <Field
             label={
               kind === "adjustment"
@@ -227,7 +281,10 @@ export function TokenAdjustDialog({
                 min={1}
                 inputMode="numeric"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => {
+                  setAmount(e.target.value);
+                  setPackageId(null);
+                }}
                 className="w-28"
                 placeholder="0"
               />
@@ -236,7 +293,10 @@ export function TokenAdjustDialog({
                   <button
                     key={p}
                     type="button"
-                    onClick={() => setAmount(String(p))}
+                    onClick={() => {
+                      setAmount(String(p));
+                      setPackageId(null);
+                    }}
                     className={cn(
                       "h-12 min-w-12 rounded-full border-2 px-4 font-bold transition-colors",
                       amount === String(p)
@@ -279,6 +339,33 @@ export function TokenAdjustDialog({
               ))}
             </div>
           </Field>
+          {kind === "credit" && (
+            <Field
+              label={tx({
+                fr: `Espèces reçues (${rules.currency})`,
+                en: `Cash received (${rules.currency})`,
+                ar: `المبلغ المستلم (${rules.currency})`,
+              })}
+              htmlFor="tk-cash"
+              hint={tx({
+                fr: `Pour la caisse et l'historique. Vide = cadeau ou correction. Ex : ${n || 10} × ${rules.tokenUnitPrice} = ${(n || 10) * rules.tokenUnitPrice} ${rules.currency}.`,
+                en: `For the till and history. Empty = gift or correction. e.g. ${n || 10} × ${rules.tokenUnitPrice} = ${(n || 10) * rules.tokenUnitPrice} ${rules.currency}.`,
+                ar: "للصندوق والسجل. فارغ = هدية أو تصحيح.",
+              })}
+            >
+              <Input
+                id="tk-cash"
+                data-testid="input-token-cash"
+                type="number"
+                min={0}
+                step="0.5"
+                inputMode="decimal"
+                value={cash}
+                onChange={(e) => setCash(e.target.value)}
+                className="w-40"
+              />
+            </Field>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               label={tx({ fr: "Note interne", en: "Internal note", ar: "ملاحظة داخلية" })}

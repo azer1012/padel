@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { CourtLines, LiveDot } from "@/components/smash/primitives";
 import { useTx } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { CLUB } from "@/config/club";
 import { clubTime } from "@/lib/club-time";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 type CourtState = "free" | "partial" | "busy" | "selected";
 const hhmm = (iso: string) => clubTime(iso);
@@ -66,6 +66,7 @@ export function LiveBoard({
   timeIndex: number;
   onTime: (i: number) => void;
 }) {
+  const rules = useClubRules();
   const tx = useTx();
   const [selected, setSelected] = useState<number | null>(null);
   const { terrains, times, slotAt, isLoading, isError } = tonight;
@@ -231,7 +232,7 @@ export function LiveBoard({
             </span>
             <span className="flex flex-col items-end gap-0.5 pe-1.5">
               <span className="disp text-[26px] tracking-[-0.02em]">
-                {sel.base === "free" ? CLUB.tokensFullCourt : CLUB.tokensOwnSpot} tokens
+                {sel.base === "free" ? rules.tokenCostFullCourt : rules.tokenCostPlayer} tokens
               </span>
               <span className="text-sm font-bold text-success">
                 {sel.base === "free"

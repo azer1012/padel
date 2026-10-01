@@ -12,6 +12,97 @@ const apiTarget = process.env.API_URL ?? `http://localhost:${process.env.API_POR
 
 const basePath = process.env.BASE_PATH ?? "/";
 
+/** Branding of this installation, from .env (VITE_CLUB_*). Defaults are neutral. */
+function brand() {
+  const env = loadEnv("production", path.resolve(import.meta.dirname, "..", ".."), "VITE_");
+  const get = (k: string) => (process.env[k] ?? env[k] ?? "").trim();
+  return {
+    name: get("VITE_CLUB_NAME") || "Padel Club",
+    shortName: get("VITE_CLUB_SHORT_NAME") || get("VITE_CLUB_NAME") || "Padel Club",
+    tagline: get("VITE_CLUB_TAGLINE") || "Réservez un terrain ce soir",
+    description:
+      get("VITE_CLUB_DESCRIPTION") ||
+      "Voyez les terrains libres en direct, réservez en quelques secondes avec vos tokens, rejoignez des open matches et les tournois du club.",
+    themeColor: get("VITE_CLUB_THEME_COLOR") || "#0A1030",
+    address: get("VITE_CLUB_ADDRESS"),
+    city: get("VITE_CLUB_CITY"),
+    country: get("VITE_CLUB_COUNTRY"),
+  };
+}
+
+const escapeHtml = (v: string) =>
+  v.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+
+/** Club name, description and colours in index.html and the PWA manifest (one source: .env). */
+function branding(): Plugin {
+  const manifest = () => {
+    const b = brand();
+    return JSON.stringify(
+      {
+        name: b.name,
+        short_name: b.shortName,
+        description: b.description,
+        id: "./",
+        start_url: "./?source=pwa",
+        scope: "./",
+        display: "standalone",
+        orientation: "portrait",
+        background_color: b.themeColor,
+        theme_color: b.themeColor,
+        lang: "fr",
+        dir: "auto",
+        categories: ["sports", "lifestyle"],
+        icons: [
+          { src: "icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          {
+            src: "icon-maskable-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
+          },
+        ],
+        shortcuts: [
+          {
+            name: "Réserver un terrain",
+            short_name: "Réserver",
+            url: "./terrains?source=shortcut",
+            icons: [{ src: "icon-192.png", sizes: "192x192" }],
+          },
+          {
+            name: "Mes réservations",
+            short_name: "Mes matchs",
+            url: "./reservations?source=shortcut",
+            icons: [{ src: "icon-192.png", sizes: "192x192" }],
+          },
+        ],
+      },
+      null,
+      2,
+    );
+  };
+  return {
+    name: "padel-branding",
+    transformIndexHtml(html) {
+      const b = brand();
+      return html
+        .replaceAll("%CLUB_NAME%", escapeHtml(b.name))
+        .replaceAll("%CLUB_TAGLINE%", escapeHtml(b.tagline))
+        .replaceAll("%CLUB_DESCRIPTION%", escapeHtml(b.description))
+        .replaceAll("%CLUB_THEME_COLOR%", escapeHtml(b.themeColor));
+    },
+    configureServer(server) {
+      server.middlewares.use("/manifest.webmanifest", (_req, res) => {
+        res.setHeader("Content-Type", "application/manifest+json");
+        res.end(manifest());
+      });
+    },
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: "manifest.webmanifest", source: manifest() });
+    },
+  };
+}
+
 /**
  * SEO that needs the public domain (VITE_SITE_URL): canonical URL, absolute
  * Open Graph image, structured data, sitemap.xml and the robots.txt Sitemap line.
@@ -20,7 +111,7 @@ const basePath = process.env.BASE_PATH ?? "/";
 function seo(): Plugin {
   const env = loadEnv("production", path.resolve(import.meta.dirname, "..", ".."), "VITE_");
   const site = (process.env.VITE_SITE_URL ?? env.VITE_SITE_URL ?? "").replace(/\/$/, "");
-  const club = process.env.VITE_CLUB_NAME ?? env.VITE_CLUB_NAME ?? "Smash Padel";
+  const club = brand().name;
   const publicPages = ["/", "/terrains", "/open-matches", "/tournaments", "/news", "/contact"];
   return {
     name: "padel-seo",
@@ -33,13 +124,16 @@ function seo(): Plugin {
         url: site,
         image: `${site}/opengraph.jpg`,
         sport: "Padel",
-        address: {
-          "@type": "PostalAddress",
-          streetAddress:
-            process.env.VITE_CLUB_ADDRESS ?? env.VITE_CLUB_ADDRESS ?? "Les Berges du Lac",
-          addressLocality: "Tunis",
-          addressCountry: "TN",
-        },
+        ...(brand().address
+          ? {
+              address: {
+                "@type": "PostalAddress",
+                streetAddress: brand().address,
+                ...(brand().city ? { addressLocality: brand().city } : {}),
+                ...(brand().country ? { addressCountry: brand().country } : {}),
+              },
+            }
+          : {}),
         ...((process.env.VITE_CLUB_PHONE ?? env.VITE_CLUB_PHONE)
           ? { telephone: process.env.VITE_CLUB_PHONE ?? env.VITE_CLUB_PHONE }
           : {}),
@@ -75,7 +169,7 @@ export default defineConfig({
   // Only VITE_* variables reach the browser bundle. Never prefix a secret with VITE_.
   envPrefix: ["VITE_"],
   envDir: path.resolve(import.meta.dirname, "..", ".."),
-  plugins: [react(), tailwindcss(), seo()],
+  plugins: [react(), tailwindcss(), branding(), seo()],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),

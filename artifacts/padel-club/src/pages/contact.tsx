@@ -3,30 +3,38 @@ import { Button } from "@/components/ui/button";
 import { Page, PageHeader } from "@/components/smash/primitives";
 import { useI18n, useTx } from "@/lib/i18n";
 import { CLUB } from "@/config/club";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 export default function Contact() {
+  const rules = useClubRules();
   const tx = useTx();
   const { t } = useI18n();
   const q = encodeURIComponent(CLUB.mapsQuery);
   const items = [
-    {
-      icon: MapPin,
-      label: tx({ fr: "Adresse", en: "Address", ar: "العنوان" }),
-      value: (
-        <>
-          {CLUB.address}
-          <br />
-          {CLUB.postal}
-        </>
-      ),
-    },
+    ...(CLUB.fullAddress
+      ? [
+          {
+            icon: MapPin,
+            label: tx({ fr: "Adresse", en: "Address", ar: "العنوان" }),
+            value: (
+              <>
+                {CLUB.address}
+                {CLUB.address && CLUB.postal && <br />}
+                {CLUB.postal}
+              </>
+            ),
+          },
+        ]
+      : []),
     {
       icon: Clock,
       label: tx({ fr: "Horaires", en: "Opening hours", ar: "ساعات العمل" }),
       value: (
         <>
-          {tx({ fr: "Tous les jours", en: "Every day", ar: "كل يوم" })}{" "}
-          <span dir="ltr">{CLUB.hours}</span>
+          {rules.openEveryDay
+            ? tx({ fr: "Tous les jours", en: "Every day", ar: "كل يوم" })
+            : tx({ fr: "Horaires", en: "Hours", ar: "الساعات" })}{" "}
+          <span dir="ltr">{rules.hoursLabel}</span>
         </>
       ),
     },
@@ -105,25 +113,27 @@ export default function Contact() {
             </li>
           ))}
         </ul>
-        <div className="enter relative min-h-[380px] overflow-hidden rounded-[32px] bg-night shadow-sm">
-          <iframe
-            title={tx({ fr: "Carte du club", en: "Club map", ar: "خريطة النادي" })}
-            src={`https://www.google.com/maps?q=${q}&output=embed`}
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-            className="absolute inset-0 size-full border-0"
-          />
-          <Button asChild variant="default" className="absolute bottom-4 end-4">
-            <a
-              href={`https://www.google.com/maps/dir/?api=1&destination=${q}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Navigation />
-              {tx({ fr: "Itinéraire", en: "Directions", ar: "الاتجاهات" })}
-            </a>
-          </Button>
-        </div>
+        {CLUB.mapsQuery && (
+          <div className="enter relative min-h-[380px] overflow-hidden rounded-[32px] bg-night shadow-sm">
+            <iframe
+              title={tx({ fr: "Carte du club", en: "Club map", ar: "خريطة النادي" })}
+              src={`https://www.google.com/maps?q=${q}&output=embed`}
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              className="absolute inset-0 size-full border-0"
+            />
+            <Button asChild variant="default" className="absolute bottom-4 end-4">
+              <a
+                href={`https://www.google.com/maps/dir/?api=1&destination=${q}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Navigation />
+                {tx({ fr: "Itinéraire", en: "Directions", ar: "الاتجاهات" })}
+              </a>
+            </Button>
+          </div>
+        )}
       </div>
     </Page>
   );

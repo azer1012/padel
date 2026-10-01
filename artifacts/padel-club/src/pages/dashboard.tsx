@@ -23,10 +23,12 @@ import { MatchCard } from "@/components/smash/match-card";
 import { useJoinMatch } from "@/hooks/use-join-match";
 import { InstallBanner } from "@/components/smash/install-banner";
 import { useTx, useDateLocale } from "@/lib/i18n";
-import { CLUB } from "@/config/club";
 import { clubTime } from "@/lib/club-time";
+import { useClubRules } from "@/hooks/use-club-rules";
+import { MyInvitations } from "@/components/smash/my-invitations";
 
 export default function Dashboard() {
+  const rules = useClubRules();
   const tx = useTx();
   const locale = useDateLocale();
   const { data: user } = useGetMe();
@@ -57,7 +59,16 @@ export default function Dashboard() {
       label: tx({ fr: "Réserver", en: "Book a court", ar: "احجز" }),
       tone: "bg-court text-white",
     },
-    { href: "/open-matches", icon: Swords, label: "Open matches", tone: "bg-lilac text-night" },
+    ...(rules.openMatchesEnabled
+      ? [
+          {
+            href: "/open-matches",
+            icon: Swords,
+            label: "Open matches",
+            tone: "bg-lilac text-night",
+          },
+        ]
+      : []),
     {
       href: "/tournaments",
       icon: Trophy,
@@ -83,6 +94,8 @@ export default function Dashboard() {
           {user?.firstName ? `, ${user.firstName}` : ""} !
         </h1>
       </header>
+
+      <MyInvitations />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         {/* Next match */}
@@ -161,11 +174,11 @@ export default function Dashboard() {
             <span className="disp text-[96px] leading-[0.8] tracking-[-0.05em]">{bal}</span>
           )}
           <span className="text-[15px] font-semibold">
-            {bal >= CLUB.tokensFullCourt
+            {bal >= rules.tokenCostFullCourt
               ? tx({
-                  fr: `De quoi réserver ${Math.floor(bal / CLUB.tokensFullCourt)} terrain(s) complet(s)`,
-                  en: `Enough for ${Math.floor(bal / CLUB.tokensFullCourt)} full court(s)`,
-                  ar: `يكفي لـ ${Math.floor(bal / CLUB.tokensFullCourt)} ملعب كامل`,
+                  fr: `De quoi réserver ${Math.floor(bal / rules.tokenCostFullCourt)} terrain(s) complet(s)`,
+                  en: `Enough for ${Math.floor(bal / rules.tokenCostFullCourt)} full court(s)`,
+                  ar: `يكفي لـ ${Math.floor(bal / rules.tokenCostFullCourt)} ملعب كامل`,
                 })
               : bal > 0
                 ? tx({
@@ -251,42 +264,44 @@ export default function Dashboard() {
         </section>
       )}
 
-      <section className="flex flex-col gap-4">
-        <div className="flex items-end justify-between">
-          <h2 className="disp m-0 text-3xl">
-            {tx({
-              fr: "Des places vous attendent",
-              en: "Spots waiting for you",
-              ar: "أماكن بانتظارك",
-            })}
-          </h2>
-          <Link href="/open-matches" className="ulink font-bold text-court">
-            {tx({ fr: "Tous", en: "All", ar: "الكل" })}
-          </Link>
-        </div>
-        {(matches ?? []).length === 0 ? (
-          <EmptyState
-            icon={<Swords className="size-7" />}
-            title={tx({ fr: "Aucun open match", en: "No open matches", ar: "لا مباريات مفتوحة" })}
-            text={tx({
-              fr: "Ouvrez le vôtre depuis la page de réservation.",
-              en: "Open your own from the booking page.",
-              ar: "افتح مباراتك من صفحة الحجز.",
-            })}
-          />
-        ) : (
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {(matches ?? []).slice(0, 3).map((m) => (
-              <MatchCard
-                key={m.reservationId}
-                match={m}
-                pending={pendingId === m.reservationId}
-                onJoin={() => run(m.reservationId, m.startTime)}
-              />
-            ))}
+      {rules.openMatchesEnabled && (
+        <section className="flex flex-col gap-4">
+          <div className="flex items-end justify-between">
+            <h2 className="disp m-0 text-3xl">
+              {tx({
+                fr: "Des places vous attendent",
+                en: "Spots waiting for you",
+                ar: "أماكن بانتظارك",
+              })}
+            </h2>
+            <Link href="/open-matches" className="ulink font-bold text-court">
+              {tx({ fr: "Tous", en: "All", ar: "الكل" })}
+            </Link>
           </div>
-        )}
-      </section>
+          {(matches ?? []).length === 0 ? (
+            <EmptyState
+              icon={<Swords className="size-7" />}
+              title={tx({ fr: "Aucun open match", en: "No open matches", ar: "لا مباريات مفتوحة" })}
+              text={tx({
+                fr: "Ouvrez le vôtre depuis la page de réservation.",
+                en: "Open your own from the booking page.",
+                ar: "افتح مباراتك من صفحة الحجز.",
+              })}
+            />
+          ) : (
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {(matches ?? []).slice(0, 3).map((m) => (
+                <MatchCard
+                  key={m.reservationId}
+                  match={m}
+                  pending={pendingId === m.reservationId}
+                  onJoin={() => run(m.reservationId, m.startTime)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
     </Page>
   );
 }

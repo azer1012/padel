@@ -24,13 +24,14 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
 import { useTx, useDateLocale } from "@/lib/i18n";
-import { CLUB } from "@/config/club";
 import { cn } from "@/lib/utils";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 const DAY_START = 7,
   DAY_END = 24;
 
 export default function AdminDashboard() {
+  const rules = useClubRules();
   const tx = useTx();
   const locale = useDateLocale();
   const { data: user } = useGetMe();
@@ -112,9 +113,9 @@ export default function AdminDashboard() {
       sub:
         stats?.revenueEquivalentToday != null
           ? tx({
-              fr: `≈ ${stats.revenueEquivalentToday} ${CLUB.currency} aujourd'hui`,
-              en: `≈ ${stats.revenueEquivalentToday} ${CLUB.currency} today`,
-              ar: `≈ ${stats.revenueEquivalentToday} ${CLUB.currency} اليوم`,
+              fr: `≈ ${stats.revenueEquivalentToday} ${rules.currency} aujourd'hui`,
+              en: `≈ ${stats.revenueEquivalentToday} ${rules.currency} today`,
+              ar: `≈ ${stats.revenueEquivalentToday} ${rules.currency} اليوم`,
             })
           : undefined,
       icon: Coins,

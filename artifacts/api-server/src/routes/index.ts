@@ -15,6 +15,7 @@ import equipmentRouter from "./equipment";
 import seriesRouter from "./series";
 import pushRouter from "./push";
 import jobsRouter from "./jobs";
+import settingsRouter from "./settings";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(equipmentRouter);
 router.use(seriesRouter);
 router.use(pushRouter);
 router.use(jobsRouter);
+router.use(settingsRouter);
 
 export default router;

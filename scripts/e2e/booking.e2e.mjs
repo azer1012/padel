@@ -322,6 +322,139 @@ await step("organiser cancels the own-spot match: token refunded", async () => {
   assert(after === before + 1, `refund ${before} → ${after}`);
 });
 
+console.log("\nAdmin changes the club rules (Réglages), players follow");
+
+await step("admin sets 60-minute matches and 30 TND per player in Réglages", async () => {
+  await a.page.goto(`${WEB}/admin/settings`);
+  const booking = a.page.locator("#booking");
+  await booking.getByRole("radio", { name: "60 min" }).click({ timeout: 15000 });
+  await booking.getByTestId("btn-save-settings").click();
+  // Upcoming bookings exist: the admin is warned they keep their times
+  await a.page.getByRole("alertdialog").getByRole("button", { name: "Appliquer" }).click();
+  await a.page.getByText("Réglages enregistrés").first().waitFor({ timeout: 10000 });
+  const pricing = a.page.locator("#pricing");
+  await pricing.locator("#set-player-price").fill("30");
+  await pricing.locator("#set-court-price").fill("120");
+  await pricing.getByTestId("btn-save-settings").click();
+  await a.page.getByText("Réglages enregistrés").first().waitFor({ timeout: 10000 });
+  const tokens = a.page.locator("#tokens");
+  await tokens.locator("#set-token-player").fill("2");
+  await tokens.locator("#set-token-court").fill("6");
+  await tokens.getByTestId("btn-save-settings").click();
+  await a.page.getByText("Réglages enregistrés").first().waitFor({ timeout: 10000 });
+  await shot(a.page, "18-admin-settings");
+  const s = await api(USERS.admin, "GET", "/admin/settings");
+  assert(
+    s.body.bookingDurationMinutes === 60 &&
+      s.body.playerPrice === 30 &&
+      s.body.tokenCostFullCourt === 6,
+    `settings ${JSON.stringify(s.body)}`,
+  );
+});
+
+await step("invalid values are blocked in the form (duration, players)", async () => {
+  const booking = a.page.locator("#booking");
+  await booking.locator("#set-max-players").fill("0");
+  await booking.getByText("Entre 1 et 8").waitFor({ timeout: 5000 });
+  assert(
+    await booking.getByTestId("btn-save-settings").isDisabled(),
+    "save enabled with invalid value",
+  );
+  await booking.locator("#set-max-players").fill("4");
+});
+
+await step("the planning now has 60-minute rows and new prices", async () => {
+  await y.page.goto(`${WEB}/terrains`);
+  await y.page
+    .getByRole("button", {
+      name: new RegExp(`^${tomorrow.toLocaleDateString("fr-FR", { weekday: "long" })}`, "i"),
+    })
+    .first()
+    .click();
+  await y.page.getByRole("columnheader", { name: /Court 2/ }).waitFor({ timeout: 15000 });
+  const rows = await y.page.getByRole("rowheader").allInnerTexts();
+  assert(
+    rows.includes("09:00") && rows.includes("10:00") && rows.includes("22:00"),
+    `rows: ${rows.join(",")}`,
+  );
+  // The 90-minute match booked before the change is still shown at its own time
+  assert(rows.includes("18:30"), `existing 18:30 match missing: ${rows.join(",")}`);
+  // Rules shown to players are the new ones, not a cached copy
+  await y.page.getByText("Terrain complet : 6 tokens").first().waitFor({ timeout: 5000 });
+  await y.page.getByText("60 minutes par match").first().waitFor({ timeout: 5000 });
+  await y.page.getByText("Occupé").first().waitFor({ timeout: 5000 });
+  await shot(y.page, "19-planning-60min");
+});
+
+await step("a new booking follows the new rules (60 min, 6 tokens)", async () => {
+  const before = (await api(USERS.yasmine, "GET", "/users/me")).body.tokenBalance;
+  await openSlot(y.page, "Court 2", "09:00");
+  const dialog = y.page.getByRole("dialog");
+  await dialog
+    .getByRole("radio", { name: /Terrain complet/ })
+    .getByText("6 tokens")
+    .waitFor({ timeout: 10000 });
+  await dialog.getByText("120 TND").first().waitFor();
+  await dialog.getByRole("button", { name: "Confirmer" }).click();
+  await dialog.getByText("C'est réservé !").waitFor({ timeout: 10000 });
+  await shot(y.page, "20-booked-60min");
+  const after = (await api(USERS.yasmine, "GET", "/users/me")).body.tokenBalance;
+  assert(after === before - 6, `balance ${before} → ${after}`);
+  const up = await api(USERS.yasmine, "GET", "/reservations/upcoming");
+  const r = up.body.find((x) => x.terrainId === 2 && new Date(x.startTime).getHours() === 9);
+  assert(
+    r && new Date(r.endTime) - new Date(r.startTime) === 3600e3,
+    `duration ${JSON.stringify(r)}`,
+  );
+});
+
+await step("invite a member in the app; they see it on their dashboard", async () => {
+  const dialog = y.page.getByRole("dialog");
+  await dialog.getByPlaceholder("Nom ou e-mail exact").fill("Ines");
+  await dialog.getByRole("button", { name: "Inviter", exact: true }).click({ timeout: 10000 });
+  await dialog.getByText("Invité").first().waitFor({ timeout: 10000 });
+  await shot(y.page, "21-invite-member");
+  const i = await as(USERS.ines, { width: 390, height: 844 });
+  await i.page.goto(`${WEB}/dashboard`);
+  await i.page.getByText(/invitation\(s\) à un match/).waitFor({ timeout: 15000 });
+  await shot(i.page, "22-dashboard-invitation-mobile");
+  await i.page.getByRole("button", { name: "Refuser" }).first().click();
+  await i.page.getByText(/invitation\(s\) à un match/).waitFor({ state: "hidden", timeout: 10000 });
+  await i.ctx.close();
+});
+
+await step("open matches switched off: hidden for players, refused by the API", async () => {
+  await a.page.goto(`${WEB}/admin/settings`);
+  const features = a.page.locator("#features");
+  await features.getByTestId("toggle-open-matches").click({ timeout: 15000 });
+  await features.getByTestId("btn-save-settings").click();
+  await a.page.getByText("Réglages enregistrés").first().waitFor({ timeout: 10000 });
+  await y.page.goto(`${WEB}/dashboard`);
+  await y.page.getByRole("heading").first().waitFor({ timeout: 15000 });
+  await y.page.waitForTimeout(800);
+  assert(
+    (await y.page.getByRole("link", { name: "Open matches" }).count()) === 0,
+    "open matches link still shown",
+  );
+  const om = await api(USERS.yasmine, "GET", "/open-matches");
+  assert(Array.isArray(om.body) && om.body.length === 0, `open matches ${JSON.stringify(om.body)}`);
+});
+
+await step("reset to defaults restores 90 minutes / 25 TND / 4 tokens", async () => {
+  for (const section of ["booking", "pricing", "tokens", "features"]) {
+    const r = await api(USERS.admin, "POST", "/admin/settings/reset", { section });
+    assert(r.status === 200, `reset ${section} ${r.status}`);
+  }
+  const s = (await api(USERS.yasmine, "GET", "/settings")).body;
+  assert(
+    s.bookingDurationMinutes === 90 &&
+      s.playerPrice === 25 &&
+      s.tokenCostFullCourt === 4 &&
+      s.openMatchesEnabled,
+    `after reset ${JSON.stringify(s)}`,
+  );
+});
+
 console.log("\nPublic & mobile");
 const v = await as(null, { width: 375, height: 812 });
 await step("public home (mobile)", async () => {

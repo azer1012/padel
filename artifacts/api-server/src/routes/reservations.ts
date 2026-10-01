@@ -8,16 +8,24 @@ import {
   reservationPlayersTable,
   reservationEquipmentTable,
 } from "@workspace/db";
-import { eq, and, gte, lte, desc, count, inArray, or } from "drizzle-orm";
+import { eq, and, gte, lt, desc, count, inArray, or } from "drizzle-orm";
 import { requireUser, requireAdmin } from "../lib/auth";
-import { quote, tokensFor } from "../lib/pricing";
+import { loadActiveRules, priceFor, tokensFor } from "../lib/pricing";
 import { notifyLater } from "../lib/notify";
-import { formatClubDate, formatClubTime, type Lang } from "../lib/club-time";
+import {
+  addDays,
+  clubInstant,
+  clubParts,
+  formatClubDate,
+  formatClubTime,
+  isClubDate,
+  type Lang,
+} from "../lib/club-time";
 import { EquipmentError, normalizeRequest, reserveEquipment } from "../lib/equipment";
 import { moveTokens, type Tx } from "../lib/ledger";
-import { assertOnGrid, SLOT_MS } from "../lib/slots";
+import { assertBookable } from "../lib/slots";
+import { getSettings, scheduleContext, type ClubSettings } from "../lib/settings";
 import { HttpError, cleanText, oneOf, paging, pgCode, requireId, toId } from "../lib/http";
-import { env } from "../config/env";
 
 const router = Router();
 type DbUser = typeof usersTable.$inferSelect;
@@ -83,13 +91,11 @@ router.get("/reservations", requireUser, async (req, res) => {
   else if (toId(q.userId)) conditions.push(eq(reservationsTable.userId, toId(q.userId)!));
 
   if (q.date) {
-    const d = new Date(q.date);
-    if (Number.isNaN(d.getTime())) throw new HttpError(400, "Invalid date", "VALIDATION_ERROR");
-    const start = new Date(d);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(d);
-    end.setHours(23, 59, 59, 999);
-    conditions.push(gte(reservationsTable.startTime, start), lte(reservationsTable.startTime, end));
+    if (!isClubDate(q.date)) throw new HttpError(400, "Invalid date", "VALIDATION_ERROR");
+    conditions.push(
+      gte(reservationsTable.startTime, clubInstant(q.date, 0)),
+      lt(reservationsTable.startTime, clubInstant(addDays(q.date, 1), 0)),
+    );
   }
   if (toId(q.terrainId)) conditions.push(eq(reservationsTable.terrainId, toId(q.terrainId)!));
   const status = oneOf(q.status, ["confirmed", "cancelled", "pending"] as const);
@@ -108,9 +114,9 @@ router.get("/reservations", requireUser, async (req, res) => {
 });
 
 /**
- * Book a court.
- * Player:  bookingMode full_court (4 × spot price, friends then join free) or
- *          own_spot (1 × spot price, the other 3 spots stay open).
+ * Book a court. Duration, spots, prices and the booking window come from the club settings.
+ * Player:  bookingMode full_court (full-court token price, friends then join free) or
+ *          own_spot (one spot, the other spots stay open).
  * Admin:   same, on behalf of a member (userId) paid by token or cash at the club,
  *          or for a walk-in / phone guest (guestName, no account).
  */
@@ -123,14 +129,14 @@ router.post("/reservations", requireUser, async (req, res) => {
   const bookingMode = oneOf(b.bookingMode ?? "full_court", ["full_court", "own_spot"] as const);
   if (!bookingMode) throw new HttpError(400, "Invalid booking mode", "VALIDATION_ERROR");
   const start = new Date(b.startTime);
-  const end = new Date(start.getTime() + SLOT_MS);
+  if (Number.isNaN(start.getTime())) throw new HttpError(400, "Invalid start time", "INVALID_SLOT");
 
   const [terrain] = await db.select().from(terrainsTable).where(eq(terrainsTable.id, terrainId));
-  if (!terrain || !terrain.isActive)
-    throw new HttpError(400, "This court is not available", "COURT_UNAVAILABLE");
-  assertOnGrid(terrain, start);
-  if (start.getTime() <= Date.now() && !isAdmin)
-    throw new HttpError(400, "This slot has already started", "SLOT_IN_PAST");
+  if (!terrain) throw new HttpError(400, "This court is not available", "COURT_UNAVAILABLE");
+  const day = clubParts(start).date;
+  const ctx = await scheduleContext(day, day);
+  const settings = ctx.settings;
+  const end = assertBookable(ctx, terrain, start, { isAdmin });
 
   // Who is the booking for, and how is it paid?
   let member: DbUser | null = currentUser;
@@ -154,10 +160,10 @@ router.post("/reservations", requireUser, async (req, res) => {
     }
   }
 
-  const price = await quote(terrain, start);
+  const price = priceFor(await loadActiveRules(), settings, terrain, start);
   const tokensNeeded = tokensFor(price, bookingMode);
   const chargeTokens = member !== null && paymentMethod === "token";
-  const isPublic = bookingMode === "own_spot" && b.isPublic === true;
+  const isPublic = bookingMode === "own_spot" && b.isPublic === true && settings.openMatchesEnabled;
   const equipmentReq = normalizeRequest(b.equipment);
   let gear: { name: string; quantity: number; price: number }[] = [];
 
@@ -177,7 +183,7 @@ router.post("/reservations", requireUser, async (req, res) => {
           tokensCharged: chargeTokens ? tokensNeeded : 0,
           bookingType,
           bookingMode,
-          totalSpots: 4,
+          totalSpots: settings.maxPlayers,
           isPublic,
           publicDescription: isPublic ? cleanText(b.publicDescription, 200) : null,
           notes: cleanText(b.notes, 500),
@@ -278,8 +284,29 @@ router.patch("/reservations/:id", requireAdmin, async (req, res) => {
 });
 
 /**
- * Cancel a whole booking: creator (before the cancellation deadline) or admin (any time).
- * Every player who paid with tokens is refunded, inside the same transaction.
+ * Players may cancel / leave with a full refund until `cancellationNoticeHours` before
+ * the match. After that the club setting decides: 'forbid' (call the club) or
+ * 'no_refund' (allowed, but the player's own tokens are not given back).
+ * Returns true when the cancellation is late and refund-less. Admins are never limited.
+ */
+export function lateCancellation(settings: ClubSettings, startTime: Date, now = new Date()) {
+  if (startTime <= now)
+    throw new HttpError(400, "This match has already started", "CANCELLATION_CLOSED");
+  const deadline = startTime.getTime() - settings.cancellationNoticeHours * 3600_000;
+  if (now.getTime() < deadline) return false;
+  if (settings.lateCancellation === "no_refund") return true;
+  throw new HttpError(
+    400,
+    `Cancellations are possible up to ${settings.cancellationNoticeHours} h before the match. Please call the club.`,
+    "CANCELLATION_CLOSED",
+    { cancellationNoticeHours: settings.cancellationNoticeHours },
+  );
+}
+
+/**
+ * Cancel a whole booking: creator (within the cancellation rules) or admin (any time).
+ * Every player who paid with tokens is refunded in the same transaction, except the
+ * creator's own tokens on a late 'no_refund' cancellation.
  */
 router.post("/reservations/:id/cancel", requireUser, async (req, res) => {
   const id = requireId(req.params.id);
@@ -293,17 +320,7 @@ router.post("/reservations/:id/cancel", requireUser, async (req, res) => {
   if (!check) throw new HttpError(404, "Reservation not found", "NOT_FOUND");
   if (!isAdmin && check.userId !== user.id)
     throw new HttpError(403, "Only the person who booked can cancel", "FORBIDDEN");
-  if (!isAdmin) {
-    const deadline = check.startTime.getTime() - env.cancellationNoticeHours * 3600_000;
-    if (Date.now() >= deadline)
-      throw new HttpError(
-        400,
-        env.cancellationNoticeHours
-          ? `Bookings can be cancelled up to ${env.cancellationNoticeHours} h before the match. Please call the club.`
-          : "This match has already started",
-        "CANCELLATION_CLOSED",
-      );
-  }
+  const forfeit = isAdmin ? false : lateCancellation(await getSettings(), check.startTime);
 
   const refunds = await db.transaction(async (tx: Tx) => {
     const [locked] = await tx
@@ -322,6 +339,7 @@ router.post("/reservations/:id/cancel", requireUser, async (req, res) => {
       id,
       `Refund · ${check.terrain?.name ?? "court"} cancelled`,
       isAdmin ? user.id : null,
+      forfeit ? user.id : null,
     );
     await tx
       .update(reservationEquipmentTable)
@@ -366,15 +384,19 @@ router.post("/reservations/:id/cancel", requireUser, async (req, res) => {
   const updated = await db.query.reservationsTable.findFirst({
     where: eq(reservationsTable.id, id),
   });
-  res.json(updated);
+  res.json({ ...updated, refundForfeited: forfeit });
 });
 
-/** Refunds every token-paid player of a reservation and marks their rows refunded. */
+/**
+ * Refunds every token-paid player of a reservation and marks their rows refunded.
+ * `keepUserId`: a late 'no_refund' cancellation — that player's tokens stay with the club.
+ */
 export async function refundPlayers(
   tx: Tx,
   reservationId: number,
   description: string,
   adminId: number | null,
+  keepUserId: number | null = null,
 ) {
   const paid = await tx
     .select()
@@ -390,6 +412,7 @@ export async function refundPlayers(
     .for("update");
   const out: { userId: number; amount: number }[] = [];
   for (const p of paid) {
+    if (p.userId === keepUserId) continue;
     if (p.tokensCharged > 0) {
       await moveTokens(tx, {
         userId: p.userId,

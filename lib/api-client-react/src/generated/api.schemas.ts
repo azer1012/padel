@@ -9,21 +9,19 @@ export interface HealthStatus {
   status: string;
 }
 
-export type UserRole = typeof UserRole[keyof typeof UserRole];
-
+export type UserRole = (typeof UserRole)[keyof typeof UserRole];
 
 export const UserRole = {
-  admin: 'admin',
-  player: 'player',
+  admin: "admin",
+  player: "player",
 } as const;
 
-export type UserLanguage = typeof UserLanguage[keyof typeof UserLanguage];
-
+export type UserLanguage = (typeof UserLanguage)[keyof typeof UserLanguage];
 
 export const UserLanguage = {
-  fr: 'fr',
-  ar: 'ar',
-  en: 'en',
+  fr: "fr",
+  ar: "ar",
+  en: "en",
 } as const;
 
 export interface User {
@@ -46,13 +44,12 @@ export interface User {
   updatedAt?: string | null;
 }
 
-export type UserUpdateLanguage = typeof UserUpdateLanguage[keyof typeof UserUpdateLanguage];
-
+export type UserUpdateLanguage = (typeof UserUpdateLanguage)[keyof typeof UserUpdateLanguage];
 
 export const UserUpdateLanguage = {
-  fr: 'fr',
-  ar: 'ar',
-  en: 'en',
+  fr: "fr",
+  ar: "ar",
+  en: "en",
 } as const;
 
 export interface UserUpdate {
@@ -69,54 +66,62 @@ export interface UserListResponse {
   limit: number;
 }
 
-export type TerrainType = typeof TerrainType[keyof typeof TerrainType];
-
+export type TerrainType = (typeof TerrainType)[keyof typeof TerrainType];
 
 export const TerrainType = {
-  indoor: 'indoor',
-  outdoor: 'outdoor',
+  indoor: "indoor",
+  outdoor: "outdoor",
 } as const;
 
 export interface Terrain {
   id: number;
   name: string;
+  /** Optional court number shown to players. */
+  number?: number | null;
   /** @nullable */
   description?: string | null;
   type: TerrainType;
   isActive: boolean;
-  pricePerPerson: number;
+  sortOrder?: number;
+  isMaintenance?: boolean;
+  maintenanceNote?: string | null;
+  archivedAt?: string | null;
+  /** Override of the club player price; null = club setting. */
+  pricePerPerson: number | null;
   capacity?: number;
-  openingTime?: string;
-  closingTime?: string;
+  /** Override of the club opening hours (both or neither); null = club hours. */
+  openingTime?: string | null;
+  closingTime?: string | null;
   photos?: string[];
   createdAt: string;
 }
 
-export type TerrainInputType = typeof TerrainInputType[keyof typeof TerrainInputType];
-
+export type TerrainInputType = (typeof TerrainInputType)[keyof typeof TerrainInputType];
 
 export const TerrainInputType = {
-  indoor: 'indoor',
-  outdoor: 'outdoor',
+  indoor: "indoor",
+  outdoor: "outdoor",
 } as const;
 
 export interface TerrainInput {
   name: string;
+  number?: number | null;
   description?: string;
   type: TerrainInputType;
-  pricePerPerson: number;
+  isMaintenance?: boolean;
+  maintenanceNote?: string | null;
+  pricePerPerson?: number | null;
   capacity?: number;
-  openingTime?: string;
-  closingTime?: string;
+  openingTime?: string | null;
+  closingTime?: string | null;
   photos?: string[];
 }
 
-export type TerrainUpdateType = typeof TerrainUpdateType[keyof typeof TerrainUpdateType];
-
+export type TerrainUpdateType = (typeof TerrainUpdateType)[keyof typeof TerrainUpdateType];
 
 export const TerrainUpdateType = {
-  indoor: 'indoor',
-  outdoor: 'outdoor',
+  indoor: "indoor",
+  outdoor: "outdoor",
 } as const;
 
 export interface TerrainUpdate {
@@ -138,22 +143,21 @@ export interface TimeSlot {
   reservationId?: number | null;
 }
 
-export type ReservationStatus = typeof ReservationStatus[keyof typeof ReservationStatus];
-
+export type ReservationStatus = (typeof ReservationStatus)[keyof typeof ReservationStatus];
 
 export const ReservationStatus = {
-  confirmed: 'confirmed',
-  cancelled: 'cancelled',
-  pending: 'pending',
+  confirmed: "confirmed",
+  cancelled: "cancelled",
+  pending: "pending",
 } as const;
 
-export type ReservationBookingType = typeof ReservationBookingType[keyof typeof ReservationBookingType];
-
+export type ReservationBookingType =
+  (typeof ReservationBookingType)[keyof typeof ReservationBookingType];
 
 export const ReservationBookingType = {
-  online: 'online',
-  phone: 'phone',
-  manual: 'manual',
+  online: "online",
+  phone: "phone",
+  manual: "manual",
 } as const;
 
 export interface Reservation {
@@ -183,13 +187,13 @@ export interface Reservation {
   createdAt: string;
 }
 
-export type ReservationInputBookingType = typeof ReservationInputBookingType[keyof typeof ReservationInputBookingType];
-
+export type ReservationInputBookingType =
+  (typeof ReservationInputBookingType)[keyof typeof ReservationInputBookingType];
 
 export const ReservationInputBookingType = {
-  online: 'online',
-  phone: 'phone',
-  manual: 'manual',
+  online: "online",
+  phone: "phone",
+  manual: "manual",
 } as const;
 
 export interface ReservationInput {
@@ -202,13 +206,13 @@ export interface ReservationInput {
   notes?: string;
 }
 
-export type ReservationUpdateStatus = typeof ReservationUpdateStatus[keyof typeof ReservationUpdateStatus];
-
+export type ReservationUpdateStatus =
+  (typeof ReservationUpdateStatus)[keyof typeof ReservationUpdateStatus];
 
 export const ReservationUpdateStatus = {
-  confirmed: 'confirmed',
-  cancelled: 'cancelled',
-  pending: 'pending',
+  confirmed: "confirmed",
+  cancelled: "cancelled",
+  pending: "pending",
 } as const;
 
 export interface ReservationUpdate {
@@ -232,13 +236,12 @@ export interface TokenBalance {
   nextExpiryDate?: string | null;
 }
 
-export type TokenTransactionType = typeof TokenTransactionType[keyof typeof TokenTransactionType];
-
+export type TokenTransactionType = (typeof TokenTransactionType)[keyof typeof TokenTransactionType];
 
 export const TokenTransactionType = {
-  credit: 'credit',
-  debit: 'debit',
-  adjustment: 'adjustment',
+  credit: "credit",
+  debit: "debit",
+  adjustment: "adjustment",
 } as const;
 
 export interface TokenTransaction {
@@ -260,13 +263,12 @@ export interface TokenTransaction {
   createdAt: string;
 }
 
-export type TokenAdjustmentType = typeof TokenAdjustmentType[keyof typeof TokenAdjustmentType];
-
+export type TokenAdjustmentType = (typeof TokenAdjustmentType)[keyof typeof TokenAdjustmentType];
 
 export const TokenAdjustmentType = {
-  credit: 'credit',
-  debit: 'debit',
-  adjustment: 'adjustment',
+  credit: "credit",
+  debit: "debit",
+  adjustment: "adjustment",
 } as const;
 
 export interface TokenAdjustment {
@@ -326,15 +328,14 @@ export interface NewsListResponse {
   limit: number;
 }
 
-export type TournamentStatus = typeof TournamentStatus[keyof typeof TournamentStatus];
-
+export type TournamentStatus = (typeof TournamentStatus)[keyof typeof TournamentStatus];
 
 export const TournamentStatus = {
-  upcoming: 'upcoming',
-  open: 'open',
-  ongoing: 'ongoing',
-  completed: 'completed',
-  cancelled: 'cancelled',
+  upcoming: "upcoming",
+  open: "open",
+  ongoing: "ongoing",
+  completed: "completed",
+  cancelled: "cancelled",
 } as const;
 
 export interface Tournament {
@@ -356,15 +357,15 @@ export interface Tournament {
   createdAt: string;
 }
 
-export type TournamentInputStatus = typeof TournamentInputStatus[keyof typeof TournamentInputStatus];
-
+export type TournamentInputStatus =
+  (typeof TournamentInputStatus)[keyof typeof TournamentInputStatus];
 
 export const TournamentInputStatus = {
-  upcoming: 'upcoming',
-  open: 'open',
-  ongoing: 'ongoing',
-  completed: 'completed',
-  cancelled: 'cancelled',
+  upcoming: "upcoming",
+  open: "open",
+  ongoing: "ongoing",
+  completed: "completed",
+  cancelled: "cancelled",
 } as const;
 
 export interface TournamentInput {
@@ -378,15 +379,15 @@ export interface TournamentInput {
   imageUrl?: string;
 }
 
-export type TournamentUpdateStatus = typeof TournamentUpdateStatus[keyof typeof TournamentUpdateStatus];
-
+export type TournamentUpdateStatus =
+  (typeof TournamentUpdateStatus)[keyof typeof TournamentUpdateStatus];
 
 export const TournamentUpdateStatus = {
-  upcoming: 'upcoming',
-  open: 'open',
-  ongoing: 'ongoing',
-  completed: 'completed',
-  cancelled: 'cancelled',
+  upcoming: "upcoming",
+  open: "open",
+  ongoing: "ongoing",
+  completed: "completed",
+  cancelled: "cancelled",
 } as const;
 
 export interface TournamentUpdate {
@@ -426,15 +427,14 @@ export interface PeakHourData {
   bookingCount: number;
 }
 
-export type ActivityItemType = typeof ActivityItemType[keyof typeof ActivityItemType];
-
+export type ActivityItemType = (typeof ActivityItemType)[keyof typeof ActivityItemType];
 
 export const ActivityItemType = {
-  reservation_created: 'reservation_created',
-  reservation_cancelled: 'reservation_cancelled',
-  token_credited: 'token_credited',
-  token_debited: 'token_debited',
-  user_registered: 'user_registered',
+  reservation_created: "reservation_created",
+  reservation_cancelled: "reservation_cancelled",
+  token_credited: "token_credited",
+  token_debited: "token_debited",
+  user_registered: "user_registered",
 } as const;
 
 export interface ActivityItem {
@@ -455,15 +455,14 @@ export interface OccupancyDay {
   occupancyRate: number;
 }
 
-export type NotificationType = typeof NotificationType[keyof typeof NotificationType];
-
+export type NotificationType = (typeof NotificationType)[keyof typeof NotificationType];
 
 export const NotificationType = {
-  booking_confirmed: 'booking_confirmed',
-  booking_cancelled: 'booking_cancelled',
-  tokens_added: 'tokens_added',
-  reservation_reminder: 'reservation_reminder',
-  announcement: 'announcement',
+  booking_confirmed: "booking_confirmed",
+  booking_cancelled: "booking_cancelled",
+  tokens_added: "tokens_added",
+  reservation_reminder: "reservation_reminder",
+  announcement: "announcement",
 } as const;
 
 export interface Notification {
@@ -477,80 +476,80 @@ export interface Notification {
 }
 
 export type ListUsersParams = {
-search?: string;
-page?: number;
-limit?: number;
+  search?: string;
+  page?: number;
+  limit?: number;
 };
 
 export type GetTerrainSlotsParams = {
-terrainId: number;
-date: string;
+  terrainId: number;
+  date: string;
 };
 
 export type ListReservationsParams = {
-date?: string;
-terrainId?: number;
-status?: ListReservationsStatus;
-userId?: number;
-page?: number;
-limit?: number;
+  date?: string;
+  terrainId?: number;
+  status?: ListReservationsStatus;
+  userId?: number;
+  page?: number;
+  limit?: number;
 };
 
-export type ListReservationsStatus = typeof ListReservationsStatus[keyof typeof ListReservationsStatus];
-
+export type ListReservationsStatus =
+  (typeof ListReservationsStatus)[keyof typeof ListReservationsStatus];
 
 export const ListReservationsStatus = {
-  confirmed: 'confirmed',
-  cancelled: 'cancelled',
-  pending: 'pending',
+  confirmed: "confirmed",
+  cancelled: "cancelled",
+  pending: "pending",
 } as const;
 
 export type ListTokenTransactionsParams = {
-page?: number;
-limit?: number;
+  page?: number;
+  limit?: number;
 };
 
 export type ListAllTokenTransactionsParams = {
-userId?: number;
-type?: ListAllTokenTransactionsType;
-page?: number;
-limit?: number;
+  userId?: number;
+  type?: ListAllTokenTransactionsType;
+  page?: number;
+  limit?: number;
 };
 
-export type ListAllTokenTransactionsType = typeof ListAllTokenTransactionsType[keyof typeof ListAllTokenTransactionsType];
-
+export type ListAllTokenTransactionsType =
+  (typeof ListAllTokenTransactionsType)[keyof typeof ListAllTokenTransactionsType];
 
 export const ListAllTokenTransactionsType = {
-  credit: 'credit',
-  debit: 'debit',
-  adjustment: 'adjustment',
+  credit: "credit",
+  debit: "debit",
+  adjustment: "adjustment",
 } as const;
 
 export type ListNewsParams = {
-page?: number;
-limit?: number;
+  page?: number;
+  limit?: number;
 };
 
 export type GetDashboardStatsParams = {
-date?: string;
+  date?: string;
 };
 
 export type GetPeakHoursParams = {
-startDate?: string;
-endDate?: string;
+  startDate?: string;
+  endDate?: string;
 };
 
 export type GetRecentActivityParams = {
-limit?: number;
+  limit?: number;
 };
 
 export type GetOccupancyStatsParams = {
-startDate?: string;
-endDate?: string;
+  startDate?: string;
+  endDate?: string;
 };
 
 export type ListNotificationsParams = {
-unreadOnly?: boolean;
+  unreadOnly?: boolean;
 };
 
 export type MarkAllNotificationsRead200 = {
@@ -559,18 +558,18 @@ export type MarkAllNotificationsRead200 = {
 
 // ─── Calendar ─────────────────────────────────────────────────────────────────
 
-export type CalendarSlotStatus = typeof CalendarSlotStatus[keyof typeof CalendarSlotStatus];
+export type CalendarSlotStatus = (typeof CalendarSlotStatus)[keyof typeof CalendarSlotStatus];
 export const CalendarSlotStatus = {
-  available: 'available',
-  partial: 'partial',
-  full: 'full',
-  past: 'past',
+  available: "available",
+  partial: "partial",
+  full: "full",
+  past: "past",
 } as const;
 
-export type CalendarBookingMode = typeof CalendarBookingMode[keyof typeof CalendarBookingMode];
+export type CalendarBookingMode = (typeof CalendarBookingMode)[keyof typeof CalendarBookingMode];
 export const CalendarBookingMode = {
-  full_court: 'full_court',
-  own_spot: 'own_spot',
+  full_court: "full_court",
+  own_spot: "own_spot",
 } as const;
 
 export interface CalendarSlotPlayer {
@@ -610,7 +609,12 @@ export interface CalendarSlot {
   notes: string | null;
   seriesId?: number | null;
   tokensPerSpot: number;
+  /** Tokens to book the whole court. */
+  tokensFullCourt: number;
   pricePerPerson: number;
+  fullCourtPrice: number;
+  /** This viewer may book it now (club booking window, court open). */
+  bookable: boolean;
   isPeak: boolean;
   priceLabel: string | null;
 }
@@ -619,11 +623,17 @@ export interface CalendarTerrain {
   terrain: {
     id: number;
     name: string;
+    number?: number | null;
     type: string;
+    description?: string | null;
+    photos?: string[];
+    isMaintenance?: boolean;
+    maintenanceNote?: string | null;
+    /** Effective price per person (court override or club setting). */
     pricePerPerson: number;
-    openingTime: string;
-    closingTime: string;
   };
+  /** Days in the range when this court is closed (holiday, closed weekday). */
+  closures?: { date: string; reason: string | null }[];
   slots: CalendarSlot[];
 }
 
@@ -641,19 +651,19 @@ export type GetCalendarParams = {
 
 // ─── Reservation Players ──────────────────────────────────────────────────────
 
-export type PlayerPaymentType = typeof PlayerPaymentType[keyof typeof PlayerPaymentType];
+export type PlayerPaymentType = (typeof PlayerPaymentType)[keyof typeof PlayerPaymentType];
 /** token = own token · cash_club = pays at the desk · invited_free = covered by the full-court booker */
 export const PlayerPaymentType = {
-  token: 'token',
-  cash_club: 'cash_club',
-  invited_free: 'invited_free',
+  token: "token",
+  cash_club: "cash_club",
+  invited_free: "invited_free",
 } as const;
 
-export type PlayerPaymentStatus = typeof PlayerPaymentStatus[keyof typeof PlayerPaymentStatus];
+export type PlayerPaymentStatus = (typeof PlayerPaymentStatus)[keyof typeof PlayerPaymentStatus];
 export const PlayerPaymentStatus = {
-  paid: 'paid',
-  pending: 'pending',
-  refunded: 'refunded',
+  paid: "paid",
+  pending: "pending",
+  refunded: "refunded",
 } as const;
 
 export interface ReservationPlayer {
@@ -670,12 +680,12 @@ export interface ReservationPlayer {
 
 // ─── Player Invites ───────────────────────────────────────────────────────────
 
-export type InviteStatus = typeof InviteStatus[keyof typeof InviteStatus];
+export type InviteStatus = (typeof InviteStatus)[keyof typeof InviteStatus];
 export const InviteStatus = {
-  pending: 'pending',
-  accepted: 'accepted',
-  expired: 'expired',
-  cancelled: 'cancelled',
+  pending: "pending",
+  accepted: "accepted",
+  expired: "expired",
+  cancelled: "cancelled",
 } as const;
 
 export interface PlayerInvite {
@@ -695,6 +705,8 @@ export interface InviteResponse {
     status: InviteStatus;
     expiresAt: string;
     invitedBy: string;
+    /** Personal in-app invitation (accept or decline) rather than a shared link. */
+    personal?: boolean;
   };
   reservation: {
     id: number;
@@ -721,7 +733,7 @@ export interface CreateInviteResponse {
   free: boolean;
 }
 
-export type JoinPaymentMethod = 'token' | 'cash_club';
+export type JoinPaymentMethod = "token" | "cash_club";
 
 export interface JoinResponse {
   message: string;
@@ -746,9 +758,9 @@ export interface OpenMatch {
   players: { name: string }[];
 }
 
-export type ReservationBookingMode = typeof ReservationBookingMode[keyof typeof ReservationBookingMode];
+export type ReservationBookingMode =
+  (typeof ReservationBookingMode)[keyof typeof ReservationBookingMode];
 export const ReservationBookingMode = {
-  full_court: 'full_court',
-  own_spot: 'own_spot',
+  full_court: "full_court",
+  own_spot: "own_spot",
 } as const;
-

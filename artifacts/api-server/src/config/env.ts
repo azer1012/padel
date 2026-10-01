@@ -43,8 +43,9 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default("*"),
   FRONTEND_URL: z.string().optional(),
   LOG_LEVEL: z.string().optional(),
-  // Club identity used in emails and push notifications
-  CLUB_NAME: z.string().default("Smash Padel"),
+  // Club identity used in emails and push notifications (branding is per installation).
+  // Operational rules (prices, duration, hours…) are NOT env: they live in club_settings.
+  CLUB_NAME: z.string().default("Padel Club"),
   CLUB_TIMEZONE: z.string().default("Africa/Tunis"),
   CLUB_ADDRESS: z.string().optional(),
   // Email (Resend). When RESEND_API_KEY is missing, emails are logged instead of sent.
@@ -58,8 +59,6 @@ const envSchema = z.object({
   // Scheduled jobs (reminders, "match finished" emails)
   JOBS_ENABLED: z.enum(["true", "false"]).default("true"),
   CRON_SECRET: z.string().optional(),
-  // Players may cancel (full refund) until this many hours before the match. 0 = until it starts.
-  CANCELLATION_NOTICE_HOURS: z.coerce.number().min(0).max(168).default(0),
   // Max write requests (POST/PATCH/DELETE) per IP per minute. 0 disables the limiter.
   RATE_LIMIT_WRITES_PER_MINUTE: z.coerce.number().int().min(0).default(60),
   // Set when the API runs behind a reverse proxy / load balancer (Render, Fly, Nginx…)
@@ -97,7 +96,6 @@ export const env = {
   vapidSubject: parsed.VAPID_SUBJECT ?? "mailto:contact@example.com",
   jobsEnabled: parsed.JOBS_ENABLED === "true",
   cronSecret: parsed.CRON_SECRET,
-  cancellationNoticeHours: parsed.CANCELLATION_NOTICE_HOURS,
   rateLimitWritesPerMinute: parsed.RATE_LIMIT_WRITES_PER_MINUTE,
   trustProxy: parsed.TRUST_PROXY === "true",
 };

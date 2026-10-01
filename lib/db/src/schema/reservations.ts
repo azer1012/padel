@@ -38,6 +38,7 @@ export const seriesStatusEnum = pgEnum("series_status", ["active", "cancelled"])
 export const inviteStatusEnum = pgEnum("invite_status", [
   "pending",
   "accepted",
+  "declined",
   "expired",
   "cancelled",
 ]);
@@ -139,6 +140,11 @@ export const playerInvitesTable = pgTable("player_invites", {
     .notNull()
     .references(() => usersTable.id),
   invitedEmail: text("invited_email"),
+  /** Set for an in-app invitation to a specific member (accept / decline). */
+  invitedUserId: integer("invited_user_id").references(() => usersTable.id, {
+    onDelete: "cascade",
+  }),
+  respondedAt: timestamp("responded_at"),
   expiresAt: timestamp("expires_at").notNull(),
   status: inviteStatusEnum("status").notNull().default("pending"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

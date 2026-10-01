@@ -24,12 +24,30 @@ export type NotificationEvent =
     }
   | { kind: "match_finished"; terrain: string }
   | {
+      kind: "invitation";
+      from: string;
+      terrain: string;
+      date: string;
+      time: string;
+      /** Full-court booking: the spot is already paid */
+      free: boolean;
+      token: string;
+    }
+  | {
       kind: "tokens_added";
       amount: number;
       balance: number;
       reason: string;
       expiresOn?: string | null;
     };
+
+/** Club rules quoted in messages (from the settings, never hard-coded). */
+export type ClubFacts = {
+  currency: string;
+  durationMinutes: number;
+  tokenCostPlayer: number;
+  tokenCostFullCourt: number;
+};
 
 type Copy = {
   subject: string;
@@ -43,7 +61,7 @@ type Copy = {
 const t = (lang: Lang, fr: string, en: string, ar: string) =>
   lang === "ar" ? ar : lang === "en" ? en : fr;
 
-function copy(e: NotificationEvent, lang: Lang): Copy {
+function copy(e: NotificationEvent, lang: Lang, f: ClubFacts): Copy {
   const club = env.clubName;
   switch (e.kind) {
     case "welcome": {
@@ -63,9 +81,9 @@ function copy(e: NotificationEvent, lang: Lang): Copy {
           ),
           t(
             lang,
-            "1 token = 1 place de joueur pour un match de 90 minutes. Un terrain complet = 4 tokens.",
-            "1 token = 1 player spot for a 90-minute match. A full court = 4 tokens.",
-            "رصيد واحد = مكان لاعب لمباراة مدتها 90 دقيقة. الملعب الكامل = 4 أرصدة.",
+            `Une place de joueur = ${f.tokenCostPlayer} token(s) pour un match de ${f.durationMinutes} minutes. Un terrain complet = ${f.tokenCostFullCourt} tokens.`,
+            `One player spot = ${f.tokenCostPlayer} token(s) for a ${f.durationMinutes}-minute match. A full court = ${f.tokenCostFullCourt} tokens.`,
+            `مكان لاعب = ${f.tokenCostPlayer} رصيد لمباراة مدتها ${f.durationMinutes} دقيقة. الملعب الكامل = ${f.tokenCostFullCourt} أرصدة.`,
           ),
           t(
             lang,
@@ -119,7 +137,7 @@ function copy(e: NotificationEvent, lang: Lang): Copy {
                   "المعدات محجوزة وجاهزة في الاستقبال: ",
                 ) +
                   gear.map((g) => `${g.quantity} × ${g.name}`).join(", ") +
-                  (gearTotal ? ` (${gearTotal} TND)` : ""),
+                  (gearTotal ? ` (${gearTotal} ${f.currency})` : ""),
               ]
             : []),
           t(
@@ -262,6 +280,46 @@ function copy(e: NotificationEvent, lang: Lang): Copy {
           ),
         },
       };
+    case "invitation":
+      return {
+        inAppType: "invitation",
+        subject: t(
+          lang,
+          `${e.from} vous invite à jouer : ${e.terrain}, ${e.date} à ${e.time}`,
+          `${e.from} invited you to play: ${e.terrain}, ${e.date} at ${e.time}`,
+          `${e.from} يدعوك للعب: ${e.terrain}، ${e.date} الساعة ${e.time}`,
+        ),
+        heading: t(lang, "Invitation à un match", "Match invitation", "دعوة إلى مباراة"),
+        lines: [
+          t(
+            lang,
+            `${e.from} vous invite : ${e.terrain} · ${e.date} · ${e.time}.`,
+            `${e.from} invited you: ${e.terrain} · ${e.date} · ${e.time}.`,
+            `${e.from} يدعوك: ${e.terrain} · ${e.date} · ${e.time}.`,
+          ),
+          e.free
+            ? t(
+                lang,
+                "Votre place est déjà payée. Acceptez ou refusez dans l'app.",
+                "Your spot is already paid for. Accept or decline in the app.",
+                "مكانك مدفوع مسبقًا. اقبل أو ارفض من التطبيق.",
+              )
+            : t(
+                lang,
+                `Acceptez pour réserver votre place (${f.tokenCostPlayer} token(s)), ou refusez.`,
+                `Accept to take your spot (${f.tokenCostPlayer} token(s)), or decline.`,
+                `اقبل لحجز مكانك (${f.tokenCostPlayer} رصيد) أو ارفض.`,
+              ),
+        ],
+        cta: {
+          label: t(lang, "Répondre à l'invitation", "Answer the invitation", "الرد على الدعوة"),
+          path: `/join/${e.token}`,
+        },
+        push: {
+          title: t(lang, "Invitation à un match", "Match invitation", "دعوة إلى مباراة"),
+          body: `${e.from} · ${e.terrain} · ${e.date} · ${e.time}`,
+        },
+      };
     case "tokens_added":
       return {
         inAppType: "tokens_added",
@@ -349,8 +407,8 @@ ${esc(env.clubName)}${env.clubAddress ? ` · ${esc(env.clubAddress)}` : ""}<br>
 </table></td></tr></table></body></html>`;
 }
 
-export function render(e: NotificationEvent, lang: Lang, frontendUrl: string) {
-  const c = copy(e, lang);
+export function render(e: NotificationEvent, lang: Lang, frontendUrl: string, facts: ClubFacts) {
+  const c = copy(e, lang, facts);
   const url = (p: string) => `${frontendUrl.replace(/\/$/, "")}${p}`;
   return {
     subject: c.subject,

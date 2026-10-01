@@ -70,7 +70,7 @@ router.get("/pricing/quote", async (req, res) => {
     return;
   }
   const p = await quote(terrain, start);
-  res.json({ ...p, fullCourtTokens: p.tokensPerSpot * 4 });
+  res.json({ ...p, fullCourtTokens: p.tokensFullCourt });
 });
 
 router.get("/admin/pricing/rules", requireAdmin, async (_req, res) => {

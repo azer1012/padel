@@ -2,8 +2,8 @@ import type { Dispatch, SetStateAction } from "react";
 import { useEquipment, type EquipmentLine } from "@workspace/api-client-react";
 import { Minus, Plus, Package } from "lucide-react";
 import { useTx } from "@/lib/i18n";
-import { CLUB } from "@/config/club";
 import { cn } from "@/lib/utils";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 /** Rental add-ons for one slot. Stock shown is what's still free at that exact time. */
 export function EquipmentPicker({
@@ -15,6 +15,7 @@ export function EquipmentPicker({
   value: EquipmentLine[];
   onChange: Dispatch<SetStateAction<EquipmentLine[]>>;
 }) {
+  const rules = useClubRules();
   const tx = useTx();
   const { data: items, isLoading } = useEquipment(startTime);
   if (isLoading || !items?.length) return null;
@@ -62,7 +63,7 @@ export function EquipmentPicker({
                 <span className="truncate text-[15px] font-bold">{i.name}</span>
                 <span className="text-xs text-muted-foreground">
                   {i.price
-                    ? `${i.price} ${CLUB.currency}`
+                    ? `${i.price} ${rules.currency}`
                     : tx({ fr: "Gratuit", en: "Free", ar: "مجاني" })}{" "}
                   ·{" "}
                   {out
@@ -116,9 +117,9 @@ export function EquipmentPicker({
       {total > 0 && (
         <p className="m-0 px-1 text-sm font-bold text-court">
           {tx({
-            fr: `À régler à l'accueil : ${total} ${CLUB.currency}`,
-            en: `Pay at the desk: ${total} ${CLUB.currency}`,
-            ar: `يُدفع في الاستقبال: ${total} ${CLUB.currency}`,
+            fr: `À régler à l'accueil : ${total} ${rules.currency}`,
+            en: `Pay at the desk: ${total} ${rules.currency}`,
+            ar: `يُدفع في الاستقبال: ${total} ${rules.currency}`,
           })}
         </p>
       )}

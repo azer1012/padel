@@ -8,6 +8,7 @@ export const activityTypeEnum = pgEnum("activity_type", [
   "token_credited",
   "token_debited",
   "user_registered",
+  "settings_updated",
 ]);
 
 export const activityTable = pgTable("activity", {
@@ -19,6 +20,9 @@ export const activityTable = pgTable("activity", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertActivitySchema = createInsertSchema(activityTable).omit({ id: true, createdAt: true });
+export const insertActivitySchema = createInsertSchema(activityTable).omit({
+  id: true,
+  createdAt: true,
+});
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
 export type Activity = typeof activityTable.$inferSelect;

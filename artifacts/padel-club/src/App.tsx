@@ -27,6 +27,7 @@ const AdminNews = lazy(() => import("@/pages/admin-news"));
 const AdminTournaments = lazy(() => import("@/pages/admin-tournaments"));
 const AdminPricing = lazy(() => import("@/pages/admin-pricing"));
 const AdminEquipment = lazy(() => import("@/pages/admin-equipment"));
+const AdminSettings = lazy(() => import("@/pages/admin-settings"));
 import Terrains from "@/pages/terrains";
 import Tournaments from "@/pages/tournaments";
 import News from "@/pages/news";
@@ -172,6 +173,9 @@ function AppRoutes() {
             </Route>
             <Route path="/admin/equipment">
               <AdminRoute component={AdminEquipment} />
+            </Route>
+            <Route path="/admin/settings">
+              <AdminRoute component={AdminSettings} />
             </Route>
 
             {/* Public Routes */}

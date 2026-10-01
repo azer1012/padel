@@ -1,7 +1,23 @@
 import { useEffect, useState } from "react";
-import { useCreateInvite, apiErrorMessage } from "@workspace/api-client-react";
-import { Check, Copy, MessageCircle, QrCode, Share2, Gift, Coins } from "lucide-react";
+import {
+  useCreateInvite,
+  useInviteMember,
+  useMemberSearch,
+  apiErrorMessage,
+} from "@workspace/api-client-react";
+import {
+  Check,
+  Copy,
+  MessageCircle,
+  QrCode,
+  Share2,
+  Gift,
+  Coins,
+  Search,
+  UserPlus,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTx } from "@/lib/i18n";
 
@@ -29,6 +45,98 @@ function QrSvg({ text }: { text: string }) {
       // Generated locally from our own invite URL
       dangerouslySetInnerHTML={{ __html: svg }}
     />
+  );
+}
+
+/** Invite a club member in the app: they get a notification and accept or decline. */
+function InviteMember({ reservationId }: { reservationId: number }) {
+  const tx = useTx();
+  const [term, setTerm] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [sent, setSent] = useState<Record<number, string>>({});
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(term.trim()), 250);
+    return () => clearTimeout(t);
+  }, [term]);
+  const { data: hits, isFetching } = useMemberSearch(debounced);
+  const invite = useInviteMember();
+  return (
+    <div className="flex flex-col gap-2 border-t border-night/10 pt-3">
+      <label htmlFor={`invite-search-${reservationId}`} className="text-sm font-extrabold">
+        {tx({
+          fr: "Inviter un membre du club",
+          en: "Invite a club member",
+          ar: "ادعُ عضوًا في النادي",
+        })}
+      </label>
+      <div className="relative">
+        <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 opacity-60" />
+        <Input
+          id={`invite-search-${reservationId}`}
+          value={term}
+          onChange={(e) => setTerm(e.target.value)}
+          className="bg-white/80 ps-9"
+          placeholder={tx({
+            fr: "Nom ou e-mail exact",
+            en: "Name or exact e-mail",
+            ar: "الاسم أو البريد",
+          })}
+          autoComplete="off"
+        />
+      </div>
+      {debounced.length >= 2 && !isFetching && !hits?.length && (
+        <p className="m-0 text-sm">
+          {tx({ fr: "Aucun membre trouvé.", en: "No member found.", ar: "لا يوجد عضو." })}
+        </p>
+      )}
+      {!!hits?.length && (
+        <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+          {hits.map((m) => (
+            <li
+              key={m.id}
+              className="flex items-center justify-between gap-2 rounded-xl bg-white/70 px-3 py-2"
+            >
+              <span className="truncate font-bold">{m.name}</span>
+              {sent[m.id] ? (
+                <span className="flex items-center gap-1 text-sm font-bold">
+                  <Check className="size-4" />
+                  {sent[m.id]}
+                </span>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="dark"
+                  disabled={invite.isPending}
+                  onClick={() =>
+                    invite.mutate(
+                      { reservationId, userId: m.id },
+                      {
+                        onSuccess: () =>
+                          setSent((s) => ({
+                            ...s,
+                            [m.id]: tx({ fr: "Invité", en: "Invited", ar: "تمت الدعوة" }),
+                          })),
+                        onError: (e) =>
+                          setSent((s) => ({
+                            ...s,
+                            [m.id]: apiErrorMessage(
+                              e,
+                              tx({ fr: "Échec", en: "Failed", ar: "فشل" }),
+                            ),
+                          })),
+                      },
+                    )
+                  }
+                >
+                  <UserPlus />
+                  {tx({ fr: "Inviter", en: "Invite", ar: "دعوة" })}
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -100,9 +208,9 @@ export function InvitePanel({
         {free ? <Gift className="size-4" /> : <Coins className="size-4" />}
         {free
           ? tx({
-              fr: "Invitez vos 3 partenaires, c'est déjà payé",
-              en: "Invite your 3 partners, it's already paid",
-              ar: "ادعُ شركاءك الثلاثة، الحجز مدفوع",
+              fr: "Invitez vos partenaires, c'est déjà payé",
+              en: "Invite your partners, it's already paid",
+              ar: "ادعُ شركاءك، الحجز مدفوع",
             })
           : tx({
               fr: "Invitez des joueurs : chacun paie sa place",
@@ -157,6 +265,7 @@ export function InvitePanel({
           {showQr && <QrSvg text={url} />}
         </>
       )}
+      {!error && <InviteMember reservationId={reservationId} />}
     </div>
   );
 }

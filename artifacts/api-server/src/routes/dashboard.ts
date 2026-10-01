@@ -7,65 +7,76 @@ import {
   activityTable,
   terrainsTable,
 } from "@workspace/db";
-import { gte, lte, count, and, sql, desc, eq } from "drizzle-orm";
+import { gte, lt, count, and, sql, desc, eq, isNull } from "drizzle-orm";
 import { requireAdmin } from "../lib/auth";
-import { loadActiveRules, priceFor, SPOTS_PER_COURT } from "../lib/pricing";
-import { SLOT_MINUTES } from "../lib/slots";
+import { loadActiveRules, priceFor } from "../lib/pricing";
+import { dayHours, gridStarts } from "../lib/slots";
+import { getSettings, scheduleContext } from "../lib/settings";
+import { addDays, clubInstant, clubParts, isClubDate } from "../lib/club-time";
 import { env } from "../config/env";
 import { paging } from "../lib/http";
 
 const router = Router();
 
-const minutes = (hhmm: string) => {
-  const [h, m] = hhmm.split(":").map(Number);
-  return h * 60 + m;
-};
-
-/** Bookable 90-minute slots per day across all active courts. */
-async function slotsPerDay() {
-  const courts = await db.select().from(terrainsTable).where(eq(terrainsTable.isActive, true));
-  return courts.reduce(
-    (n, t) =>
-      n + Math.max(0, Math.floor((minutes(t.closingTime) - minutes(t.openingTime)) / SLOT_MINUTES)),
-    0,
-  );
+/** Bookable slots per club date across bookable courts (settings duration, hours, exceptions). */
+async function slotsPerDay(from: string, to: string) {
+  const courts = await db
+    .select()
+    .from(terrainsTable)
+    .where(
+      and(
+        eq(terrainsTable.isActive, true),
+        eq(terrainsTable.isMaintenance, false),
+        isNull(terrainsTable.archivedAt),
+      ),
+    );
+  const ctx = await scheduleContext(from, to);
+  const out = new Map<string, number>();
+  for (let d = from; d <= to; d = addDays(d, 1)) {
+    let n = 0;
+    for (const c of courts)
+      n += gridStarts(
+        dayHours(ctx.hours, ctx.exceptions, c, d),
+        d,
+        ctx.settings.bookingDurationMinutes,
+      ).length;
+    out.set(d, n);
+  }
+  return out;
 }
 
-/** Court value of the confirmed bookings in a range (TND): full court = 4 spots, own spot = players in it. */
+/** Court value of the confirmed bookings in [from, to) at desk prices: full court price, or spots taken × spot price. */
 async function bookedValue(from: Date, to: Date) {
   const rows = await db.query.reservationsTable.findMany({
     where: and(
       gte(reservationsTable.startTime, from),
-      lte(reservationsTable.startTime, to),
+      lt(reservationsTable.startTime, to),
       eq(reservationsTable.status, "confirmed"),
     ),
     with: { terrain: true, players: { columns: { id: true } } },
   });
-  const rules = await loadActiveRules();
+  const [rules, settings] = await Promise.all([loadActiveRules(), getSettings()]);
   let total = 0;
   for (const r of rows) {
     if (!r.terrain || r.guestName?.startsWith("[")) continue; // maintenance blocks
-    const spots = r.bookingMode === "full_court" ? SPOTS_PER_COURT : r.players.length;
-    total += spots * priceFor(rules, r.terrain, r.startTime).pricePerPerson;
+    const p = priceFor(rules, settings, r.terrain, r.startTime);
+    total +=
+      r.bookingMode === "full_court" ? p.fullCourtPrice : r.players.length * p.pricePerPerson;
   }
   return { count: rows.length, value: Math.round(total) };
 }
 
 router.get("/dashboard/stats", requireAdmin, async (req, res) => {
   const { date } = req.query as Record<string, string>;
-  const parsed = date ? new Date(date) : new Date();
-  const today = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-  const todayStart = new Date(today);
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(today);
-  todayEnd.setHours(23, 59, 59, 999);
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+  const today = isClubDate(date) ? date : clubParts(new Date()).date;
+  const monthFirst = `${today.slice(0, 7)}-01`;
+  const [y, m] = monthFirst.split("-").map(Number);
+  const nextMonthFirst = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
 
   const [day, month, perDay] = await Promise.all([
-    bookedValue(todayStart, todayEnd),
-    bookedValue(monthStart, monthEnd),
-    slotsPerDay(),
+    bookedValue(clubInstant(today, 0), clubInstant(addDays(today, 1), 0)),
+    bookedValue(clubInstant(monthFirst, 0), clubInstant(nextMonthFirst, 0)),
+    slotsPerDay(today, today).then((m) => m.get(today) ?? 0),
   ]);
   const [{ activeUsers }] = await db.select({ activeUsers: count() }).from(usersTable);
   const [{ tokensIssued }] = await db
@@ -131,31 +142,32 @@ router.get("/dashboard/activity", requireAdmin, async (req, res) => {
 
 router.get("/dashboard/occupancy", requireAdmin, async (req, res) => {
   const { startDate, endDate } = req.query as Record<string, string>;
-  const start = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 3600_000);
-  const end = endDate ? new Date(endDate) : new Date();
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+  const to = isClubDate(endDate) ? endDate : clubParts(new Date()).date;
+  const from = isClubDate(startDate) ? startDate : addDays(to, -30);
+  if (from > to || addDays(from, 366) < to) {
     res.status(400).json({ error: "Invalid date range", code: "VALIDATION_ERROR" });
     return;
   }
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
   const tz = env.clubTimezone;
-  const perDay = await slotsPerDay();
+  const perDay = await slotsPerDay(from, to);
   const rows = await db.execute(sql`
     select to_char((start_time at time zone 'UTC') at time zone ${tz}, 'YYYY-MM-DD') as date,
            count(*)::int as booked_slots
     from reservations
-    where status = 'confirmed' and start_time >= ${start} and start_time <= ${end}
+    where status = 'confirmed' and start_time >= ${clubInstant(from, 0)} and start_time < ${clubInstant(addDays(to, 1), 0)}
     group by 1
     order by 1
   `);
   res.json(
-    rows.rows.map((r: any) => ({
-      date: String(r.date),
-      totalSlots: perDay,
-      bookedSlots: r.booked_slots,
-      occupancyRate: perDay ? Number(((r.booked_slots / perDay) * 100).toFixed(1)) : 0,
-    })),
+    rows.rows.map((r: any) => {
+      const total = perDay.get(String(r.date)) ?? 0;
+      return {
+        date: String(r.date),
+        totalSlots: total,
+        bookedSlots: r.booked_slots,
+        occupancyRate: total ? Number(Math.min(100, (r.booked_slots / total) * 100).toFixed(1)) : 0,
+      };
+    }),
   );
 });
 

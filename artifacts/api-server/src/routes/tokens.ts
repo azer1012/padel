@@ -1,10 +1,17 @@
 import { Router, type Request } from "express";
-import { db, tokenTransactionsTable, usersTable, activityTable } from "@workspace/db";
+import {
+  db,
+  tokenTransactionsTable,
+  tokenPackagesTable,
+  usersTable,
+  activityTable,
+} from "@workspace/db";
 import { eq, desc, count, and } from "drizzle-orm";
 import { requireUser, requireAdmin } from "../lib/auth";
 import { notifyLater } from "../lib/notify";
 import { formatClubDate, type Lang } from "../lib/club-time";
 import { moveTokens } from "../lib/ledger";
+import { getSettings } from "../lib/settings";
 import { HttpError, cleanText, oneOf, paging, pgCode, requireId, toId } from "../lib/http";
 
 const router = Router();
@@ -37,6 +44,8 @@ router.get("/tokens/transactions", requireUser, async (req, res) => {
 
 /**
  * Admin wallet operations (cash paid at the desk → tokens):
+ *   packageId: sells a pack (tokens and price from token_packages; price editable for a discount)
+ *   cashAmount: cash received for a credit, stored in the ledger for the accounting
  *   credit: balance + amount · debit: balance − amount (never below zero)
  *   adjustment: sets the balance to `amount` exactly (the ledger stores the real delta).
  * `idempotencyKey` (one per dialog) makes a double click or a retried request harmless.
@@ -46,8 +55,30 @@ router.post("/tokens/admin/adjust", requireAdmin, async (req, res) => {
   const b = req.body ?? {};
   const userId = requireId(b.userId, "member");
   const type = oneOf(b.type, ["credit", "debit", "adjustment"] as const);
-  const amount = Number(b.amount);
-  const description = cleanText(b.description, 200);
+  let amount = Number(b.amount);
+  let description = cleanText(b.description, 200);
+  let cashAmount: number | null = null;
+  let packageId: number | null = null;
+  if (b.packageId !== undefined && b.packageId !== null && b.packageId !== "") {
+    if (type !== "credit")
+      throw new HttpError(400, "A pack can only be sold as a credit", "VALIDATION_ERROR");
+    packageId = requireId(b.packageId, "package");
+    const [pack] = await db
+      .select()
+      .from(tokenPackagesTable)
+      .where(eq(tokenPackagesTable.id, packageId));
+    if (!pack || !pack.isActive)
+      throw new HttpError(400, "This pack is not on sale", "PACKAGE_UNAVAILABLE");
+    amount = pack.tokens;
+    cashAmount = pack.price;
+    description ??= `${pack.name} (${pack.tokens} tokens)`;
+  }
+  if (b.cashAmount !== undefined && b.cashAmount !== null && b.cashAmount !== "") {
+    const c = Number(b.cashAmount);
+    if (type !== "credit" || !Number.isFinite(c) || c < 0 || c > 1_000_000)
+      throw new HttpError(400, "Invalid cash amount", "VALIDATION_ERROR");
+    cashAmount = Math.round(c * 100) / 100;
+  }
   const notes = cleanText(b.notes, 500);
   const idempotencyKey = cleanText(b.idempotencyKey, 100);
   if (!type) throw new HttpError(400, "Invalid type", "VALIDATION_ERROR");
@@ -63,6 +94,17 @@ router.post("/tokens/admin/adjust", requireAdmin, async (req, res) => {
       "VALIDATION_ERROR",
     );
   if (!description) throw new HttpError(400, "A reason is required", "VALIDATION_ERROR");
+  if (cashAmount !== null && packageId === null) {
+    // A sale (cash received): the club's minimum purchase applies; gifts and refunds don't
+    const { tokenMinPurchase } = await getSettings();
+    if (amount < tokenMinPurchase)
+      throw new HttpError(
+        400,
+        `Minimum purchase is ${tokenMinPurchase} tokens`,
+        "BELOW_MIN_PURCHASE",
+        { tokenMinPurchase },
+      );
+  }
   const expiresAt = b.expiresAt ? new Date(b.expiresAt) : null;
   if (expiresAt && Number.isNaN(expiresAt.getTime()))
     throw new HttpError(400, "Invalid expiry date", "VALIDATION_ERROR");
@@ -103,6 +145,8 @@ router.post("/tokens/admin/adjust", requireAdmin, async (req, res) => {
             : notes,
         expiresAt,
         idempotencyKey,
+        cashAmount,
+        packageId,
       });
       await tx.insert(activityTable).values({
         type: delta >= 0 ? "token_credited" : "token_debited",

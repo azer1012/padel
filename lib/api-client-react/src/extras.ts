@@ -17,7 +17,11 @@ const json = (body: unknown): RequestInit => ({
 /** Extra fields the calendar API now returns on every slot. */
 export type SlotPricing = {
   tokensPerSpot: number;
+  tokensFullCourt: number;
   pricePerPerson: number;
+  fullCourtPrice: number;
+  /** This viewer may book it now (inside the club's booking window, court open). */
+  bookable?: boolean;
   isPeak: boolean;
   priceLabel: string | null;
   seriesId?: number | null;
@@ -40,7 +44,9 @@ export type PricingRule = {
 export type PricingRuleInput = Partial<Omit<PricingRule, "id" | "createdAt">>;
 export type PriceQuote = {
   tokensPerSpot: number;
+  tokensFullCourt: number;
   pricePerPerson: number;
+  fullCourtPrice: number;
   isPeak: boolean;
   ruleId: number | null;
   ruleName: string | null;
@@ -346,6 +352,231 @@ export const useUnregisterTournament = () =>
   useMutation({
     mutationFn: (id: number) =>
       customFetch<unknown>(`/api/tournaments/${id}/register`, { method: "DELETE" }),
+  });
+
+// ─── Club settings (operational rules, edited in Admin → Réglages) ────────────
+
+export type OpeningHoursDay = {
+  weekday: number;
+  isClosed: boolean;
+  openTime: string;
+  closeTime: string;
+};
+export type TokenPackage = {
+  id: number;
+  name: string;
+  tokens: number;
+  price: number;
+  isActive?: boolean;
+  sortOrder?: number;
+};
+/** Public rules every screen uses (GET /settings). */
+export type ClubRules = {
+  bookingDurationMinutes: number;
+  minPlayers: number;
+  maxPlayers: number;
+  minAdvanceMinutes: number;
+  maxAdvanceDays: number;
+  cancellationNoticeHours: number;
+  lateCancellation: "forbid" | "no_refund";
+  currency: string;
+  playerPrice: number;
+  fullCourtPrice: number;
+  tokenCostPlayer: number;
+  tokenCostFullCourt: number;
+  tokenUnitPrice: number;
+  tokenMinPurchase: number;
+  openMatchesEnabled: boolean;
+  invitationsEnabled: boolean;
+  cashPaymentEnabled: boolean;
+  openingHours: OpeningHoursDay[];
+  tokenPackages: TokenPackage[];
+};
+export type AdminSettings = Omit<ClubRules, "tokenPackages"> & {
+  bookingConfirmationNotificationsEnabled: boolean;
+  remindersEnabled: boolean;
+  reminderLeadMinutes: number;
+  cancellationNotificationsEnabled: boolean;
+  invitationNotificationsEnabled: boolean;
+  tokenNotificationsEnabled: boolean;
+  matchFinishedNotificationsEnabled: boolean;
+  updatedAt: string;
+  updatedBy: number | null;
+  upcomingBookings: number;
+};
+export type SettingsPatch = Partial<
+  Omit<AdminSettings, "openingHours" | "updatedAt" | "updatedBy" | "upcomingBookings">
+>;
+export type SettingsSection =
+  | "booking"
+  | "pricing"
+  | "tokens"
+  | "features"
+  | "notifications"
+  | "openingHours";
+export type ScheduleException = {
+  id: number;
+  date: string;
+  terrainId: number | null;
+  isClosed: boolean;
+  openTime: string | null;
+  closeTime: string | null;
+  reason: string | null;
+};
+export type ScheduleExceptionInput = Omit<ScheduleException, "id">;
+
+export const settingsKeys = {
+  rules: ["/api/settings"] as const,
+  admin: ["/api/admin/settings"] as const,
+  exceptions: ["/api/admin/schedule-exceptions"] as const,
+  packages: ["/api/admin/token-packages"] as const,
+  myInvites: ["/api/invites"] as const,
+  members: (q: string) => ["/api/members/search", q] as const,
+};
+
+export const useClubRulesQuery = (o?: Opts<ClubRules>) =>
+  useQuery({
+    queryKey: settingsKeys.rules,
+    queryFn: () => customFetch<ClubRules>("/api/settings"),
+    staleTime: 30_000,
+    ...o,
+  });
+export const useAdminSettings = (o?: Opts<AdminSettings>) =>
+  useQuery({
+    queryKey: settingsKeys.admin,
+    queryFn: () => customFetch<AdminSettings>("/api/admin/settings"),
+    ...o,
+  });
+export const useUpdateSettings = () =>
+  useMutation({
+    mutationFn: (data: SettingsPatch) =>
+      customFetch<AdminSettings>("/api/admin/settings", { method: "PATCH", ...json(data) }),
+  });
+export const useResetSettings = () =>
+  useMutation({
+    mutationFn: (section: SettingsSection) =>
+      customFetch<AdminSettings>("/api/admin/settings/reset", {
+        method: "POST",
+        ...json({ section }),
+      }),
+  });
+export const useSaveOpeningHours = () =>
+  useMutation({
+    mutationFn: (days: OpeningHoursDay[]) =>
+      customFetch<OpeningHoursDay[]>("/api/admin/opening-hours", {
+        method: "PUT",
+        ...json({ days }),
+      }),
+  });
+export const useScheduleExceptions = (o?: Opts<ScheduleException[]>) =>
+  useQuery({
+    queryKey: settingsKeys.exceptions,
+    queryFn: () => customFetch<ScheduleException[]>("/api/admin/schedule-exceptions"),
+    ...o,
+  });
+export const useCreateScheduleException = () =>
+  useMutation({
+    mutationFn: (data: ScheduleExceptionInput) =>
+      customFetch<ScheduleException>("/api/admin/schedule-exceptions", {
+        method: "POST",
+        ...json(data),
+      }),
+  });
+export const useDeleteScheduleException = () =>
+  useMutation({
+    mutationFn: (id: number) =>
+      customFetch<void>(`/api/admin/schedule-exceptions/${id}`, { method: "DELETE" }),
+  });
+export const useAdminTokenPackages = (o?: Opts<TokenPackage[]>) =>
+  useQuery({
+    queryKey: settingsKeys.packages,
+    queryFn: () => customFetch<TokenPackage[]>("/api/admin/token-packages"),
+    ...o,
+  });
+export const useSaveTokenPackage = () =>
+  useMutation({
+    mutationFn: ({ id, data }: { id?: number; data: Partial<TokenPackage> }) =>
+      id
+        ? customFetch<TokenPackage>(`/api/admin/token-packages/${id}`, {
+            method: "PATCH",
+            ...json(data),
+          })
+        : customFetch<TokenPackage>("/api/admin/token-packages", { method: "POST", ...json(data) }),
+  });
+export const useDeleteTokenPackage = () =>
+  useMutation({
+    mutationFn: (id: number) =>
+      customFetch<void>(`/api/admin/token-packages/${id}`, { method: "DELETE" }),
+  });
+
+// ─── Courts (admin) ──────────────────────────────────────────────────────────
+
+export const useArchivedTerrains = <T = unknown>(o?: Opts<T[]>) =>
+  useQuery({
+    queryKey: ["/api/terrains", "archived"] as const,
+    queryFn: () => customFetch<T[]>("/api/terrains?archived=true"),
+    ...o,
+  });
+export const useArchiveTerrain = () =>
+  useMutation({
+    mutationFn: ({ id, archived }: { id: number; archived: boolean }) =>
+      customFetch<unknown>(`/api/terrains/${id}/${archived ? "archive" : "unarchive"}`, {
+        method: "POST",
+      }),
+  });
+export const useReorderTerrains = () =>
+  useMutation({
+    mutationFn: (ids: number[]) =>
+      customFetch<unknown>("/api/terrains/order", { method: "PUT", ...json({ ids }) }),
+  });
+
+// ─── Personal invitations ────────────────────────────────────────────────────
+
+export type MyInvite = {
+  id: number;
+  token: string;
+  invitedBy: string;
+  createdAt: string;
+  reservation: {
+    id: number;
+    terrainName: string;
+    startTime: string;
+    endTime: string;
+    bookingMode: "full_court" | "own_spot";
+    totalSpots: number;
+    filledSpots: number;
+    free: boolean;
+  };
+};
+export type MemberHit = { id: number; name: string };
+
+export const useMyInvites = (o?: Opts<MyInvite[]>) =>
+  useQuery({
+    queryKey: settingsKeys.myInvites,
+    queryFn: () => customFetch<MyInvite[]>("/api/invites"),
+    refetchInterval: 60_000,
+    ...o,
+  });
+export const useDeclineInvite = () =>
+  useMutation({
+    mutationFn: (token: string) =>
+      customFetch<unknown>(`/api/invites/${token}/decline`, { method: "POST" }),
+  });
+export const useMemberSearch = (q: string, o?: Opts<MemberHit[]>) =>
+  useQuery({
+    queryKey: settingsKeys.members(q),
+    queryFn: () => customFetch<MemberHit[]>(`/api/members/search?q=${encodeURIComponent(q)}`),
+    enabled: q.trim().length >= 2,
+    staleTime: 30_000,
+    ...o,
+  });
+export const useInviteMember = () =>
+  useMutation({
+    mutationFn: ({ reservationId, userId }: { reservationId: number; userId: number }) =>
+      customFetch<{ invitedUser: MemberHit }>(`/api/reservations/${reservationId}/invite`, {
+        method: "POST",
+        ...json({ userId }),
+      }),
   });
 
 /** Human message from any API error ({ error: "..." } body), or the fallback. */

@@ -4,11 +4,30 @@ import {
   useCreateTerrain,
   useUpdateTerrain,
   useDeleteTerrain,
+  useArchiveTerrain,
+  useReorderTerrains,
+  useArchivedTerrains,
   getListTerrainsQueryKey,
+  apiErrorCode,
+  apiErrorMessage,
 } from "@workspace/api-client-react";
 import type { Terrain } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Clock, Users, Sun, Warehouse, LandPlot } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Clock,
+  Users,
+  Sun,
+  Warehouse,
+  LandPlot,
+  Archive,
+  ArchiveRestore,
+  ArrowUp,
+  ArrowDown,
+  Wrench,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,54 +38,78 @@ import { CourtLines, EmptyState, Page, PageHeader } from "@/components/smash/pri
 import { Field, Pill, Segmented, useConfirm } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
 import { useTx } from "@/lib/i18n";
-import { CLUB } from "@/config/club";
 import { cn } from "@/lib/utils";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 type Form = {
   name: string;
+  number: string;
   description: string;
   type: "indoor" | "outdoor";
+  photo: string;
+  isMaintenance: boolean;
+  maintenanceNote: string;
+  /** Empty = use the club price (Réglages → Tarifs) */
   pricePerPerson: string;
-  capacity: string;
+  /** Off = use the club opening hours (Réglages → Horaires) */
+  customHours: boolean;
   openingTime: string;
   closingTime: string;
 };
 const blank: Form = {
   name: "",
+  number: "",
   description: "",
   type: "indoor",
-  pricePerPerson: "25",
-  capacity: "4",
+  photo: "",
+  isMaintenance: false,
+  maintenanceNote: "",
+  pricePerPerson: "",
+  customHours: false,
   openingTime: "08:00",
   closingTime: "23:00",
 };
 
 export default function AdminTerrains() {
+  const rules = useClubRules();
   const tx = useTx();
   const { toast } = useToast();
   const qc = useQueryClient();
   const { confirm, dialog } = useConfirm();
   const { data: terrains, isLoading } = useListTerrains();
+  const [showArchived, setShowArchived] = useState(false);
+  const { data: archived } = useArchivedTerrains<Terrain>({ enabled: showArchived });
   const createMutation = useCreateTerrain();
   const updateMutation = useUpdateTerrain();
   const deleteMutation = useDeleteTerrain();
+  const archiveMutation = useArchiveTerrain();
+  const reorderMutation = useReorderTerrains();
   const [editing, setEditing] = useState<Terrain | "new" | null>(null);
   const [form, setForm] = useState<Form>(blank);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
-  const refresh = () => qc.invalidateQueries({ queryKey: getListTerrainsQueryKey() });
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: getListTerrainsQueryKey() });
+    qc.invalidateQueries({ queryKey: ["/api/terrains", "archived"] });
+  };
   const saving = createMutation.isPending || updateMutation.isPending;
+  const fail = (title: string) => (e: unknown) =>
+    toast({ title, description: apiErrorMessage(e, ""), variant: "destructive" });
 
   const openCreate = () => {
-    setForm(blank);
+    setForm({ ...blank, number: String((terrains?.length ?? 0) + 1) });
     setEditing("new");
   };
   const openEdit = (t: Terrain) => {
     setForm({
       name: t.name,
+      number: t.number != null ? String(t.number) : "",
       description: t.description ?? "",
       type: t.type as Form["type"],
-      pricePerPerson: String(t.pricePerPerson),
-      capacity: String(t.capacity),
+      photo: t.photos?.[0] ?? "",
+      isMaintenance: !!t.isMaintenance,
+      maintenanceNote: t.maintenanceNote ?? "",
+      pricePerPerson: t.pricePerPerson != null ? String(t.pricePerPerson) : "",
+      customHours: !!(t.openingTime && t.closingTime),
       openingTime: t.openingTime ?? "08:00",
       closingTime: t.closingTime ?? "23:00",
     });
@@ -75,45 +118,71 @@ export default function AdminTerrains() {
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.name.trim()) {
-      toast({
-        title: tx({
-          fr: "Donnez un nom au terrain",
-          en: "Give the court a name",
-          ar: "أدخل اسم الملعب",
-        }),
-        variant: "destructive",
-      });
+    const problem = !form.name.trim()
+      ? tx({ fr: "Donnez un nom au terrain", en: "Give the court a name", ar: "أدخل اسم الملعب" })
+      : form.number && !/^\d{1,3}$/.test(form.number)
+        ? tx({ fr: "Numéro entre 1 et 999", en: "Number between 1 and 999", ar: "رقم بين 1 و 999" })
+        : form.pricePerPerson && !(Number(form.pricePerPerson) >= 0)
+          ? tx({ fr: "Prix invalide", en: "Invalid price", ar: "سعر غير صالح" })
+          : form.customHours && form.openingTime >= form.closingTime
+            ? tx({
+                fr: "La fermeture doit être après l'ouverture",
+                en: "Closing must be after opening",
+                ar: "يجب أن يكون الإغلاق بعد الفتح",
+              })
+            : form.photo && !/^(https:\/\/|\/)/.test(form.photo)
+              ? tx({
+                  fr: "La photo doit être une adresse https://",
+                  en: "The photo must be an https:// address",
+                  ar: "يجب أن يكون رابط الصورة https://",
+                })
+              : null;
+    if (problem) {
+      toast({ title: problem, variant: "destructive" });
       return;
     }
+    const current = editing && editing !== "new" ? editing : null;
     const payload = {
       name: form.name.trim(),
+      number: form.number ? Number(form.number) : null,
       description: form.description,
       type: form.type,
-      pricePerPerson: parseFloat(form.pricePerPerson),
-      capacity: parseInt(form.capacity),
-      openingTime: form.openingTime,
-      closingTime: form.closingTime,
+      isMaintenance: form.isMaintenance,
+      maintenanceNote: form.isMaintenance ? form.maintenanceNote : null,
+      pricePerPerson: form.pricePerPerson === "" ? null : Number(form.pricePerPerson),
+      openingTime: form.customHours ? form.openingTime : null,
+      closingTime: form.customHours ? form.closingTime : null,
+      photos: form.photo
+        ? [form.photo, ...(current?.photos ?? []).filter((p) => p !== form.photo)]
+        : (current?.photos ?? []).slice(1),
     };
-    const done = (msg: string) => () => {
-      toast({ title: msg });
+    const done = (msg: string) => (r: unknown) => {
+      const upcoming = (r as { upcomingBookings?: number })?.upcomingBookings ?? 0;
+      toast({
+        title: msg,
+        description:
+          form.isMaintenance && upcoming
+            ? tx({
+                fr: `${upcoming} réservation(s) à venir sur ce terrain : prévenez les joueurs ou annulez-les.`,
+                en: `${upcoming} upcoming booking(s) on this court: tell the players or cancel them.`,
+                ar: `${upcoming} حجز قادم على هذا الملعب.`,
+              })
+            : undefined,
+      });
       setEditing(null);
       refresh();
     };
-    const fail = (e: any) =>
-      toast({
-        title: tx({ fr: "Enregistrement impossible", en: "Couldn't save", ar: "تعذر الحفظ" }),
-        description: e?.data?.error,
-        variant: "destructive",
-      });
-    if (editing && editing !== "new")
+    const onError = fail(
+      tx({ fr: "Enregistrement impossible", en: "Couldn't save", ar: "تعذر الحفظ" }),
+    );
+    if (current)
       updateMutation.mutate(
-        { id: editing.id, data: payload as any },
+        { id: current.id, data: payload as any },
         {
           onSuccess: done(
             tx({ fr: "Terrain mis à jour", en: "Court updated", ar: "تم تحديث الملعب" }),
           ),
-          onError: fail,
+          onError,
         },
       );
     else
@@ -121,7 +190,7 @@ export default function AdminTerrains() {
         { data: payload as any },
         {
           onSuccess: done(tx({ fr: "Terrain ajouté", en: "Court added", ar: "تمت إضافة الملعب" })),
-          onError: fail,
+          onError,
         },
       );
   }
@@ -150,13 +219,57 @@ export default function AdminTerrains() {
     );
   }
 
+  function move(t: Terrain, dir: -1 | 1) {
+    const ids = (terrains ?? []).map((x) => x.id);
+    const i = ids.indexOf(t.id),
+      j = i + dir;
+    if (j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    reorderMutation.mutate(ids, { onSuccess: refresh });
+  }
+
+  async function handleArchive(t: Terrain, archive: boolean) {
+    if (archive) {
+      const ok = await confirm({
+        title: tx({ fr: `Archiver ${t.name} ?`, en: `Archive ${t.name}?`, ar: `أرشفة ${t.name}؟` }),
+        description: tx({
+          fr: "Le terrain disparaît du site et des plannings. Son historique est conservé et vous pourrez le restaurer.",
+          en: "The court disappears from the site and schedules. Its history is kept and you can restore it.",
+          ar: "يختفي الملعب من الموقع مع الاحتفاظ بسجله، ويمكنك استعادته.",
+        }),
+        confirmLabel: tx({ fr: "Archiver", en: "Archive", ar: "أرشفة" }),
+      });
+      if (!ok) return;
+    }
+    archiveMutation.mutate(
+      { id: t.id, archived: archive },
+      {
+        onSuccess: () => {
+          toast({
+            title: archive
+              ? tx({ fr: "Terrain archivé", en: "Court archived", ar: "تمت الأرشفة" })
+              : tx({
+                  fr: "Terrain restauré (fermé à la réservation)",
+                  en: "Court restored (closed to bookings)",
+                  ar: "تمت الاستعادة",
+                }),
+          });
+          refresh();
+        },
+        onError: fail(
+          tx({ fr: "Archivage impossible", en: "Couldn't archive", ar: "تعذرت الأرشفة" }),
+        ),
+      },
+    );
+  }
+
   async function handleDelete(t: Terrain) {
     const ok = await confirm({
       title: tx({ fr: `Supprimer ${t.name} ?`, en: `Delete ${t.name}?`, ar: `حذف ${t.name}؟` }),
       description: tx({
-        fr: "Pour une fermeture temporaire, désactivez plutôt le terrain : l'historique est conservé.",
-        en: "For a temporary closure, switch the court off instead: history is kept.",
-        ar: "للإغلاق المؤقت، عطّل الملعب بدلًا من ذلك.",
+        fr: "Possible seulement pour un terrain jamais réservé. Sinon, archivez-le : l'historique est conservé.",
+        en: "Only possible for a court that was never booked. Otherwise archive it: history is kept.",
+        ar: "ممكن فقط لملعب لم يُحجز أبدًا. وإلا قم بأرشفته.",
       }),
       confirmLabel: tx({ fr: "Supprimer", en: "Delete", ar: "حذف" }),
       destructive: true,
@@ -171,17 +284,18 @@ export default function AdminTerrains() {
           });
           refresh();
         },
-        onError: (e: any) =>
-          toast({
-            title: tx({ fr: "Suppression impossible", en: "Couldn't delete", ar: "تعذر الحذف" }),
-            description: e?.data?.error,
-            variant: "destructive",
-          }),
+        onError: (e) =>
+          apiErrorCode(e) === "COURT_HAS_HISTORY"
+            ? handleArchive(t, true)
+            : fail(tx({ fr: "Suppression impossible", en: "Couldn't delete", ar: "تعذر الحذف" }))(
+                e,
+              ),
       },
     );
   }
 
-  const active = (terrains ?? []).filter((t) => t.isActive).length;
+  const active = (terrains ?? []).filter((t) => t.isActive && !t.isMaintenance).length;
+  const clubHours = rules.hoursLabel || "—";
 
   return (
     <Page wide>
@@ -191,9 +305,9 @@ export default function AdminTerrains() {
         subtitle={
           terrains
             ? tx({
-                fr: `${active} terrain(s) ouverts sur ${terrains.length}. Prix, horaires et disponibilité.`,
-                en: `${active} of ${terrains.length} courts open. Prices, hours and availability.`,
-                ar: `${active} من ${terrains.length} ملاعب مفتوحة.`,
+                fr: `${active} terrain(s) réservables sur ${terrains.length}. Prix et horaires par défaut : Réglages.`,
+                en: `${active} of ${terrains.length} courts bookable. Default prices and hours: Settings.`,
+                ar: `${active} من ${terrains.length} ملاعب قابلة للحجز.`,
               })
             : undefined
         }
@@ -229,32 +343,40 @@ export default function AdminTerrains() {
         />
       ) : (
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {terrains.map((t) => (
+          {terrains.map((t, index) => (
             <article
               key={t.id}
               data-testid={`card-terrain-${t.id}`}
               className={cn(
                 "lift enter flex flex-col gap-5 rounded-[30px] bg-card p-5 shadow-sm",
-                !t.isActive && "opacity-70",
+                (!t.isActive || t.isMaintenance) && "opacity-75",
               )}
             >
               <div
-                className="relative h-[130px] overflow-hidden rounded-[18px] border-[3px] border-white shadow-[0_0_0_1px_#E4E8F7]"
+                className="relative h-[130px] overflow-hidden rounded-[18px] border-[3px] border-white bg-cover bg-center shadow-[0_0_0_1px_#E4E8F7]"
                 style={{
-                  background: t.isActive
+                  backgroundColor: t.isActive
                     ? t.type === "outdoor"
                       ? "#2B8A5E"
                       : "var(--color-court)"
                     : "var(--color-night-3)",
+                  backgroundImage: t.photos?.[0] ? `url("${t.photos[0]}")` : undefined,
                 }}
               >
-                <CourtLines />
-                <span className="absolute start-3 top-3">
-                  <Pill tone={t.isActive ? "lime" : "muted"}>
-                    {t.isActive
-                      ? tx({ fr: "Ouvert", en: "Open", ar: "مفتوح" })
-                      : tx({ fr: "Fermé", en: "Closed", ar: "مغلق" })}
-                  </Pill>
+                {!t.photos?.[0] && <CourtLines />}
+                <span className="absolute start-3 top-3 flex gap-1.5">
+                  {t.isMaintenance ? (
+                    <Pill tone="warning">
+                      <Wrench className="size-3" />
+                      {tx({ fr: "Maintenance", en: "Maintenance", ar: "صيانة" })}
+                    </Pill>
+                  ) : (
+                    <Pill tone={t.isActive ? "lime" : "muted"}>
+                      {t.isActive
+                        ? tx({ fr: "Ouvert", en: "Open", ar: "مفتوح" })
+                        : tx({ fr: "Fermé", en: "Closed", ar: "مغلق" })}
+                    </Pill>
+                  )}
                 </span>
                 <span className="absolute bottom-3 end-3 flex items-center gap-1.5 rounded-full bg-night/70 px-3 py-1 text-xs font-bold text-white">
                   {t.type === "outdoor" ? (
@@ -266,7 +388,13 @@ export default function AdminTerrains() {
                 </span>
               </div>
               <div className="flex flex-col gap-1">
-                <h2 className="disp m-0 text-[26px] leading-tight">{t.name}</h2>
+                <h2 className="disp m-0 text-[26px] leading-tight">
+                  {t.number != null && <span className="text-muted-foreground">#{t.number} </span>}
+                  {t.name}
+                </h2>
+                {t.isMaintenance && t.maintenanceNote && (
+                  <p className="m-0 text-sm font-bold text-[#9A4A12]">{t.maintenanceNote}</p>
+                )}
                 {t.description && (
                   <p className="m-0 text-sm text-muted-foreground">{t.description}</p>
                 )}
@@ -278,7 +406,9 @@ export default function AdminTerrains() {
                     {tx({ fr: "Horaires", en: "Hours", ar: "الساعات" })}
                   </dt>
                   <dd className="m-0 mt-1 font-bold" dir="ltr">
-                    {t.openingTime}–{t.closingTime}
+                    {t.openingTime && t.closingTime
+                      ? `${t.openingTime}–${t.closingTime}`
+                      : clubHours}
                   </dd>
                 </div>
                 <div className="rounded-2xl bg-mist p-3">
@@ -286,18 +416,23 @@ export default function AdminTerrains() {
                     <Users className="size-3" />
                     {tx({ fr: "Joueurs", en: "Players", ar: "لاعبون" })}
                   </dt>
-                  <dd className="m-0 mt-1 font-bold">{t.capacity}</dd>
+                  <dd className="m-0 mt-1 font-bold">{rules.maxPlayers}</dd>
                 </div>
                 <div className="rounded-2xl bg-mist p-3">
                   <dt className="text-xs text-muted-foreground">
                     {tx({ fr: "Prix / joueur", en: "Per player", ar: "للاعب" })}
                   </dt>
                   <dd className="m-0 mt-1 font-bold">
-                    {t.pricePerPerson} {CLUB.currency}
+                    {t.pricePerPerson ?? rules.playerPrice} {rules.currency}
+                    {t.pricePerPerson == null && (
+                      <span className="block text-[11px] font-normal text-muted-foreground">
+                        {tx({ fr: "prix du club", en: "club price", ar: "سعر النادي" })}
+                      </span>
+                    )}
                   </dd>
                 </div>
               </dl>
-              <div className="mt-auto flex items-center justify-between gap-2 border-t border-[#E4E8F7] pt-4">
+              <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-[#E4E8F7] pt-4">
                 <label className="flex cursor-pointer items-center gap-2.5 text-sm font-bold">
                   <Switch
                     checked={t.isActive}
@@ -310,6 +445,24 @@ export default function AdminTerrains() {
                   <Button
                     variant="ghost"
                     size="icon-sm"
+                    disabled={index === 0 || reorderMutation.isPending}
+                    onClick={() => move(t, -1)}
+                    aria-label={tx({ fr: "Monter", en: "Move up", ar: "تحريك لأعلى" })}
+                  >
+                    <ArrowUp />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={index === terrains.length - 1 || reorderMutation.isPending}
+                    onClick={() => move(t, 1)}
+                    aria-label={tx({ fr: "Descendre", en: "Move down", ar: "تحريك لأسفل" })}
+                  >
+                    <ArrowDown />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
                     data-testid={`btn-edit-terrain-${t.id}`}
                     onClick={() => openEdit(t)}
                     aria-label={tx({
@@ -319,6 +472,19 @@ export default function AdminTerrains() {
                     })}
                   >
                     <Pencil />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    data-testid={`btn-archive-terrain-${t.id}`}
+                    onClick={() => handleArchive(t, true)}
+                    aria-label={tx({
+                      fr: `Archiver ${t.name}`,
+                      en: `Archive ${t.name}`,
+                      ar: `أرشفة ${t.name}`,
+                    })}
+                  >
+                    <Archive />
                   </Button>
                   <Button
                     variant="ghost"
@@ -341,8 +507,57 @@ export default function AdminTerrains() {
         </div>
       )}
 
+      <section className="mt-8 flex flex-col gap-3">
+        <button
+          type="button"
+          className="self-start text-sm font-bold text-court underline-offset-4 hover:underline"
+          onClick={() => setShowArchived((v) => !v)}
+          aria-expanded={showArchived}
+        >
+          {showArchived
+            ? tx({
+                fr: "Masquer les terrains archivés",
+                en: "Hide archived courts",
+                ar: "إخفاء الملاعب المؤرشفة",
+              })
+            : tx({
+                fr: "Voir les terrains archivés",
+                en: "Show archived courts",
+                ar: "عرض الملاعب المؤرشفة",
+              })}
+        </button>
+        {showArchived &&
+          (archived?.length ? (
+            <ul className="m-0 flex list-none flex-col gap-2 p-0">
+              {archived.map((t) => (
+                <li
+                  key={t.id}
+                  className="flex items-center justify-between gap-3 rounded-2xl bg-card p-3 shadow-sm"
+                >
+                  <span className="font-bold">
+                    {t.number != null && `#${t.number} `}
+                    {t.name}
+                  </span>
+                  <Button variant="outline" size="sm" onClick={() => handleArchive(t, false)}>
+                    <ArchiveRestore />
+                    {tx({ fr: "Restaurer", en: "Restore", ar: "استعادة" })}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="m-0 text-sm text-muted-foreground">
+              {tx({
+                fr: "Aucun terrain archivé.",
+                en: "No archived court.",
+                ar: "لا توجد ملاعب مؤرشفة.",
+              })}
+            </p>
+          ))}
+      </section>
+
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent className="max-w-[560px]">
+        <DialogContent className="max-h-[92vh] max-w-[560px] overflow-y-auto">
           <DialogHeader className="text-start">
             <DialogTitle>
               {editing === "new"
@@ -351,15 +566,29 @@ export default function AdminTerrains() {
             </DialogTitle>
           </DialogHeader>
           <form className="flex flex-col gap-4" onSubmit={handleSave}>
-            <Field label={tx({ fr: "Nom", en: "Name", ar: "الاسم" })} htmlFor="t-name" required>
-              <Input
-                id="t-name"
-                data-testid="input-terrain-name"
-                value={form.name}
-                onChange={(e) => set("name", e.target.value)}
-                placeholder="Court Central"
-              />
-            </Field>
+            <div className="grid grid-cols-[1fr_110px] gap-4">
+              <Field label={tx({ fr: "Nom", en: "Name", ar: "الاسم" })} htmlFor="t-name" required>
+                <Input
+                  id="t-name"
+                  data-testid="input-terrain-name"
+                  value={form.name}
+                  maxLength={60}
+                  onChange={(e) => set("name", e.target.value)}
+                  placeholder="Court Central"
+                />
+              </Field>
+              <Field label={tx({ fr: "Numéro", en: "Number", ar: "الرقم" })} htmlFor="t-number">
+                <Input
+                  id="t-number"
+                  type="number"
+                  min={1}
+                  max={999}
+                  inputMode="numeric"
+                  value={form.number}
+                  onChange={(e) => set("number", e.target.value)}
+                />
+              </Field>
+            </div>
             <Field
               label={tx({ fr: "Description", en: "Description", ar: "الوصف" })}
               htmlFor="t-desc"
@@ -367,6 +596,7 @@ export default function AdminTerrains() {
               <Textarea
                 id="t-desc"
                 rows={2}
+                maxLength={1000}
                 value={form.description}
                 onChange={(e) => set("description", e.target.value)}
                 placeholder={tx({
@@ -387,53 +617,112 @@ export default function AdminTerrains() {
                 ]}
               />
             </Field>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label={tx({ fr: "Ouverture", en: "Opens", ar: "يفتح" })} htmlFor="t-open">
-                <Input
-                  id="t-open"
-                  type="time"
-                  value={form.openingTime}
-                  onChange={(e) => set("openingTime", e.target.value)}
-                />
-              </Field>
-              <Field label={tx({ fr: "Fermeture", en: "Closes", ar: "يغلق" })} htmlFor="t-close">
-                <Input
-                  id="t-close"
-                  type="time"
-                  value={form.closingTime}
-                  onChange={(e) => set("closingTime", e.target.value)}
-                />
-              </Field>
+            <Field
+              label={tx({
+                fr: "Photo (adresse https://)",
+                en: "Photo (https:// address)",
+                ar: "صورة (رابط https://)",
+              })}
+              htmlFor="t-photo"
+              hint={tx({
+                fr: "Optionnel. Ex : /terrain-indoor.webp ou https://…/court.jpg",
+                en: "Optional. e.g. /terrain-indoor.webp or https://…/court.jpg",
+                ar: "اختياري",
+              })}
+            >
+              <Input
+                id="t-photo"
+                value={form.photo}
+                maxLength={500}
+                onChange={(e) => set("photo", e.target.value)}
+              />
+            </Field>
+            <Field
+              label={tx({
+                fr: `Prix par joueur (${rules.currency})`,
+                en: `Price per player (${rules.currency})`,
+                ar: `السعر للاعب (${rules.currency})`,
+              })}
+              htmlFor="t-price"
+              hint={tx({
+                fr: `Vide = prix du club (${rules.playerPrice} ${rules.currency}). Les règles heures pleines/creuses restent prioritaires.`,
+                en: `Empty = club price (${rules.playerPrice} ${rules.currency}). Peak/off-peak rules still win.`,
+                ar: `فارغ = سعر النادي (${rules.playerPrice} ${rules.currency})`,
+              })}
+            >
+              <Input
+                id="t-price"
+                type="number"
+                min={0}
+                step="0.5"
+                inputMode="decimal"
+                placeholder={String(rules.playerPrice)}
+                value={form.pricePerPerson}
+                onChange={(e) => set("pricePerPerson", e.target.value)}
+              />
+            </Field>
+            <label className="flex cursor-pointer items-center gap-2.5 text-sm font-bold">
+              <Switch checked={form.customHours} onCheckedChange={(v) => set("customHours", v)} />
+              {tx({
+                fr: `Horaires propres à ce terrain (sinon : horaires du club ${clubHours})`,
+                en: `Own hours for this court (otherwise club hours ${clubHours})`,
+                ar: `ساعات خاصة بهذا الملعب`,
+              })}
+            </label>
+            {form.customHours && (
+              <div className="grid grid-cols-2 gap-4">
+                <Field label={tx({ fr: "Ouverture", en: "Opens", ar: "يفتح" })} htmlFor="t-open">
+                  <Input
+                    id="t-open"
+                    type="time"
+                    value={form.openingTime}
+                    onChange={(e) => set("openingTime", e.target.value)}
+                  />
+                </Field>
+                <Field label={tx({ fr: "Fermeture", en: "Closes", ar: "يغلق" })} htmlFor="t-close">
+                  <Input
+                    id="t-close"
+                    type="time"
+                    value={form.closingTime}
+                    onChange={(e) => set("closingTime", e.target.value)}
+                  />
+                </Field>
+              </div>
+            )}
+            <label className="flex cursor-pointer items-center gap-2.5 text-sm font-bold">
+              <Switch
+                checked={form.isMaintenance}
+                onCheckedChange={(v) => set("isMaintenance", v)}
+                data-testid="switch-maintenance"
+              />
+              {tx({
+                fr: "En maintenance (non réservable)",
+                en: "Under maintenance (not bookable)",
+                ar: "تحت الصيانة",
+              })}
+            </label>
+            {form.isMaintenance && (
               <Field
                 label={tx({
-                  fr: `Prix par joueur (${CLUB.currency})`,
-                  en: `Price per player (${CLUB.currency})`,
-                  ar: `السعر للاعب (${CLUB.currency})`,
+                  fr: "Message aux joueurs",
+                  en: "Note for players",
+                  ar: "رسالة للاعبين",
                 })}
-                htmlFor="t-price"
+                htmlFor="t-mnote"
               >
                 <Input
-                  id="t-price"
-                  type="number"
-                  min={0}
-                  step="0.5"
-                  inputMode="decimal"
-                  value={form.pricePerPerson}
-                  onChange={(e) => set("pricePerPerson", e.target.value)}
+                  id="t-mnote"
+                  maxLength={200}
+                  value={form.maintenanceNote}
+                  onChange={(e) => set("maintenanceNote", e.target.value)}
+                  placeholder={tx({
+                    fr: "Ex : nouveau gazon, retour lundi",
+                    en: "e.g. new turf, back on Monday",
+                    ar: "مثال: عشب جديد",
+                  })}
                 />
               </Field>
-              <Field label={tx({ fr: "Joueurs", en: "Players", ar: "اللاعبون" })} htmlFor="t-cap">
-                <Input
-                  id="t-cap"
-                  type="number"
-                  min={2}
-                  max={4}
-                  inputMode="numeric"
-                  value={form.capacity}
-                  onChange={(e) => set("capacity", e.target.value)}
-                />
-              </Field>
-            </div>
+            )}
             <Button data-testid="btn-save-terrain" type="submit" size="lg" disabled={saving}>
               {saving
                 ? tx({ fr: "Enregistrement…", en: "Saving…", ar: "جارٍ الحفظ…" })

@@ -16,6 +16,7 @@ import { useTx, useDateLocale } from "@/lib/i18n";
 import { CLUB, PHOTOS } from "@/config/club";
 import { cn } from "@/lib/utils";
 import { clubTime } from "@/lib/club-time";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 const signInTo = (path: string) => `/sign-in?redirect=${encodeURIComponent(path)}`;
 
@@ -29,6 +30,7 @@ function Counter({ value, label }: { value: number; label: string }) {
 }
 
 export default function Home() {
+  const rules = useClubRules();
   const tx = useTx();
   const locale = useDateLocale();
   const tonight = useTonight();
@@ -43,8 +45,7 @@ export default function Home() {
   const active = (terrains ?? []).filter((t) => t.isActive !== false);
   const indoor = active.filter((t) => t.type === "indoor").length;
   const outdoor = active.filter((t) => t.type === "outdoor").length;
-  const prices = active.map((t) => t.pricePerPerson).filter((p) => p > 0);
-  const tokenPrice = prices.length ? Math.min(...prices) : null;
+  const tokenPrice = rules.tokenUnitPrice || null;
   const upcomingTournaments = (tournaments ?? [])
     .filter((t) => t.status === "open" || t.status === "upcoming")
     .slice(0, 3);
@@ -255,7 +256,9 @@ export default function Home() {
                     <span className="text-lg font-extrabold">
                       {tx({ fr: "Ce soir", en: "Tonight", ar: "الليلة" })}
                     </span>
-                    <span className="label text-muted-foreground">{CLUB.slotMinutes} min</span>
+                    <span className="label text-muted-foreground">
+                      {rules.bookingDurationMinutes} min
+                    </span>
                   </div>
                   <div className="grid grid-cols-4 gap-2.5" dir="ltr">
                     {["17:00", "18:30", "20:00", "21:30"].map((t) => (
@@ -623,13 +626,17 @@ export default function Home() {
             <span className="label">
               {tx({ fr: "Nous trouver", en: "Visit us", ar: "زورونا" })}
             </span>
-            <address className="flex flex-col gap-1 text-[17px] font-semibold not-italic">
-              <span>{CLUB.address}</span>
-              <span>{CLUB.postal}</span>
-            </address>
+            {CLUB.fullAddress && (
+              <address className="flex flex-col gap-1 text-[17px] font-semibold not-italic">
+                {CLUB.address && <span>{CLUB.address}</span>}
+                {CLUB.postal && <span>{CLUB.postal}</span>}
+              </address>
+            )}
             <span className="text-[15px]">
-              {tx({ fr: "Tous les jours", en: "Every day", ar: "كل يوم" })}{" "}
-              <span dir="ltr">{CLUB.hours}</span>
+              {rules.openEveryDay
+                ? tx({ fr: "Tous les jours", en: "Every day", ar: "كل يوم" })
+                : tx({ fr: "Horaires", en: "Hours", ar: "الساعات" })}{" "}
+              <span dir="ltr">{rules.hoursLabel}</span>
             </span>
             <Button asChild variant="dark" size="sm" className="self-start">
               <Link href="/contact">
@@ -658,15 +665,15 @@ export default function Home() {
             className="m-0 max-w-[640px] text-lg text-muted-foreground lg:text-xl"
           >
             {tx({
-              fr: `Chaque joueur paie sa place pour ${CLUB.slotMinutes} minutes.`,
-              en: `Each player pays their own spot for ${CLUB.slotMinutes} minutes.`,
-              ar: `كل لاعب يدفع مكانه لمدة ${CLUB.slotMinutes} دقيقة.`,
+              fr: `Chaque joueur paie sa place pour ${rules.bookingDurationMinutes} minutes.`,
+              en: `Each player pays their own spot for ${rules.bookingDurationMinutes} minutes.`,
+              ar: `كل لاعب يدفع مكانه لمدة ${rules.bookingDurationMinutes} دقيقة.`,
             })}
             {tokenPrice
               ? tx({
-                  fr: ` Un token coûte ${tokenPrice} ${CLUB.currency}.`,
-                  en: ` One token costs ${tokenPrice} ${CLUB.currency}.`,
-                  ar: ` الرصيد الواحد ${tokenPrice} ${CLUB.currency}.`,
+                  fr: ` Un token coûte ${tokenPrice} ${rules.currency}.`,
+                  en: ` One token costs ${tokenPrice} ${rules.currency}.`,
+                  ar: ` الرصيد الواحد ${tokenPrice} ${rules.currency}.`,
                 })
               : ""}
           </p>
@@ -676,7 +683,7 @@ export default function Home() {
             {
               dark: false,
               label: tx({ fr: "Ma place", en: "Your spot", ar: "مكانك" }),
-              n: CLUB.tokensOwnSpot,
+              n: rules.tokenCostPlayer,
               sub: tx({
                 fr: "Rejoignez un open match ou ouvrez le vôtre",
                 en: "Join an open match or open your own",
@@ -692,7 +699,7 @@ export default function Home() {
             {
               dark: true,
               label: tx({ fr: "Terrain complet", en: "Full court", ar: "ملعب كامل" }),
-              n: CLUB.tokensFullCourt,
+              n: rules.tokenCostFullCourt,
               sub: tx({
                 fr: "Les 4 places, pour jouer entre amis",
                 en: "All 4 spots, for playing with friends",
@@ -732,7 +739,7 @@ export default function Home() {
                 <span
                   className={cn("text-[15px]", p.dark ? "text-muted-d" : "text-muted-foreground")}
                 >
-                  ≈ {p.n * tokenPrice} {CLUB.currency}
+                  ≈ {p.n * tokenPrice} {rules.currency}
                 </span>
               )}
               <Button asChild variant={p.dark ? "lime" : "outline"} size="lg" className="mt-auto">

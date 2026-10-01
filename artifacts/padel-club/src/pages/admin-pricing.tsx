@@ -33,8 +33,8 @@ import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
 import { Field, Pill, Segmented, useConfirm } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
 import { useTx, useDateLocale } from "@/lib/i18n";
-import { CLUB } from "@/config/club";
 import { cn } from "@/lib/utils";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 type Form = {
   name: string;
@@ -59,7 +59,19 @@ const blank: Form = {
   isActive: true,
 };
 const ORDER = [1, 2, 3, 4, 5, 6, 0]; // Monday first
-const HOURS = Array.from({ length: 16 }, (_, i) => i + 8); // 08:00 → 23:00
+/** Hour rows of the preview grid: from the earliest opening to the latest closing. */
+function clubHours(days: { isClosed: boolean; openTime: string; closeTime: string }[]) {
+  const open = days.filter((d) => !d.isClosed);
+  const first = open.length ? Math.min(...open.map((d) => Number(d.openTime.slice(0, 2)))) : 8;
+  const last = open.length
+    ? Math.max(
+        ...open.map((d) =>
+          Math.ceil((Number(d.closeTime.slice(0, 2)) * 60 + Number(d.closeTime.slice(3))) / 60),
+        ),
+      )
+    : 24;
+  return Array.from({ length: Math.max(1, last - first) }, (_, i) => i + first);
+}
 
 /** Same resolution as the server (lib/pricing.ts): highest priority, court-specific first, newest first. */
 function resolve(rules: PricingRule[], day: number, time: string, terrainId: number | null) {
@@ -82,6 +94,8 @@ function resolve(rules: PricingRule[], day: number, time: string, terrainId: num
 
 export default function AdminPricing() {
   const tx = useTx();
+  const club = useClubRules();
+  const HOURS = useMemo(() => clubHours(club.openingHours), [club.openingHours]);
   const locale = useDateLocale();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -204,10 +218,10 @@ export default function AdminPricing() {
             time,
             previewCourt === "all" ? null : Number(previewCourt),
           );
-          return { r, tokens: r?.tokensPerSpot ?? 1 };
+          return { r, tokens: r?.tokensPerSpot ?? club.tokenCostPlayer };
         }),
       ),
-    [rules, previewCourt],
+    [rules, previewCourt, HOURS, club.tokenCostPlayer],
   );
   const tone = (t: number, peak?: boolean) =>
     t >= 3
@@ -397,7 +411,7 @@ export default function AdminPricing() {
                 </Pill>
                 {r.pricePerPerson != null && (
                   <Pill tone="muted">
-                    {r.pricePerPerson} {CLUB.currency}
+                    {r.pricePerPerson} {club.currency}
                   </Pill>
                 )}
                 {!r.isActive && (
@@ -500,9 +514,9 @@ export default function AdminPricing() {
             <Field
               label={tx({ fr: "Tokens par place", en: "Tokens per spot", ar: "الرصيد لكل مكان" })}
               hint={tx({
-                fr: `Terrain complet = ${form.tokensPerSpot * 4} tokens`,
-                en: `Full court = ${form.tokensPerSpot * 4} tokens`,
-                ar: `الملعب الكامل = ${form.tokensPerSpot * 4}`,
+                fr: `Terrain complet = ${form.tokensPerSpot * club.maxPlayers} tokens`,
+                en: `Full court = ${form.tokensPerSpot * club.maxPlayers} tokens`,
+                ar: `الملعب الكامل = ${form.tokensPerSpot * club.maxPlayers}`,
               })}
             >
               <Segmented
@@ -532,9 +546,9 @@ export default function AdminPricing() {
               </Field>
               <Field
                 label={tx({
-                  fr: `Prix affiché (${CLUB.currency})`,
-                  en: `Displayed price (${CLUB.currency})`,
-                  ar: `السعر المعروض (${CLUB.currency})`,
+                  fr: `Prix affiché (${club.currency})`,
+                  en: `Displayed price (${club.currency})`,
+                  ar: `السعر المعروض (${club.currency})`,
                 })}
                 htmlFor="pr-price"
                 hint={tx({

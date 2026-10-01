@@ -15,8 +15,10 @@ import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
 import { useI18n, useTx, useDateLocale } from "@/lib/i18n";
 import { CLUB } from "@/config/club";
 import { cn } from "@/lib/utils";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 export default function Wallet() {
+  const rules = useClubRules();
   const tx = useTx();
   const { t } = useI18n();
   const locale = useDateLocale();
@@ -57,9 +59,9 @@ export default function Wallet() {
           <div className="relative flex flex-wrap gap-2">
             <span className="rounded-full bg-white/10 px-4 py-2 text-sm font-bold">
               {tx({
-                fr: `${Math.floor(bal / CLUB.tokensFullCourt)} terrain(s) complet(s)`,
-                en: `${Math.floor(bal / CLUB.tokensFullCourt)} full court(s)`,
-                ar: `${Math.floor(bal / CLUB.tokensFullCourt)} ملعب كامل`,
+                fr: `${Math.floor(bal / rules.tokenCostFullCourt)} terrain(s) complet(s)`,
+                en: `${Math.floor(bal / rules.tokenCostFullCourt)} full court(s)`,
+                ar: `${Math.floor(bal / rules.tokenCostFullCourt)} ملعب كامل`,
               })}
             </span>
             <span className="rounded-full bg-white/10 px-4 py-2 text-sm font-bold">

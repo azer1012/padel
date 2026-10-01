@@ -3,6 +3,8 @@ import { format } from "date-fns";
 import {
   useGetInvite,
   useAcceptInvite,
+  useDeclineInvite,
+  settingsKeys,
   getCalendarQueryKey,
   getListUpcomingReservationsQueryKey,
   getGetTokenBalanceQueryKey,
@@ -18,6 +20,7 @@ import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { useTx, useDateLocale } from "@/lib/i18n";
 import { clubTime } from "@/lib/club-time";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 export default function JoinInvite() {
   const tx = useTx();
@@ -33,6 +36,25 @@ export default function JoinInvite() {
     error,
   } = useGetInvite(token ?? "", { query: { enabled: !!token } as any });
   const acceptInvite = useAcceptInvite();
+  const declineInvite = useDeclineInvite();
+  const rules = useClubRules();
+  const handleDecline = () =>
+    token &&
+    declineInvite.mutate(token, {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: settingsKeys.myInvites });
+        toast({
+          title: tx({ fr: "Invitation refusée", en: "Invitation declined", ar: "تم رفض الدعوة" }),
+        });
+        setLocation("/dashboard");
+      },
+      onError: (e) =>
+        toast({
+          title: tx({ fr: "Action impossible", en: "Couldn't decline", ar: "تعذر الرفض" }),
+          description: apiErrorMessage(e, ""),
+          variant: "destructive",
+        }),
+    });
 
   const handleAccept = (paymentMethod: "token" | "cash_club" = "token") => {
     if (!isSignedIn) {
@@ -214,6 +236,16 @@ export default function JoinInvite() {
                     ar: "سجّل الدخول وانضم",
                   })}
           </Button>
+          {isSignedIn && inviteData?.invite.personal && (
+            <Button
+              variant="ghost"
+              size="lg"
+              onClick={handleDecline}
+              disabled={declineInvite.isPending}
+            >
+              {tx({ fr: "Refuser l'invitation", en: "Decline the invitation", ar: "رفض الدعوة" })}
+            </Button>
+          )}
         </>
       ) : isSignedIn ? (
         <div className="flex flex-col gap-2.5">
@@ -232,19 +264,31 @@ export default function JoinInvite() {
                   ar: `انضم · ${reservation.tokensPerSpot} رصيد`,
                 })}
           </Button>
-          <Button
-            variant="outline-dark"
-            size="lg"
-            onClick={() => handleAccept("cash_club")}
-            disabled={acceptInvite.isPending || reservation.openSpots === 0}
-          >
-            <Banknote />
-            {tx({
-              fr: `Réserver et payer au club (${reservation.pricePerPerson} TND)`,
-              en: `Hold my spot, pay at the club (${reservation.pricePerPerson} TND)`,
-              ar: `احجز وادفع في النادي (${reservation.pricePerPerson} د.ت)`,
-            })}
-          </Button>
+          {rules.cashPaymentEnabled && (
+            <Button
+              variant="outline-dark"
+              size="lg"
+              onClick={() => handleAccept("cash_club")}
+              disabled={acceptInvite.isPending || reservation.openSpots === 0}
+            >
+              <Banknote />
+              {tx({
+                fr: `Réserver et payer au club (${reservation.pricePerPerson} ${rules.currency})`,
+                en: `Hold my spot, pay at the club (${reservation.pricePerPerson} ${rules.currency})`,
+                ar: `احجز وادفع في النادي (${reservation.pricePerPerson} ${rules.currency})`,
+              })}
+            </Button>
+          )}
+          {inviteData?.invite.personal && (
+            <Button
+              variant="ghost"
+              size="lg"
+              onClick={handleDecline}
+              disabled={declineInvite.isPending}
+            >
+              {tx({ fr: "Refuser l'invitation", en: "Decline the invitation", ar: "رفض الدعوة" })}
+            </Button>
+          )}
         </div>
       ) : (
         <Button

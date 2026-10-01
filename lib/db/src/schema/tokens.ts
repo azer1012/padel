@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, timestamp, text, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, timestamp, text, pgEnum, numeric } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
@@ -22,6 +22,10 @@ export const tokenTransactionsTable = pgTable("token_transactions", {
   expiresAt: timestamp("expires_at"),
   /** Client-generated key: the same admin action can never be recorded twice. */
   idempotencyKey: text("idempotency_key"),
+  /** Cash received at the desk for this credit (accounting). */
+  cashAmount: numeric("cash_amount", { precision: 10, scale: 2, mode: "number" }),
+  /** Package sold, when the credit is a pack (FK to token_packages, set null on delete). */
+  packageId: integer("package_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

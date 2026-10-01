@@ -36,6 +36,7 @@ import {
   Repeat,
   Tags,
   Package,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -46,6 +47,7 @@ import { useI18n, useTx, useDateLocale, type Lang } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { useRevealFallback } from "@/hooks/use-reveal";
 import { CLUB } from "@/config/club";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 const LANGS: { value: Lang; label: string; short: string }[] = [
   { value: "fr", label: "Français", short: "FR" },
@@ -117,12 +119,17 @@ function PublicShell({ children }: { children: ReactNode }) {
     };
   }, [open]);
 
+  const { openMatchesEnabled } = useClubRules();
   const links = [
     { href: "/terrains", label: tx({ fr: "Réserver", en: "Book a court", ar: "احجز ملعبًا" }) },
-    {
-      href: "/open-matches",
-      label: tx({ fr: "Open matches", en: "Open matches", ar: "مباريات مفتوحة" }),
-    },
+    ...(openMatchesEnabled
+      ? [
+          {
+            href: "/open-matches",
+            label: tx({ fr: "Open matches", en: "Open matches", ar: "مباريات مفتوحة" }),
+          },
+        ]
+      : []),
     { href: "/tournaments", label: t("tournaments") },
     { href: "/news", label: t("news") },
     { href: "/contact", label: t("contact") },
@@ -215,6 +222,7 @@ function PublicShell({ children }: { children: ReactNode }) {
 }
 
 export function SiteFooter() {
+  const rules = useClubRules();
   const tx = useTx();
   const { t } = useI18n();
   return (
@@ -249,9 +257,11 @@ export function SiteFooter() {
             <Link href="/terrains" className="ulink self-start">
               {t("bookCourt")}
             </Link>
-            <Link href="/open-matches" className="ulink self-start">
-              Open matches
-            </Link>
+            {rules.openMatchesEnabled && (
+              <Link href="/open-matches" className="ulink self-start">
+                Open matches
+              </Link>
+            )}
             <Link href="/tournaments" className="ulink self-start">
               {t("tournaments")}
             </Link>
@@ -268,12 +278,17 @@ export function SiteFooter() {
             </span>
             <span className="flex items-center gap-2">
               <Clock className="size-4 text-ball" />
-              {tx({ fr: "Tous les jours", en: "Every day", ar: "كل يوم" })}, {CLUB.hours}
+              {rules.openEveryDay
+                ? tx({ fr: "Tous les jours", en: "Every day", ar: "كل يوم" })
+                : tx({ fr: "Horaires", en: "Hours", ar: "الساعات" })}
+              , {rules.hoursLabel}
             </span>
-            <span className="flex items-center gap-2">
-              <MapPin className="size-4 text-ball" />
-              {CLUB.address}, {CLUB.postal}
-            </span>
+            {CLUB.fullAddress && (
+              <span className="flex items-center gap-2">
+                <MapPin className="size-4 text-ball" />
+                {CLUB.fullAddress}
+              </span>
+            )}
           </div>
           <div className="flex flex-col gap-3 text-[15px] text-soft-d lg:col-span-3">
             <span className="label text-[#8A93C4]">{t("contact")}</span>
@@ -470,6 +485,7 @@ function AppShell({ children }: { children: ReactNode }) {
   const { signOut } = useAuth();
   const { t } = useI18n();
   const tx = useTx();
+  const rules = useClubRules();
   const [location] = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   useEffect(() => setMoreOpen(false), [location]);
@@ -484,11 +500,15 @@ function AppShell({ children }: { children: ReactNode }) {
       label: tx({ fr: "Réserver", en: "Book", ar: "احجز" }),
       icon: CalendarPlus,
     },
-    {
-      href: "/open-matches",
-      label: tx({ fr: "Open matches", en: "Open matches", ar: "مباريات مفتوحة" }),
-      icon: Swords,
-    },
+    ...(rules.openMatchesEnabled
+      ? [
+          {
+            href: "/open-matches",
+            label: tx({ fr: "Open matches", en: "Open matches", ar: "مباريات مفتوحة" }),
+            icon: Swords,
+          },
+        ]
+      : []),
     { href: "/reservations", label: t("reservations"), icon: CalendarDays },
     { href: "/wallet", label: t("wallet"), icon: Wallet },
     { href: "/tournaments", label: t("tournaments"), icon: Trophy },
@@ -517,6 +537,11 @@ function AppShell({ children }: { children: ReactNode }) {
     },
     { href: "/admin/news", label: t("news"), icon: Newspaper },
     { href: "/admin/tournaments", label: t("tournaments"), icon: Trophy },
+    {
+      href: "/admin/settings",
+      label: tx({ fr: "Réglages", en: "Settings", ar: "الإعدادات" }),
+      icon: Settings,
+    },
   ];
   const items = isAdmin && isAdminRoute ? admin : player;
   const isActive = (i: NavItem) =>

@@ -6,6 +6,17 @@ import { render, type NotificationEvent } from "./templates";
 import { sendEmail } from "./mailer";
 import { sendPush } from "./push";
 import type { Lang } from "../club-time";
+import { getSettings, type ClubSettings } from "../settings";
+
+/** Which club setting switches each kind of notification on or off. */
+const SWITCH: Partial<Record<NotificationEvent["kind"], keyof ClubSettings>> = {
+  booking_confirmed: "bookingConfirmationNotificationsEnabled",
+  booking_cancelled: "cancellationNotificationsEnabled",
+  reservation_reminder: "remindersEnabled",
+  invitation: "invitationNotificationsEnabled",
+  tokens_added: "tokenNotificationsEnabled",
+  match_finished: "matchFinishedNotificationsEnabled",
+};
 
 type UserLike = typeof usersTable.$inferSelect;
 
@@ -26,6 +37,9 @@ export async function notify(
         ? (await db.select().from(usersTable).where(eq(usersTable.id, user)))[0]
         : user;
     if (!u) return false;
+    const settings = await getSettings();
+    const key = SWITCH[event.kind];
+    if (key && settings[key] === false) return false; // turned off in Réglages → Notifications
     const [claimed] = await db
       .insert(notificationLogTable)
       .values({ userId: u.id, kind: event.kind, ref })
@@ -34,7 +48,12 @@ export async function notify(
     if (!claimed) return false; // already sent
 
     const lang = (u.language ?? "fr") as Lang;
-    const msg = render(event, lang, env.frontendUrl ?? "http://localhost:5173");
+    const msg = render(event, lang, env.frontendUrl ?? "http://localhost:5173", {
+      currency: settings.currency,
+      durationMinutes: settings.bookingDurationMinutes,
+      tokenCostPlayer: settings.tokenCostPlayer,
+      tokenCostFullCourt: settings.tokenCostFullCourt,
+    });
     const channels: string[] = ["in_app"];
 
     await db.insert(notificationsTable).values({

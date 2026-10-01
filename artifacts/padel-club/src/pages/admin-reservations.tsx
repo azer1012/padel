@@ -8,6 +8,7 @@ import {
   useGetMe,
   getListReservationsQueryKey,
   getCalendarQueryKey,
+  useGetCalendar,
 } from "@workspace/api-client-react";
 import type { Reservation, User } from "@workspace/api-client-react";
 import { MemberPicker } from "@/components/smash/member-picker";
@@ -49,6 +50,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useTx, useDateLocale } from "@/lib/i18n";
 import { clubTime } from "@/lib/club-time";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 const PAGE = 20;
 type BookingType = "manual" | "phone" | "online";
@@ -64,15 +66,6 @@ const emptyBooking = {
   bookingType: "phone" as BookingType,
   notes: "",
 };
-
-/** Start times on a court's 90-minute grid ("08:00", "09:30", …). */
-function gridTimes(opening = "08:00", closing = "23:00") {
-  const m = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
-  const out: string[] = [];
-  for (let t = m(opening); t + 90 <= m(closing); t += 90)
-    out.push(`${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`);
-  return out;
-}
 
 export default function AdminReservations() {
   const tx = useTx();
@@ -94,6 +87,15 @@ export default function AdminReservations() {
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
   const [nb, setNb] = useState(emptyBooking);
+  const rules = useClubRules();
+  // Free slots of the chosen court and day, from the API (duration, hours, holidays, bookings)
+  const { data: dayCal, isFetching: loadingSlots } = useGetCalendar(
+    { date: nb.date, terrainIds: nb.terrainId },
+    { query: { enabled: createOpen && !!nb.date && !!nb.terrainId } as any },
+  );
+  const freeSlots = (dayCal?.terrains[0]?.slots ?? []).filter(
+    (s) => s.status === "available" && s.bookable !== false,
+  );
 
   const params: Record<string, any> = { page, limit: PAGE };
   if (date) params.date = date;
@@ -148,7 +150,8 @@ export default function AdminReservations() {
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    const startTime = nb.date && nb.time ? new Date(`${nb.date}T${nb.time}:00`).toISOString() : "";
+    // nb.time holds the slot's exact start instant from the calendar API
+    const startTime = nb.time;
     if (!nb.terrainId || !startTime) {
       toast({
         title: tx({
@@ -580,7 +583,7 @@ export default function AdminReservations() {
               <Field label={tx({ fr: "Terrain", en: "Court", ar: "الملعب" })} required>
                 <Select
                   value={nb.terrainId}
-                  onValueChange={(v) => setNb((b) => ({ ...b, terrainId: v }))}
+                  onValueChange={(v) => setNb((b) => ({ ...b, terrainId: v, time: "" }))}
                 >
                   <SelectTrigger data-testid="select-terrain">
                     <SelectValue placeholder={tx({ fr: "Choisir", en: "Choose", ar: "اختر" })} />
@@ -603,19 +606,29 @@ export default function AdminReservations() {
                   type="date"
                   min={format(new Date(), "yyyy-MM-dd")}
                   value={nb.date}
-                  onChange={(e) => setNb((b) => ({ ...b, date: e.target.value }))}
+                  onChange={(e) => setNb((b) => ({ ...b, date: e.target.value, time: "" }))}
                 />
               </Field>
             </div>
             <Field
-              label={tx({ fr: "Créneau (90 min)", en: "Slot (90 min)", ar: "الموعد (90 دقيقة)" })}
+              label={tx({
+                fr: `Créneau (${rules.bookingDurationMinutes} min)`,
+                en: `Slot (${rules.bookingDurationMinutes} min)`,
+                ar: `الموعد (${rules.bookingDurationMinutes} دقيقة)`,
+              })}
               required
             >
               <div className="flex flex-wrap gap-2" role="radiogroup" data-testid="slot-times">
-                {gridTimes(
-                  terrains?.find((t) => String(t.id) === nb.terrainId)?.openingTime,
-                  terrains?.find((t) => String(t.id) === nb.terrainId)?.closingTime,
-                ).map((t) => (
+                {!loadingSlots && nb.date && nb.terrainId && freeSlots.length === 0 && (
+                  <p className="m-0 text-sm text-muted-foreground">
+                    {tx({
+                      fr: "Aucun créneau libre ce jour-là sur ce terrain.",
+                      en: "No free slot that day on this court.",
+                      ar: "لا توجد مواعيد متاحة في هذا اليوم على هذا الملعب.",
+                    })}
+                  </p>
+                )}
+                {freeSlots.map(({ startTime: t }) => (
                   <button
                     key={t}
                     type="button"
@@ -625,7 +638,7 @@ export default function AdminReservations() {
                     className={`h-10 rounded-full border-2 px-3.5 text-sm font-bold ${nb.time === t ? "border-court bg-court text-white" : "border-[#E4E8F7] hover:border-[#C6CEF6]"}`}
                     dir="ltr"
                   >
-                    {t}
+                    {clubTime(t)}
                   </button>
                 ))}
               </div>

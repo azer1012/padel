@@ -171,3 +171,40 @@ do $$ begin
   assert not exists (select 1 from pg_trigger where tgname = 'on_auth_user_created'), 'legacy auth trigger remains';
   raise notice 'ok 9 - legacy schema removed';
 end $$;
+
+-- 10. Club settings: one row with sane defaults, bad values refused
+do $$ begin
+  assert (select count(*) from public.club_settings) = 1, 'club_settings must have exactly one row';
+  assert (select booking_duration_minutes || '|' || max_players || '|' || player_price || '|' || token_cost_full_court
+          from public.club_settings) = '90|4|25.00|4', 'unexpected default settings';
+  assert (select count(*) from public.opening_hours) = 7, 'opening hours not seeded';
+  assert (select count(*) from public.token_packages) = 3, 'token packages not seeded';
+  begin
+    insert into public.club_settings (id) values (2);
+    raise exception 'second settings row accepted';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.club_settings set booking_duration_minutes = 7;
+    raise exception 'invalid duration accepted';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.club_settings set min_players = 4, max_players = 2;
+    raise exception 'min_players > max_players accepted';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.opening_hours set open_time = '23:00', close_time = '08:00' where weekday = 1;
+    raise exception 'inverted opening hours accepted';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.schedule_exceptions (date, is_closed) values ('2030-12-25', true), ('2030-12-25', true);
+    raise exception 'duplicate club-wide exception accepted';
+  exception when unique_violation then null;
+  end;
+  assert (select price_per_person is null and opening_time is null from public.terrains where name = 'Court A'),
+    'courts should inherit club settings by default';
+  raise notice 'ok 10 - club settings single row, validated, courts inherit';
+end $$;

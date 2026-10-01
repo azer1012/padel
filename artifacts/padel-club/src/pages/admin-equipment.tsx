@@ -33,9 +33,9 @@ import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
 import { Field, Pill, Segmented, useConfirm, type Tone } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
 import { useTx, useDateLocale } from "@/lib/i18n";
-import { CLUB } from "@/config/club";
 import { cn } from "@/lib/utils";
 import { clubTime } from "@/lib/club-time";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 type Form = {
   name: string;
@@ -55,6 +55,7 @@ const blank: Form = {
 };
 
 export default function AdminEquipment() {
+  const rules = useClubRules();
   const tx = useTx();
   const locale = useDateLocale();
   const { toast } = useToast();
@@ -276,7 +277,7 @@ export default function AdminEquipment() {
                           )}
                         </span>
                         <span className="text-sm text-muted-foreground">
-                          {r.quantity * r.unitPrice} {CLUB.currency}
+                          {r.quantity * r.unitPrice} {rules.currency}
                         </span>
                         <Pill tone={statusMeta[r.status].tone}>{statusMeta[r.status].label}</Pill>
                         {r.status === "reserved" && (
@@ -367,7 +368,7 @@ export default function AdminEquipment() {
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="truncate text-[17px] font-extrabold">{i.name}</span>
                 <span className="text-sm text-muted-foreground">
-                  {i.price} {CLUB.currency} ·{" "}
+                  {i.price} {rules.currency} ·{" "}
                   {tx({ fr: `stock ${i.stock}`, en: `stock ${i.stock}`, ar: `المخزون ${i.stock}` })}
                   {!i.isActive && ` · ${tx({ fr: "archivé", en: "archived", ar: "مؤرشف" })}`}
                 </span>
@@ -432,9 +433,9 @@ export default function AdminEquipment() {
             <div className="grid grid-cols-2 gap-4">
               <Field
                 label={tx({
-                  fr: `Prix (${CLUB.currency})`,
-                  en: `Price (${CLUB.currency})`,
-                  ar: `السعر (${CLUB.currency})`,
+                  fr: `Prix (${rules.currency})`,
+                  en: `Price (${rules.currency})`,
+                  ar: `السعر (${rules.currency})`,
                 })}
                 htmlFor="eq-price"
               >
@@ -452,9 +453,9 @@ export default function AdminEquipment() {
                 label={tx({ fr: "Quantité en stock", en: "Units in stock", ar: "الكمية" })}
                 htmlFor="eq-stock"
                 hint={tx({
-                  fr: "Par créneau de 90 min",
-                  en: "Per 90-min slot",
-                  ar: "لكل موعد 90 دقيقة",
+                  fr: `Par créneau de ${rules.bookingDurationMinutes} min`,
+                  en: `Per ${rules.bookingDurationMinutes}-min slot`,
+                  ar: `لكل موعد ${rules.bookingDurationMinutes} دقيقة`,
                 })}
               >
                 <Input

@@ -11,10 +11,11 @@ import {
 } from "@workspace/db";
 import { and, desc, eq, gt, gte, inArray, lt } from "drizzle-orm";
 import { requireAdmin } from "../lib/auth";
-import { assertOnGrid } from "../lib/slots";
+import { assertBookable } from "../lib/slots";
+import { scheduleContext } from "../lib/settings";
+import { clubParts } from "../lib/club-time";
 
 const router = Router();
-const SLOT_MS = 90 * 60 * 1000;
 
 type SeriesInput = {
   terrainId: number;
@@ -50,7 +51,7 @@ function dates(s: SeriesInput) {
   });
 }
 
-async function conflicts(q: any, terrainId: number, starts: Date[]) {
+async function conflicts(q: any, terrainId: number, starts: Date[], SLOT_MS: number) {
   if (!starts.length) return new Map<number, string>();
   const first = starts[0],
     last = new Date(starts[starts.length - 1].getTime() + SLOT_MS);
@@ -84,8 +85,29 @@ async function conflicts(q: any, terrainId: number, starts: Date[]) {
 router.post("/admin/series/preview", requireAdmin, async (req, res) => {
   try {
     const s = parse(req.body);
-    const list = dates(s),
-      clash = await conflicts(db, s.terrainId, list);
+    const list = dates(s);
+    const ctx = await scheduleContext(
+      clubParts(list[0]).date,
+      clubParts(list[list.length - 1]).date,
+    );
+    const clash = await conflicts(
+      db,
+      s.terrainId,
+      list,
+      ctx.settings.bookingDurationMinutes * 60_000,
+    );
+    const [terrain] = await db
+      .select()
+      .from(terrainsTable)
+      .where(eq(terrainsTable.id, s.terrainId));
+    if (!terrain) throw Object.assign(new Error("Court not available"), { status: 400 });
+    list.forEach((d, i) => {
+      try {
+        assertBookable(ctx, terrain, d, { isAdmin: true });
+      } catch (e: any) {
+        if (!clash.has(i)) clash.set(i, e.message);
+      }
+    });
     res.json({
       dates: list.map((d, i) => ({
         startTime: d.toISOString(),
@@ -110,11 +132,23 @@ router.post("/admin/series", requireAdmin, async (req, res) => {
   }
   const { userId, guestName, guestPhone, label, notes, skipConflicts = true } = req.body;
   const [terrain] = await db.select().from(terrainsTable).where(eq(terrainsTable.id, s.terrainId));
-  if (!terrain || !terrain.isActive) {
-    res.status(400).json({ error: "Court not available" });
+  if (!terrain) {
+    res.status(400).json({ error: "Court not available", code: "COURT_UNAVAILABLE" });
     return;
   }
-  assertOnGrid(terrain, s.firstStart);
+  const list = dates(s);
+  const ctx = await scheduleContext(clubParts(list[0]).date, clubParts(list[list.length - 1]).date);
+  const SLOT_MS = ctx.settings.bookingDurationMinutes * 60_000;
+  // Every session must be a real slot (hours, holidays, maintenance), not just the first
+  const unbookable = new Map<number, string>();
+  list.forEach((d, i) => {
+    try {
+      assertBookable(ctx, terrain, d, { isAdmin: true });
+    } catch (e: any) {
+      if (i === 0) throw e;
+      unbookable.set(i, e.message);
+    }
+  });
   const member = userId
     ? (
         await db
@@ -140,8 +174,8 @@ router.post("/admin/series", requireAdmin, async (req, res) => {
         .from(terrainsTable)
         .where(eq(terrainsTable.id, terrain.id))
         .for("update");
-      const list = dates(s),
-        clash = await conflicts(tx, terrain.id, list);
+      const clash = await conflicts(tx, terrain.id, list, SLOT_MS);
+      for (const [i, why] of unbookable) clash.set(i, why);
       if (clash.size && !skipConflicts)
         throw Object.assign(new Error("CONFLICTS"), { count: clash.size });
       const [series] = await tx
@@ -179,7 +213,7 @@ router.post("/admin/series", requireAdmin, async (req, res) => {
             tokensCharged: 0,
             bookingType: "manual",
             bookingMode: "full_court",
-            totalSpots: 4,
+            totalSpots: ctx.settings.maxPlayers,
             isPublic: false,
             notes: [label, notes].filter(Boolean).join(" · ") || null,
             seriesId: series.id,

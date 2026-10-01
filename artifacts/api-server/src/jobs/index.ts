@@ -4,9 +4,9 @@ import { logger } from "../lib/logger";
 import { notify } from "../lib/notify";
 import { equipmentFor } from "../lib/equipment";
 import { formatClubDate, formatClubTime, type Lang } from "../lib/club-time";
+import { getSettings } from "../lib/settings";
 
 const MIN = 60 * 1000;
-export const REMINDER_LEAD_MIN = 120;
 
 /** Members playing in a reservation: creator plus everyone who joined and wasn't refunded. */
 async function playersOf(reservationIds: number[]) {
@@ -32,13 +32,16 @@ async function loadUsers(ids: number[]) {
   return new Map(users.map((u) => [u.id, u]));
 }
 
-/** ~2 h before: one reminder per player per match (email + push + in-app). */
+/** `reminder_lead_minutes` before (club setting): one reminder per player per match. */
 export async function sendReminders(now = new Date()) {
+  const settings = await getSettings();
+  if (!settings.remindersEnabled) return 0;
+  const lead = settings.reminderLeadMinutes;
   const due = await db.query.reservationsTable.findMany({
     where: and(
       eq(reservationsTable.status, "confirmed" as any),
-      gt(reservationsTable.startTime, new Date(now.getTime() + 15 * MIN)),
-      lte(reservationsTable.startTime, new Date(now.getTime() + REMINDER_LEAD_MIN * MIN)),
+      gt(reservationsTable.startTime, new Date(now.getTime() + 5 * MIN)),
+      lte(reservationsTable.startTime, new Date(now.getTime() + lead * MIN)),
     ),
     with: { terrain: true },
   });
@@ -74,6 +77,7 @@ export async function sendReminders(now = new Date()) {
 
 /** After the match: thank-you + "book the next one" (within 6 h of the end, once). */
 export async function sendMatchFinished(now = new Date()) {
+  if (!(await getSettings()).matchFinishedNotificationsEnabled) return 0;
   const done = await db.query.reservationsTable.findMany({
     where: and(
       eq(reservationsTable.status, "confirmed" as any),

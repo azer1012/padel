@@ -387,6 +387,45 @@ const pricingRules: any[] = [
 ];
 const hhmm = (d: Date) =>
   `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+/** Demo club settings (the real ones live in the database, Admin → Réglages). */
+const demoSettings = {
+  bookingDurationMinutes: 90,
+  minPlayers: 1,
+  maxPlayers: 4,
+  minAdvanceMinutes: 30,
+  maxAdvanceDays: 14,
+  cancellationNoticeHours: 0,
+  lateCancellation: "forbid",
+  currency: "TND",
+  playerPrice: 25,
+  fullCourtPrice: 100,
+  tokenCostPlayer: 1,
+  tokenCostFullCourt: 4,
+  tokenUnitPrice: 25,
+  tokenMinPurchase: 1,
+  openMatchesEnabled: true,
+  invitationsEnabled: true,
+  cashPaymentEnabled: true,
+  bookingConfirmationNotificationsEnabled: true,
+  remindersEnabled: true,
+  reminderLeadMinutes: 120,
+  cancellationNotificationsEnabled: true,
+  invitationNotificationsEnabled: true,
+  tokenNotificationsEnabled: true,
+  matchFinishedNotificationsEnabled: true,
+};
+const demoHours = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+  weekday,
+  isClosed: false,
+  openTime: "08:00",
+  closeTime: "23:00",
+}));
+const demoPacks = [
+  { id: 1, name: "Pack 10", tokens: 10, price: 250, isActive: true, sortOrder: 1 },
+  { id: 2, name: "Pack 20", tokens: 20, price: 480, isActive: true, sortOrder: 2 },
+  { id: 3, name: "Pack 50", tokens: 50, price: 1150, isActive: true, sortOrder: 3 },
+];
+
 function priceAt(terrainId: number, start: Date) {
   const time = hhmm(start),
     day = start.getDay();
@@ -405,9 +444,16 @@ function priceAt(terrainId: number, start: Date) {
         Number(b.terrainId != null) - Number(a.terrainId != null) ||
         b.id - a.id,
     )[0];
+  const per = m?.pricePerPerson ?? demoSettings.playerPrice;
   return {
-    tokensPerSpot: m?.tokensPerSpot ?? 1,
-    pricePerPerson: m?.pricePerPerson ?? 25,
+    tokensPerSpot: m?.tokensPerSpot ?? demoSettings.tokenCostPlayer,
+    tokensFullCourt: m
+      ? m.tokensPerSpot * demoSettings.maxPlayers
+      : demoSettings.tokenCostFullCourt,
+    pricePerPerson: per,
+    fullCourtPrice:
+      m?.pricePerPerson != null ? per * demoSettings.maxPlayers : demoSettings.fullCourtPrice,
+    bookable: true,
     isPeak: m?.isPeak ?? false,
     priceLabel: m?.name ?? null,
     ruleId: m?.id ?? null,
@@ -521,6 +567,72 @@ function charge(n: number, description: string, credit = false) {
 
 type Handler = (m: RegExpMatchArray, url: URL, body: any, method: string) => [number, any];
 const routes: [string, RegExp, Handler][] = [
+  [
+    "GET",
+    /^\/api\/settings$/,
+    () => [200, { ...demoSettings, openingHours: demoHours, tokenPackages: demoPacks }],
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/settings$/,
+    () => [
+      200,
+      {
+        ...demoSettings,
+        openingHours: demoHours,
+        updatedAt: new Date().toISOString(),
+        updatedBy: ME_ID,
+        upcomingBookings: 0,
+      },
+    ],
+  ],
+  [
+    "PATCH",
+    /^\/api\/admin\/settings$/,
+    (_m, _u, b) => {
+      Object.assign(demoSettings, b);
+      return [
+        200,
+        {
+          ...demoSettings,
+          openingHours: demoHours,
+          updatedAt: new Date().toISOString(),
+          updatedBy: ME_ID,
+          upcomingBookings: 0,
+        },
+      ];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/settings\/reset$/,
+    () => [
+      200,
+      {
+        ...demoSettings,
+        openingHours: demoHours,
+        updatedAt: new Date().toISOString(),
+        updatedBy: ME_ID,
+        upcomingBookings: 0,
+      },
+    ],
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/opening-hours$/,
+    (_m, _u, b) => {
+      demoHours.splice(0, 7, ...b.days);
+      return [200, demoHours];
+    },
+  ],
+  ["GET", /^\/api\/admin\/schedule-exceptions$/, () => [200, []]],
+  ["GET", /^\/api\/admin\/token-packages$/, () => [200, demoPacks]],
+  ["GET", /^\/api\/invites$/, () => [200, []]],
+  [
+    "GET",
+    /^\/api\/members\/search$/,
+    () => [200, users.slice(0, 3).map((u) => ({ id: u.id, name: u.firstName }))],
+  ],
   ["GET", /^\/api\/pricing\/rules$/, () => [200, pricingRules.filter((r) => r.isActive)]],
   [
     "GET",
@@ -530,7 +642,7 @@ const routes: [string, RegExp, Handler][] = [
         Number(u.searchParams.get("terrainId")),
         new Date(u.searchParams.get("startTime")!),
       );
-      return [200, { ...p, fullCourtTokens: p.tokensPerSpot * 4 }];
+      return [200, { ...p, fullCourtTokens: p.tokensFullCourt }];
     },
   ],
   ["GET", /^\/api\/admin\/pricing\/rules$/, () => [200, pricingRules]],

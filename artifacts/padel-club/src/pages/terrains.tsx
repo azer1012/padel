@@ -4,35 +4,36 @@ import CourtCalendar from "@/components/court-calendar";
 import { Page, PageHeader } from "@/components/smash/primitives";
 import { useAuth } from "@/lib/auth";
 import { useTx } from "@/lib/i18n";
-import { CLUB } from "@/config/club";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 export default function Terrains() {
   const { isSignedIn } = useAuth();
   const { data: me } = useGetMe({ query: { enabled: isSignedIn } as any });
   const tx = useTx();
-  const rules = [
+  const rules = useClubRules();
+  const facts = [
     {
       icon: Coins,
       text: tx({
-        fr: `Terrain complet : ${CLUB.tokensFullCourt} tokens`,
-        en: `Full court: ${CLUB.tokensFullCourt} tokens`,
-        ar: `ملعب كامل: ${CLUB.tokensFullCourt} رصيد`,
+        fr: `Terrain complet : ${rules.tokenCostFullCourt} tokens`,
+        en: `Full court: ${rules.tokenCostFullCourt} tokens`,
+        ar: `ملعب كامل: ${rules.tokenCostFullCourt} رصيد`,
       }),
     },
     {
       icon: Users,
       text: tx({
-        fr: `Votre place : ${CLUB.tokensOwnSpot} token`,
-        en: `Your spot: ${CLUB.tokensOwnSpot} token`,
-        ar: `مكانك: رصيد ${CLUB.tokensOwnSpot}`,
+        fr: `Votre place : ${rules.tokenCostPlayer} token`,
+        en: `Your spot: ${rules.tokenCostPlayer} token`,
+        ar: `مكانك: رصيد ${rules.tokenCostPlayer}`,
       }),
     },
     {
       icon: Timer,
       text: tx({
-        fr: `${CLUB.slotMinutes} minutes par match`,
-        en: `${CLUB.slotMinutes} minutes per match`,
-        ar: `${CLUB.slotMinutes} دقيقة للمباراة`,
+        fr: `${rules.bookingDurationMinutes} minutes par match`,
+        en: `${rules.bookingDurationMinutes} minutes per match`,
+        ar: `${rules.bookingDurationMinutes} دقيقة للمباراة`,
       }),
     },
   ];
@@ -53,7 +54,7 @@ export default function Terrains() {
       />
       {/* On phones the grid comes first: the booking dialog explains prices anyway */}
       <ul className="enter m-0 -mt-3 hidden list-none flex-wrap gap-2 p-0 sm:flex">
-        {rules.map((r) => (
+        {facts.map((r) => (
           <li
             key={r.text}
             className="flex h-10 items-center gap-2 rounded-full bg-card px-4 text-sm font-bold shadow-sm"

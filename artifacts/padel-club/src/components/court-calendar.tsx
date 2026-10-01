@@ -73,7 +73,7 @@ import { EquipmentPicker } from "@/components/smash/equipment-picker";
 import { PaymentBadge } from "@/components/smash/payment-badge";
 import { InvitePanel } from "@/components/smash/invite-panel";
 import { MemberPicker } from "@/components/smash/member-picker";
-import { CLUB } from "@/config/club";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 type Terrain = CalendarTerrain["terrain"];
 type Modal =
@@ -92,6 +92,8 @@ function slotState(slot: CalendarSlot): SlotState {
   if (slot.isMine) return "mine";
   if (slot.isBlocked) return "blocked";
   if (slot.isPast || slot.status === "past") return "past";
+  // Outside the club's booking window (too soon / too far ahead) or court in maintenance
+  if (slot.status === "available" && slot.bookable === false) return "blocked";
   if (slot.status === "available") return "available";
   if (slot.status === "full") return "full";
   return "partial";
@@ -171,6 +173,7 @@ function BookDialog({
   isAdmin: boolean;
   onClose: () => void;
 }) {
+  const rules = useClubRules();
   const tx = useTx();
   const { toast } = useToast();
   const refresh = useRefreshBookings();
@@ -190,9 +193,14 @@ function BookDialog({
   const [guestName, setGuestName] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
 
-  const perSpot = slot.tokensPerSpot ?? CLUB.tokensOwnSpot;
-  const cost = mode === "own_spot" ? perSpot : perSpot * 4;
-  const cash = (mode === "own_spot" ? 1 : 4) * (slot.pricePerPerson ?? terrain.pricePerPerson);
+  const perSpot = slot.tokensPerSpot ?? rules.tokenCostPlayer;
+  const spots = slot.totalSpots || rules.maxPlayers;
+  const fullCost = slot.tokensFullCourt ?? perSpot * spots;
+  const cost = mode === "own_spot" ? perSpot : fullCost;
+  const cash =
+    mode === "own_spot"
+      ? (slot.pricePerPerson ?? rules.playerPrice)
+      : (slot.fullCourtPrice ?? spots * (slot.pricePerPerson ?? rules.playerPrice));
   const payer = isAdmin ? (forWho === "member" ? member : null) : null;
   const paysTokens = isAdmin ? forWho === "member" && payment === "token" : true;
   const wallet = isAdmin ? (payer?.tokenBalance ?? null) : (balance?.balance ?? null);
@@ -264,7 +272,7 @@ function BookDialog({
     );
 
   if (booked) {
-    const invitable = !!booked.userId && !isAdmin;
+    const invitable = !!booked.userId && !isAdmin && rules.invitationsEnabled;
     return (
       <div className="flex flex-col gap-5">
         <div className="flex flex-col items-center gap-2 text-center">
@@ -315,20 +323,20 @@ function BookDialog({
       icon: <Users className="size-5" />,
       title: tx({ fr: "Terrain complet", en: "Full court", ar: "ملعب كامل" }),
       text: tx({
-        fr: "Je paie les 4 places, mes 3 amis jouent gratuitement",
-        en: "I pay all 4 spots, my 3 friends play free",
-        ar: "أدفع الأماكن الأربعة وأصدقائي يلعبون مجانًا",
+        fr: `Je paie les ${spots} places, mes ${spots - 1} amis jouent gratuitement`,
+        en: `I pay all ${spots} spots, my ${spots - 1} friends play free`,
+        ar: `أدفع الأماكن ال${spots} وأصدقائي يلعبون مجانًا`,
       }),
-      cost: perSpot * 4,
+      cost: fullCost,
     },
     {
       id: "own_spot" as const,
       icon: <UserRound className="size-5" />,
       title: tx({ fr: "Ma place", en: "Just my spot", ar: "مكاني فقط" }),
       text: tx({
-        fr: "Je paie 1 place, les 3 autres restent ouvertes",
-        en: "I pay 1 spot, the other 3 stay open",
-        ar: "أدفع مكانًا واحدًا والثلاثة الباقية مفتوحة",
+        fr: `Je paie 1 place, les ${spots - 1} autres restent ouvertes`,
+        en: `I pay 1 spot, the other ${spots - 1} stay open`,
+        ar: `أدفع مكانًا واحدًا والباقي (${spots - 1}) مفتوح`,
       }),
       cost: perSpot,
     },
@@ -457,7 +465,7 @@ function BookDialog({
         })}
       </div>
 
-      {mode === "own_spot" && (
+      {mode === "own_spot" && rules.openMatchesEnabled && (
         <div className="flex flex-col gap-3 rounded-[22px] bg-secondary p-4">
           <label className="flex cursor-pointer items-center justify-between gap-4">
             <span className="flex flex-col">
@@ -500,14 +508,14 @@ function BookDialog({
           <dt className="text-muted-foreground">
             {tx({ fr: "Durée", en: "Duration", ar: "المدة" })}
           </dt>
-          <dd className="m-0 font-bold">{CLUB.slotMinutes} min</dd>
+          <dd className="m-0 font-bold">{rules.bookingDurationMinutes} min</dd>
         </div>
         <div className="flex justify-between">
           <dt className="text-muted-foreground">
             {tx({ fr: "Prix au club", en: "Club price", ar: "السعر في النادي" })}
           </dt>
           <dd className="m-0 font-bold">
-            {cash} {CLUB.currency}
+            {cash} {rules.currency}
           </dd>
         </div>
         {wallet !== null && paysTokens && (
@@ -521,7 +529,7 @@ function BookDialog({
         <div className="flex items-end justify-between border-t border-[#E4E8F7] pt-3">
           <dt className="font-bold">Total</dt>
           <dd className="disp m-0 text-3xl">
-            {paysTokens ? tokens(cost) : `${cash} ${CLUB.currency}`}
+            {paysTokens ? tokens(cost) : `${cash} ${rules.currency}`}
           </dd>
         </div>
       </dl>
@@ -584,6 +592,7 @@ function MatchDialog({
   currentUserId: number | null;
   onClose: () => void;
 }) {
+  const rules = useClubRules();
   const tx = useTx();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -603,10 +612,17 @@ function MatchDialog({
 
   const id = slot.reservationId!;
   const full = slot.bookingMode === "full_court";
-  const perSpot = slot.tokensPerSpot ?? CLUB.tokensOwnSpot;
+  const perSpot = slot.tokensPerSpot ?? rules.tokenCostPlayer;
   const meInMatch = slot.players.some((p) => p.userId != null && p.userId === currentUserId);
-  const canJoin = !slot.isMine && !full && slot.openSpots > 0 && !slot.isPast && !slot.isBlocked;
+  const canJoin =
+    rules.openMatchesEnabled &&
+    !slot.isMine &&
+    !full &&
+    slot.openSpots > 0 &&
+    !slot.isPast &&
+    !slot.isBlocked;
   const canInvite =
+    rules.invitationsEnabled &&
     !slot.isPast &&
     (slot.isOrganizer || (!full && meInMatch)) &&
     (full ? slot.players.length < slot.totalSpots : slot.openSpots > 0);
@@ -859,14 +875,16 @@ function MatchDialog({
                 ar: `ادفع ${perSpot} رصيد`,
               })}
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => join("cash_club")}
-              disabled={joinSession.isPending}
-            >
-              <Banknote />
-              {tx({ fr: "Payer au club", en: "Pay at the club", ar: "الدفع في النادي" })}
-            </Button>
+            {rules.cashPaymentEnabled && (
+              <Button
+                variant="outline"
+                onClick={() => join("cash_club")}
+                disabled={joinSession.isPending}
+              >
+                <Banknote />
+                {tx({ fr: "Payer au club", en: "Pay at the club", ar: "الدفع في النادي" })}
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -1052,7 +1070,9 @@ function cellLabel(
     case "mine":
       return tx({ fr: "Mon match", en: "My match", ar: "مباراتي" });
     case "blocked":
-      return tx({ fr: "Fermé", en: "Closed", ar: "مغلق" });
+      return slot.reservationId
+        ? tx({ fr: "Fermé", en: "Closed", ar: "مغلق" })
+        : tx({ fr: "Indispo.", en: "Unavailable", ar: "غير متاح" });
     case "full":
       return isAdmin && slot.creatorName
         ? slot.creatorName
@@ -1094,6 +1114,12 @@ export default function CourtCalendar({
   const terrains = (data?.terrains ?? []).filter(
     (t) => filter === "all" || t.terrain.type === filter,
   );
+  // Whole club closed that day (holiday, closed weekday): every court reports a closure
+  const closure =
+    terrains.length > 0 && terrains.every((t) => t.closures?.some((c) => c.date === date))
+      ? terrains[0].closures!.find((c) => c.date === date)
+      : undefined;
+  const closedReason = closure ? (closure.reason ?? "") : undefined;
   const times = useMemo(() => {
     const s = new Set<string>();
     terrains.forEach(({ slots }) =>
@@ -1250,16 +1276,28 @@ export default function CourtCalendar({
       ) : terrains.length === 0 || times.length === 0 ? (
         <EmptyState
           icon={<CalendarX2 className="size-7" />}
-          title={tx({
-            fr: "Aucun créneau ce jour-là",
-            en: "No slots that day",
-            ar: "لا مواعيد في هذا اليوم",
-          })}
-          text={tx({
-            fr: "Essayez un autre jour ou un autre type de terrain.",
-            en: "Try another day or court type.",
-            ar: "جرّب يومًا أو نوع ملعب آخر.",
-          })}
+          title={
+            closedReason !== undefined
+              ? tx({
+                  fr: "Club fermé ce jour-là",
+                  en: "Club closed that day",
+                  ar: "النادي مغلق في هذا اليوم",
+                })
+              : tx({
+                  fr: "Aucun créneau ce jour-là",
+                  en: "No slots that day",
+                  ar: "لا مواعيد في هذا اليوم",
+                })
+          }
+          text={
+            closedReason
+              ? closedReason
+              : tx({
+                  fr: "Essayez un autre jour ou un autre type de terrain.",
+                  en: "Try another day or court type.",
+                  ar: "جرّب يومًا أو نوع ملعب آخر.",
+                })
+          }
         />
       ) : (
         <>
@@ -1297,6 +1335,14 @@ export default function CourtCalendar({
                           )}
                           {ct.terrain.type === "outdoor" ? "Outdoor" : "Indoor"}
                         </span>
+                        {ct.terrain.isMaintenance && (
+                          <span
+                            className="truncate text-xs font-bold text-[#9A4A12]"
+                            title={ct.terrain.maintenanceNote ?? undefined}
+                          >
+                            {tx({ fr: "Maintenance", en: "Maintenance", ar: "صيانة" })}
+                          </span>
+                        )}
                       </span>
                     </th>
                   ))}
@@ -1324,12 +1370,23 @@ export default function CourtCalendar({
                       </th>
                       {terrains.map((ct) => {
                         const slot = slotAt(ct, time);
-                        if (!slot)
+                        if (!slot) {
+                          // A match that started earlier (e.g. booked before a duration change) still runs
+                          const running = ct.slots.some(
+                            (s) =>
+                              s.reservationId &&
+                              clubDay(s.startTime) === date &&
+                              hhmm(s.startTime) < time &&
+                              hhmm(s.endTime) > time,
+                          );
                           return (
                             <td key={ct.terrain.id}>
-                              <span className="block h-[62px] rounded-2xl bg-secondary/40" />
+                              <span className="flex h-[62px] items-center rounded-2xl bg-secondary/40 px-2 text-xs font-bold text-muted-foreground">
+                                {running ? tx({ fr: "Occupé", en: "In use", ar: "مشغول" }) : ""}
+                              </span>
                             </td>
                           );
+                        }
                         const st = slotState(slot);
                         const clickable = st !== "past" || !!slot.reservationId;
                         const label = cellLabel(st, slot, isAdmin, tx);
@@ -1345,7 +1402,7 @@ export default function CourtCalendar({
                               data-public={slot.isPublic || undefined}
                               disabled={!clickable}
                               onClick={() => open(slot, ct.terrain)}
-                              aria-label={`${ct.terrain.name} ${time}: ${label || tx({ fr: "passé", en: "past", ar: "انتهى" })}${st === "available" ? `, ${tokens(slot.tokensPerSpot * 4)}` : ""}`}
+                              aria-label={`${ct.terrain.name} ${time}: ${label || tx({ fr: "passé", en: "past", ar: "انتهى" })}${st === "available" ? `, ${tokens(slot.tokensFullCourt)}` : ""}`}
                             >
                               {st !== "past" || slot.reservationId ? (
                                 <>
@@ -1359,7 +1416,7 @@ export default function CourtCalendar({
                                   </span>
                                   {st === "available" ? (
                                     <span className="mt-0.5 text-[11px] font-semibold opacity-75">
-                                      {tokens(slot.tokensPerSpot * 4)}
+                                      {tokens(slot.tokensFullCourt)}
                                     </span>
                                   ) : st !== "blocked" ? (
                                     <span className="mt-1.5 flex gap-0.5" aria-hidden="true">
