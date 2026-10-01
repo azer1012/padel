@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
@@ -12,15 +12,73 @@ const apiTarget = process.env.API_URL ?? `http://localhost:${process.env.API_POR
 
 const basePath = process.env.BASE_PATH ?? "/";
 
+/**
+ * SEO that needs the public domain (VITE_SITE_URL): canonical URL, absolute
+ * Open Graph image, structured data, sitemap.xml and the robots.txt Sitemap line.
+ * Without VITE_SITE_URL the build still works, just without these.
+ */
+function seo(): Plugin {
+  const env = loadEnv("production", path.resolve(import.meta.dirname, "..", ".."), "VITE_");
+  const site = (process.env.VITE_SITE_URL ?? env.VITE_SITE_URL ?? "").replace(/\/$/, "");
+  const club = process.env.VITE_CLUB_NAME ?? env.VITE_CLUB_NAME ?? "Smash Padel";
+  const publicPages = ["/", "/terrains", "/open-matches", "/tournaments", "/news", "/contact"];
+  return {
+    name: "padel-seo",
+    transformIndexHtml(html) {
+      if (!site) return html;
+      const ld = {
+        "@context": "https://schema.org",
+        "@type": "SportsActivityLocation",
+        name: club,
+        url: site,
+        image: `${site}/opengraph.jpg`,
+        sport: "Padel",
+        address: {
+          "@type": "PostalAddress",
+          streetAddress:
+            process.env.VITE_CLUB_ADDRESS ?? env.VITE_CLUB_ADDRESS ?? "Les Berges du Lac",
+          addressLocality: "Tunis",
+          addressCountry: "TN",
+        },
+        ...((process.env.VITE_CLUB_PHONE ?? env.VITE_CLUB_PHONE)
+          ? { telephone: process.env.VITE_CLUB_PHONE ?? env.VITE_CLUB_PHONE }
+          : {}),
+      };
+      return html
+        .replace('content="/opengraph.jpg"', `content="${site}/opengraph.jpg"`)
+        .replace(
+          "</head>",
+          `    <link rel="canonical" href="${site}/" />\n` +
+            `    <meta property="og:url" content="${site}/" />\n` +
+            `    <meta name="twitter:image" content="${site}/opengraph.jpg" />\n` +
+            `    <script type="application/ld+json">${JSON.stringify(ld)}</script>\n  </head>`,
+        );
+    },
+    generateBundle() {
+      const robots = `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /dashboard\nDisallow: /wallet\nDisallow: /profile\nDisallow: /reservations\nDisallow: /join/\n${site ? `\nSitemap: ${site}/sitemap.xml\n` : ""}`;
+      this.emitFile({ type: "asset", fileName: "robots.txt", source: robots });
+      if (!site) return;
+      const urls = publicPages
+        .map((p) => `  <url><loc>${site}${p === "/" ? "/" : p}</loc></url>`)
+        .join("\n");
+      this.emitFile({
+        type: "asset",
+        fileName: "sitemap.xml",
+        source: `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`,
+      });
+    },
+  };
+}
+
 export default defineConfig({
   base: basePath,
-  envPrefix: ["VITE_", "NEXT_PUBLIC_", "EXPO_PUBLIC_"],
+  // Only VITE_* variables reach the browser bundle. Never prefix a secret with VITE_.
+  envPrefix: ["VITE_"],
   envDir: path.resolve(import.meta.dirname, "..", ".."),
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), seo()],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
-      "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
     },
     dedupe: ["react", "react-dom"],
   },

@@ -20,7 +20,7 @@ url.pathname = `/${name}`;
 const admin = new pg.Client({ connectionString: adminUrl });
 await admin.connect();
 await admin.query(`create database ${name}`);
-let failed = false;
+let failed: boolean | undefined;
 try {
   const c = new pg.Client({ connectionString: url.toString() });
   await c.connect();
@@ -43,4 +43,4 @@ try {
   await admin.query(`drop database if exists ${name} with (force)`);
   await admin.end();
 }
-process.exit(failed ? 1 : 0);
+process.exit(failed === false ? 0 : 1);

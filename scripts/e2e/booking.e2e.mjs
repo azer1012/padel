@@ -107,7 +107,6 @@ async function as(u, viewport = { width: 1366, height: 900 }) {
 const shot = (page, name) => page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: false });
 
 const tomorrow = new Date(Date.now() + 86400e3);
-const dayLabel = String(tomorrow.getDate());
 /** Clicks the calendar cell of a court at a time on tomorrow's planning. */
 async function openSlot(page, court, time) {
   await page

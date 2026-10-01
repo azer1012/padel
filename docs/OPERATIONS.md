@@ -2,13 +2,22 @@
 
 ## Before deploying
 
-1. **Apply the migration** `supabase/migrations/20261001000000_pricing_equipment_series_notifications.sql`
-   (Supabase SQL editor or `supabase db push`). It is idempotent and has a rollback file.
-   It also **fixes `protect_user_accounting_fields()`**: the previous version rejected every
-   token debit and refund made by the API (the API has no Supabase JWT), so bookings could not work.
-   Players are still blocked from editing their own balance through the Supabase REST API.
-2. **Set `TZ=Africa/Tunis`** on the API server. The calendar uses server-local time.
-3. Fill the new variables in `.env.example` (email, push, jobs).
+1. **Apply every migration** in `supabase/migrations/` (see `docs/PRODUCTION_SETUP.md`).
+2. **Set `TZ=Africa/Tunis`** on the API server (it also defaults to `CLUB_TIMEZONE`).
+   The booking grid is built in club time.
+3. Fill the server variables in `.env.example` (e-mail, push, jobs).
+
+## Payments per player
+
+Each player in a match has an independent payment:
+
+| Type           | Meaning                                                  | Status                                                      |
+| -------------- | -------------------------------------------------------- | ----------------------------------------------------------- |
+| `token`        | paid with their own token(s) when joining                | `paid` → `refunded` if they leave or the match is cancelled |
+| `cash_club`    | holds the spot, pays at the front desk                   | `pending` → `paid` (staff tick it in the match dialog)      |
+| `invited_free` | invited by a full-court booker, who already paid 4 spots | `paid`                                                      |
+
+Tokens are bought with cash at the desk: **Admin → Membres → Tokens → Créditer**.
 
 ## Peak / off-peak pricing (Admin → Tarifs)
 
@@ -36,14 +45,14 @@
 
 ## Notifications
 
-| Event | In-app | Email | Push |
-|---|---|---|---|
-| Welcome (first sign-in) | ✓ | ✓ | |
-| Booking / join confirmed (with peak price + equipment) | ✓ | ✓ | ✓ |
-| Booking cancelled / left (with refund) | ✓ | ✓ | ✓ |
-| Reminder ~2 h before the match (with equipment to pick up) | ✓ | ✓ | ✓ |
-| Match finished: thanks + "book the next one" | ✓ | ✓ | ✓ |
-| Tokens added by the club | ✓ | ✓ | ✓ |
+| Event                                                      | In-app | Email | Push |
+| ---------------------------------------------------------- | ------ | ----- | ---- |
+| Welcome (first sign-in)                                    | ✓      | ✓     |      |
+| Booking / join confirmed (with peak price + equipment)     | ✓      | ✓     | ✓    |
+| Booking cancelled / left (with refund)                     | ✓      | ✓     | ✓    |
+| Reminder ~2 h before the match (with equipment to pick up) | ✓      | ✓     | ✓    |
+| Match finished: thanks + "book the next one"               | ✓      | ✓     | ✓    |
+| Tokens added by the club                                   | ✓      | ✓     | ✓    |
 
 - Written in the player's language (FR / EN / AR, RTL for Arabic).
 - Players control email and push in **Profil → Notifications**.

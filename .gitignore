@@ -44,19 +44,16 @@ testem.log
 .DS_Store
 Thumbs.db
 
-.cursor/rules/nx-rules.mdc
-.github/instructions/nx.instructions.md
 
 .cache/
 .local/
 
-# Replit artifacts
-.replit-artifact
-
-# Lock files (use pnpm)
-pnpm-lock.yaml
+# Lock files: pnpm-lock.yaml IS committed; other package managers' locks are not
 yarn.lock
 package-lock.json
+
+# E2E screenshots
+e2e-screenshots/
 
 # Build
 .turbo

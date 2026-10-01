@@ -1,27 +1,42 @@
+# Supabase CLI configuration (local stack + reference for the hosted project).
+# Hosted project settings (Auth URLs, SMTP, Google) are set in the dashboard:
+# see docs/PRODUCTION_SETUP.md and GOOGLE_AUTH_SETUP.md.
 project_id = "bnbdeymvdfrklbegwfgd"
 
 [api]
 enabled = true
-schemas = ["public", "storage"]
+# The browser never queries tables directly (every role is revoked); keep the
+# exposed schemas minimal.
+schemas = ["public"]
 extra_search_path = ["public", "extensions"]
 max_rows = 1000
 
+[db]
+major_version = 17
+
 [auth]
 enabled = true
-site_url = "http://localhost:3000"
-additional_redirect_urls = ["http://localhost:3000", "https://your-production-domain.com"]
+# Local development values. Production: Site URL = https://<your-production-domain>
+site_url = "http://localhost:5173"
+additional_redirect_urls = [
+  "http://localhost:5173/**",
+  "http://127.0.0.1:5173/**",
+]
 enable_signup = true
+minimum_password_length = 8
+password_requirements = "letters_digits"
 
 [auth.email]
 enable_signup = true
 double_confirm_changes = true
 enable_confirmations = true
+secure_password_change = true
 
 [auth.external.google]
 enabled = false
-
-[auth.external.apple]
-enabled = false
+client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
+skip_nonce_check = false
 
 [realtime]
 enabled = true
@@ -29,16 +44,3 @@ enabled = true
 [storage]
 enabled = true
 file_size_limit = "10MiB"
-
-[functions.notifications]
-verify_jwt = true
-
-[functions.reservation-reminders]
-verify_jwt = false
-
-[functions.token-processing]
-verify_jwt = true
-
-[functions.expire-invitations]
-verify_jwt = false
-

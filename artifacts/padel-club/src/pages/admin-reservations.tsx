@@ -5,7 +5,6 @@ import {
   useCancelReservation,
   useCreateReservation,
   useListTerrains,
-  useListUsers,
   useGetMe,
   getListReservationsQueryKey,
   getCalendarQueryKey,

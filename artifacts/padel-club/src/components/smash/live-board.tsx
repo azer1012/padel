@@ -40,7 +40,7 @@ export function useTonight() {
   const q = useTomorrow ? q2 : q1;
   const day = useTomorrow ? tomorrow : today;
 
-  const terrains: CalendarTerrain[] = q.data?.terrains ?? [];
+  const terrains: CalendarTerrain[] = useMemo(() => q.data?.terrains ?? [], [q.data]);
   const times = useMemo(() => {
     const s = new Set<string>();
     terrains.forEach((t) =>

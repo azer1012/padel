@@ -17,5 +17,7 @@ export async function syncUser(authUser: User) {
       }),
     });
   } catch {
+    // Non-blocking: the database already creates the profile at signup, and the
+    // sync runs again on the next sign-in.
   }
 }

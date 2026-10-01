@@ -382,9 +382,9 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
               {isSignUp && (
                 <p id="pw-hint" className="mt-2 text-xs text-muted-foreground">
                   {tx({
-                    fr: "8 caractères minimum.",
-                    en: "At least 8 characters.",
-                    ar: "8 أحرف على الأقل.",
+                    fr: "8 caractères minimum, avec des lettres et des chiffres.",
+                    en: "At least 8 characters, with letters and numbers.",
+                    ar: "8 أحرف على الأقل، مع حروف وأرقام.",
                   })}
                 </p>
               )}

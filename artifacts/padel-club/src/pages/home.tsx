@@ -7,7 +7,7 @@ import {
   useListTournaments,
   useListNews,
 } from "@workspace/api-client-react";
-import { ArrowRight, Check, Coins, Trophy, Users, CalendarDays } from "lucide-react";
+import { ArrowRight, Check, Coins, Users, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LiveBoard, useTonight } from "@/components/smash/live-board";
 import { BallIcon } from "@/components/smash/brand";
@@ -84,7 +84,7 @@ export default function Home() {
         }),
       );
     return items;
-  }, [matches, tonight.times, upcomingTournaments, tx]);
+  }, [matches, tonight, upcomingTournaments, tx]);
 
   return (
     <>

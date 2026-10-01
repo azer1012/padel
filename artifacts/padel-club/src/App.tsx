@@ -1,7 +1,7 @@
 import { Switch, Route, useLocation, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect } from "react";
-import { setAuthTokenGetter, useGetMe } from "@workspace/api-client-react";
+import { setAuthTokenGetter, setBaseUrl, useGetMe } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { NavLayout } from "@/components/nav-layout";
@@ -9,7 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { Redirect } from "wouter";
 import { syncUser } from "@/lib/user-sync";
-import { getAccessToken } from "@/services/api";
+import { API_BASE, getAccessToken } from "@/services/api";
 import { I18nProvider } from "@/lib/i18n";
 import { DEMO } from "@/lib/demo-flag";
 import { useHashLocation } from "wouter/use-hash-location";
@@ -43,6 +43,8 @@ const queryClient = new QueryClient({
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 setAuthTokenGetter(getAccessToken);
+// API on another origin (e.g. https://api.example.tn). Empty = same origin, /api proxied.
+if (API_BASE) setBaseUrl(API_BASE);
 
 function QueryClientCacheInvalidator() {
   const queryClient = useQueryClient();

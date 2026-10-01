@@ -214,33 +214,6 @@ paths:
         "204":
           description: Deleted
 
-  /terrain-slots:
-    get:
-      operationId: getTerrainSlots
-      tags: [terrains]
-      summary: Get available slots for a terrain on a date
-      parameters:
-        - name: terrainId
-          in: query
-          required: true
-          schema:
-            type: integer
-        - name: date
-          in: query
-          required: true
-          schema:
-            type: string
-            format: date
-      responses:
-        "200":
-          description: Available time slots
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/TimeSlot"
-
   # ─── Reservations ─────────────────────────────────────────────────────
   /reservations:
     get:
@@ -414,13 +387,23 @@ paths:
     post:
       operationId: joinSession
       tags: [reservations]
-      summary: Join an open session (own_spot, 1 token)
+      summary: Take an open spot of an own_spot match (token or cash at the club)
       parameters:
         - name: id
           in: path
           required: true
           schema:
             type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paymentMethod:
+                  type: string
+                  enum: [token, cash_club]
+                  default: token
       responses:
         "201":
           description: Joined session
@@ -496,15 +479,25 @@ paths:
     post:
       operationId: acceptInvite
       tags: [reservations]
-      summary: Accept an invite and join the session
+      summary: Accept an invite. Full court → invited_free; own spot → token or cash_club
       parameters:
         - name: token
           in: path
           required: true
           schema:
             type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paymentMethod:
+                  type: string
+                  enum: [token, cash_club]
+                  default: token
       responses:
-        "200":
+        "201":
           description: Joined session via invite
         "410":
           description: Invite expired or already used
@@ -583,10 +576,12 @@ paths:
                   type: integer
                 paymentType:
                   type: string
-                  enum: [token, cash]
+                  enum: [cash_club, token]
+                  default: cash_club
+                  description: Ignored on a full-court booking (the player joins as invited_free)
                 paymentStatus:
                   type: string
-                  enum: [paid, pending, refunded]
+                  enum: [paid, pending]
       responses:
         "201":
           description: Player assigned
@@ -615,13 +610,12 @@ paths:
           application/json:
             schema:
               type: object
+              required: [paymentStatus]
               properties:
                 paymentStatus:
                   type: string
-                  enum: [paid, pending, refunded]
-                paymentType:
-                  type: string
-                  enum: [token, cash]
+                  enum: [paid, pending]
+                  description: Only cash_club spots can be marked by hand; token spots follow the ledger
       responses:
         "200":
           description: Player payment updated
@@ -1841,7 +1835,7 @@ components:
           type: ["integer", "null"]
         paymentType:
           type: ["string", "null"]
-          enum: [token, cash, null]
+          enum: [token, cash_club, invited_free, null]
         paymentStatus:
           type: ["string", "null"]
           enum: [paid, pending, refunded, null]

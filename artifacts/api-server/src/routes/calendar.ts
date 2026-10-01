@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, terrainsTable, reservationsTable, reservationPlayersTable } from "@workspace/db";
+import { db, terrainsTable, reservationsTable } from "@workspace/db";
 import { eq, and, gte, lte, inArray } from "drizzle-orm";
 import { loadUser } from "../lib/auth";
 import { loadActiveRules, priceFor } from "../lib/pricing";
