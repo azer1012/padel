@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useListUsers } from "@workspace/api-client-react";
 import type { User } from "@workspace/api-client-react";
-import { Search, X } from "lucide-react";
+import { MagnifyingGlassIcon, XIcon } from "@/components/icons";
 import { Input } from "@/components/ui/input";
 import { useTx } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -47,7 +47,7 @@ export function MemberPicker({
           className="flex size-9 shrink-0 items-center justify-center rounded-full hover:bg-white"
           aria-label={tx({ fr: "Changer de membre", en: "Change member", ar: "تغيير العضو" })}
         >
-          <X className="size-4" />
+          <XIcon className="size-4" />
         </button>
       </div>
     );
@@ -55,7 +55,7 @@ export function MemberPicker({
   return (
     <div className="flex flex-col gap-2">
       <div className="relative">
-        <Search className="pointer-events-none absolute start-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <MagnifyingGlassIcon className="pointer-events-none absolute start-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={term}
           onChange={(e) => setTerm(e.target.value)}

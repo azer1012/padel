@@ -10,7 +10,7 @@ import {
   type PricingRule,
   type PricingRuleInput,
 } from "@workspace/api-client-react";
-import { Plus, Pencil, Trash2, Zap, Tags } from "lucide-react";
+import { LightningIcon, PencilSimpleIcon, PlusIcon, TagIcon, TrashIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -242,7 +242,7 @@ export default function AdminPricing() {
         })}
         actions={
           <Button onClick={openNew} data-testid="btn-create-rule">
-            <Plus />
+            <PlusIcon />
             {tx({ fr: "Nouvelle règle", en: "New rule", ar: "قاعدة جديدة" })}
           </Button>
         }
@@ -328,7 +328,7 @@ export default function AdminPricing() {
         <Skeleton className="h-[160px] !rounded-[26px]" />
       ) : !rules?.length ? (
         <EmptyState
-          icon={<Tags className="size-7" />}
+          icon={<TagIcon className="size-7" />}
           title={tx({
             fr: "Aucune règle : tout est à 1 token par place",
             en: "No rules: everything is 1 token per spot",
@@ -341,13 +341,13 @@ export default function AdminPricing() {
           })}
           action={
             <Button onClick={openNew}>
-              <Plus />
+              <PlusIcon />
               {tx({ fr: "Créer une règle", en: "Create a rule", ar: "إنشاء قاعدة" })}
             </Button>
           }
         />
       ) : (
-        <ul className="m-0 grid list-none gap-3 p-0 md:grid-cols-2">
+        <ul className="stagger m-0 grid list-none gap-3 p-0 md:grid-cols-2">
           {rules.map((r) => (
             <li
               key={r.id}
@@ -359,7 +359,7 @@ export default function AdminPricing() {
               <div className="flex items-start justify-between gap-3">
                 <span className="flex flex-col gap-1">
                   <span className="flex items-center gap-2 text-lg font-extrabold">
-                    {r.isPeak && <Zap className="size-4 text-[#B1452A]" />}
+                    {r.isPeak && <LightningIcon className="size-4 text-[#B1452A]" />}
                     {r.name}
                   </span>
                   <span className="text-sm text-muted-foreground">{courtName(r.terrainId)}</span>
@@ -371,7 +371,7 @@ export default function AdminPricing() {
                     onClick={() => openEdit(r)}
                     aria-label={tx({ fr: "Modifier", en: "Edit", ar: "تعديل" })}
                   >
-                    <Pencil />
+                    <PencilSimpleIcon />
                   </Button>
                   <Button
                     variant="ghost"
@@ -380,7 +380,7 @@ export default function AdminPricing() {
                     onClick={() => remove(r)}
                     aria-label={tx({ fr: "Supprimer", en: "Delete", ar: "حذف" })}
                   >
-                    <Trash2 />
+                    <TrashIcon />
                   </Button>
                 </span>
               </div>
@@ -572,7 +572,7 @@ export default function AdminPricing() {
             <div className="flex flex-col gap-2 rounded-[20px] bg-secondary p-4">
               <label className="flex cursor-pointer items-center justify-between gap-3 font-bold">
                 <span className="flex items-center gap-2">
-                  <Zap className="size-4 text-[#B1452A]" />
+                  <LightningIcon className="size-4 text-[#B1452A]" />
                   {tx({
                     fr: "Afficher comme heures pleines",
                     en: "Show as peak hours",
@@ -590,10 +590,9 @@ export default function AdminPricing() {
               type="submit"
               size="lg"
               disabled={create.isPending || update.isPending || !form.daysOfWeek.length}
+              loading={create.isPending || update.isPending}
             >
-              {create.isPending || update.isPending
-                ? "…"
-                : tx({ fr: "Enregistrer", en: "Save rule", ar: "حفظ" })}
+              {tx({ fr: "Enregistrer", en: "Save rule", ar: "حفظ" })}
             </Button>
           </form>
         </DialogContent>

@@ -2,18 +2,18 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Bell,
-  CalendarClock,
-  Clock,
-  Coins,
-  LandPlot,
-  Plus,
-  RotateCcw,
-  Save,
-  Tags,
-  ToggleRight,
-  Trash2,
-} from "lucide-react";
+  ArrowCounterClockwiseIcon,
+  BellIcon,
+  ClockCountdownIcon,
+  ClockIcon,
+  CoinsIcon,
+  CourtIcon,
+  FloppyDiskIcon,
+  PlusIcon,
+  TagIcon,
+  ToggleRightIcon,
+  TrashIcon,
+} from "@/components/icons";
 import {
   useAdminSettings,
   useUpdateSettings,
@@ -307,17 +307,18 @@ function SectionButtons({
   return (
     <>
       <Button type="button" variant="ghost" onClick={onReset} disabled={busy}>
-        <RotateCcw />
+        <ArrowCounterClockwiseIcon />
         {tx({ fr: "Valeurs par défaut", en: "Reset to default", ar: "القيم الافتراضية" })}
       </Button>
       <Button
         type="button"
         onClick={onSave}
         disabled={!dirty || busy || invalid}
+        loading={busy}
         data-testid="btn-save-settings"
       >
-        <Save />
-        {busy ? "…" : tx({ fr: "Enregistrer", en: "Save", ar: "حفظ" })}
+        <FloppyDiskIcon />
+        {tx({ fr: "Enregistrer", en: "Save", ar: "حفظ" })}
       </Button>
     </>
   );
@@ -326,13 +327,13 @@ function SectionButtons({
 /* ────────────────────────────────── Page ─────────────────────────────────── */
 
 const NAV = [
-  { id: "courts", icon: LandPlot, fr: "Terrains", en: "Courts" },
-  { id: "booking", icon: CalendarClock, fr: "Réservations", en: "Booking" },
-  { id: "pricing", icon: Tags, fr: "Tarifs", en: "Pricing" },
-  { id: "tokens", icon: Coins, fr: "Tokens", en: "Tokens" },
-  { id: "hours", icon: Clock, fr: "Horaires", en: "Opening hours" },
-  { id: "features", icon: ToggleRight, fr: "Fonctionnalités", en: "Features" },
-  { id: "notifications", icon: Bell, fr: "Notifications", en: "Notifications" },
+  { id: "courts", icon: CourtIcon, fr: "Terrains", en: "Courts" },
+  { id: "booking", icon: ClockCountdownIcon, fr: "Réservations", en: "Booking" },
+  { id: "pricing", icon: TagIcon, fr: "Tarifs", en: "Pricing" },
+  { id: "tokens", icon: CoinsIcon, fr: "Tokens", en: "Tokens" },
+  { id: "hours", icon: ClockIcon, fr: "Horaires", en: "Opening hours" },
+  { id: "features", icon: ToggleRightIcon, fr: "Fonctionnalités", en: "Features" },
+  { id: "notifications", icon: BellIcon, fr: "Notifications", en: "Notifications" },
 ] as const;
 
 export default function AdminSettings() {
@@ -404,7 +405,7 @@ function CourtsSection() {
   return (
     <Section
       id="courts"
-      icon={<LandPlot className="size-5" />}
+      icon={<CourtIcon className="size-5" />}
       title={tx({ fr: "Terrains", en: "Courts", ar: "الملاعب" })}
       description={tx({
         fr: "Ajoutez, renommez, réordonnez, mettez en maintenance ou archivez vos terrains. Chaque terrain peut avoir son propre prix ou ses propres horaires.",
@@ -502,7 +503,7 @@ function BookingSection({
   return (
     <Section
       id="booking"
-      icon={<CalendarClock className="size-5" />}
+      icon={<ClockCountdownIcon className="size-5" />}
       title={tx({ fr: "Réservations", en: "Booking", ar: "الحجوزات" })}
       description={tx({
         fr: "Durée d'un match, nombre de joueurs, fenêtre de réservation et règles d'annulation.",
@@ -659,7 +660,7 @@ function PricingSection({ settings }: { settings: AdminSettings }) {
   return (
     <Section
       id="pricing"
-      icon={<Tags className="size-5" />}
+      icon={<TagIcon className="size-5" />}
       title={tx({ fr: "Tarifs", en: "Pricing", ar: "الأسعار" })}
       description={tx({
         fr: "Prix payés en espèces à l'accueil. Les heures pleines / creuses, week-ends et jours fériés se règlent dans Tarifs → règles (elles sont prioritaires).",
@@ -743,7 +744,7 @@ function TokensSection({ settings }: { settings: AdminSettings }) {
   return (
     <Section
       id="tokens"
-      icon={<Coins className="size-5" />}
+      icon={<CoinsIcon className="size-5" />}
       title={tx({ fr: "Tokens", en: "Tokens", ar: "الرصيد" })}
       description={tx({
         fr: "Les joueurs paient en espèces à l'accueil, l'admin crédite des tokens, les réservations les débitent. Les tokens n'expirent pas.",
@@ -880,7 +881,7 @@ function TokenPackages({ currency }: { currency: string }) {
                 aria-label={tx({ fr: `Supprimer ${p.name}`, en: `Delete ${p.name}` })}
                 onClick={() => remove.mutate(p.id, { onSuccess: refresh, onError: fail })}
               >
-                <Trash2 />
+                <TrashIcon />
               </Button>
             </span>
           </li>
@@ -936,8 +937,13 @@ function TokenPackages({ currency }: { currency: string }) {
           value={draft.price}
           onChange={(e) => setDraft({ ...draft, price: e.target.value })}
         />
-        <Button type="submit" variant="outline" disabled={!valid || save.isPending}>
-          <Plus />
+        <Button
+          type="submit"
+          variant="outline"
+          disabled={!valid || save.isPending}
+          loading={save.isPending}
+        >
+          <PlusIcon />
           {tx({ fr: "Ajouter", en: "Add" })}
         </Button>
       </form>
@@ -987,7 +993,7 @@ function HoursSection({ settings }: { settings: AdminSettings }) {
   return (
     <Section
       id="hours"
-      icon={<Clock className="size-5" />}
+      icon={<ClockIcon className="size-5" />}
       title={tx({ fr: "Horaires d'ouverture", en: "Opening hours", ar: "ساعات العمل" })}
       description={tx({
         fr: "Horaires de chaque jour de la semaine, puis les exceptions : jours fériés, fermetures, horaires spéciaux ou maintenance d'un terrain.",
@@ -1154,7 +1160,7 @@ function Exceptions() {
                 aria-label={tx({ fr: "Supprimer l'exception", en: "Delete exception" })}
                 onClick={() => remove.mutate(e.id, { onSuccess: refresh })}
               >
-                <Trash2 />
+                <TrashIcon />
               </Button>
             </li>
           ))}
@@ -1244,8 +1250,13 @@ function Exceptions() {
           value={form.reason}
           onChange={(e) => setForm({ ...form, reason: e.target.value })}
         />
-        <Button type="submit" variant="outline" disabled={invalid || create.isPending}>
-          <Plus />
+        <Button
+          type="submit"
+          variant="outline"
+          disabled={invalid || create.isPending}
+          loading={create.isPending}
+        >
+          <PlusIcon />
           {tx({ fr: "Ajouter l'exception", en: "Add exception" })}
         </Button>
       </form>
@@ -1264,7 +1275,7 @@ function FeaturesSection({ settings }: { settings: AdminSettings }) {
   return (
     <Section
       id="features"
-      icon={<ToggleRight className="size-5" />}
+      icon={<ToggleRightIcon className="size-5" />}
       title={tx({ fr: "Fonctionnalités", en: "Features", ar: "الميزات" })}
       description={tx({
         fr: "Activez seulement ce que votre club utilise. Une fonction désactivée disparaît de l'app et est refusée par le serveur.",
@@ -1371,7 +1382,7 @@ function NotificationsSection({ settings }: { settings: AdminSettings }) {
   return (
     <Section
       id="notifications"
-      icon={<Bell className="size-5" />}
+      icon={<BellIcon className="size-5" />}
       title={tx({ fr: "Notifications", en: "Notifications", ar: "الإشعارات" })}
       description={tx({
         fr: "Messages envoyés par le club (dans l'app, par e-mail et en push selon les préférences de chaque membre).",

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { isToday, isTomorrow, differenceInCalendarDays } from "date-fns";
 import { useGetOpenMatches } from "@workspace/api-client-react";
-import { Swords } from "lucide-react";
+import { TennisBallIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState, Page, PageHeader } from "@/components/smash/primitives";
@@ -88,14 +88,14 @@ export default function OpenMatches() {
           onRetry={() => refetch()}
         />
       ) : isLoading ? (
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <div className="stagger grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }, (_, i) => (
             <Skeleton key={i} className="h-[300px] !rounded-[30px]" />
           ))}
         </div>
       ) : filtered.length === 0 ? (
         <EmptyState
-          icon={<Swords className="size-7" />}
+          icon={<TennisBallIcon className="size-7" />}
           title={tx({
             fr: "Aucun open match pour l'instant",
             en: "No open matches right now",
@@ -115,7 +115,7 @@ export default function OpenMatches() {
           }
         />
       ) : (
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <div className="stagger grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((m) => (
             <MatchCard
               key={m.reservationId}

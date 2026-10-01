@@ -8,7 +8,15 @@ import {
 } from "@workspace/api-client-react";
 import type { Tournament } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trophy, CalendarDays, Users, Gift, Ban } from "lucide-react";
+import {
+  CalendarDotsIcon,
+  GiftIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  ProhibitIcon,
+  TrophyIcon,
+  UsersIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -218,31 +226,31 @@ export default function AdminTournaments() {
         })}
         actions={
           <Button data-testid="btn-create-tournament" onClick={openCreate}>
-            <Plus />
+            <PlusIcon />
             {tx({ fr: "Nouveau tournoi", en: "New tournament", ar: "بطولة جديدة" })}
           </Button>
         }
       />
 
       {isLoading ? (
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="stagger grid gap-5 md:grid-cols-2">
           {[0, 1].map((i) => (
             <Skeleton key={i} className="h-[360px] !rounded-[30px]" />
           ))}
         </div>
       ) : list.length === 0 ? (
         <EmptyState
-          icon={<Trophy className="size-7" />}
+          icon={<TrophyIcon className="size-7" />}
           title={tx({ fr: "Aucun tournoi", en: "No tournaments", ar: "لا بطولات" })}
           action={
             <Button onClick={openCreate}>
-              <Plus />
+              <PlusIcon />
               {tx({ fr: "Créer un tournoi", en: "Create a tournament", ar: "إنشاء بطولة" })}
             </Button>
           }
         />
       ) : (
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="stagger grid gap-5 md:grid-cols-2">
           {list.map((t) => {
             const pct = t.maxTeams
               ? Math.min(100, Math.round(((t.registeredTeams ?? 0) / t.maxTeams) * 100))
@@ -275,17 +283,17 @@ export default function AdminTournaments() {
                       data-testid={`btn-edit-tournament-${t.id}`}
                       aria-label={tx({ fr: "Modifier", en: "Edit", ar: "تعديل" })}
                     >
-                      <Pencil />
+                      <PencilSimpleIcon />
                     </Button>
                   </div>
                   <span className="flex items-center gap-2 text-sm font-bold capitalize text-court">
-                    <CalendarDays className="size-4" />
+                    <CalendarDotsIcon className="size-4" />
                     {format(new Date(t.startDate), "EEE d MMM yyyy · HH:mm", { locale })}
                     {t.endDate ? ` → ${format(new Date(t.endDate), "d MMM", { locale })}` : ""}
                   </span>
                   {t.prizeInfo && (
                     <span className="flex items-center gap-2 text-sm font-semibold">
-                      <Gift className="size-4 text-coral" />
+                      <GiftIcon className="size-4 text-coral" />
                       {t.prizeInfo}
                     </span>
                   )}
@@ -293,7 +301,7 @@ export default function AdminTournaments() {
                     <div className="flex flex-col gap-2">
                       <span className="flex justify-between text-sm font-bold">
                         <span className="flex items-center gap-2">
-                          <Users className="size-4" />
+                          <UsersIcon className="size-4" />
                           {tx({ fr: "Équipes", en: "Teams", ar: "الفرق" })}
                         </span>
                         <span>
@@ -326,7 +334,7 @@ export default function AdminTournaments() {
                           className="text-destructive"
                           onClick={() => cancelTournament(t)}
                         >
-                          <Ban />
+                          <ProhibitIcon />
                           {tx({ fr: "Annuler", en: "Cancel", ar: "إلغاء" })}
                         </Button>
                       )}
@@ -456,7 +464,13 @@ export default function AdminTournaments() {
                 placeholder="https://…"
               />
             </Field>
-            <Button data-testid="btn-save-tournament" type="submit" size="lg" disabled={saving}>
+            <Button
+              data-testid="btn-save-tournament"
+              type="submit"
+              size="lg"
+              disabled={saving}
+              loading={saving}
+            >
               {saving
                 ? tx({ fr: "Enregistrement…", en: "Saving…", ar: "جارٍ الحفظ…" })
                 : tx({ fr: "Enregistrer", en: "Save tournament", ar: "حفظ" })}

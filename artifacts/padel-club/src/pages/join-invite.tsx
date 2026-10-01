@@ -10,7 +10,14 @@ import {
   getGetTokenBalanceQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Coins, AlertCircle, MapPin, CalendarDays, Gift, Banknote } from "lucide-react";
+import {
+  CalendarDotsIcon,
+  CoinsIcon,
+  GiftIcon,
+  MapPinIcon,
+  MoneyIcon,
+  WarningCircleIcon,
+} from "@/components/icons";
 import { apiErrorMessage } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -132,7 +139,7 @@ export default function JoinInvite() {
     return shell(
       <div className="enter flex flex-col items-start gap-5">
         <span className="flex size-16 items-center justify-center rounded-full bg-coral text-night">
-          <AlertCircle className="size-7" />
+          <WarningCircleIcon className="size-7" />
         </span>
         <h1 className="disp m-0 text-5xl leading-none">
           {tx({ fr: "Invitation expirée", en: "Invite expired", ar: "انتهت الدعوة" })}
@@ -179,11 +186,11 @@ export default function JoinInvite() {
           {clubTime(reservation.startTime)}
         </span>
         <span className="flex items-center gap-2 font-semibold capitalize text-muted-foreground">
-          <CalendarDays className="size-4" />
+          <CalendarDotsIcon className="size-4" />
           {format(new Date(reservation.startTime), "EEEE d MMMM", { locale })}
         </span>
         <span className="flex items-center gap-2 font-bold">
-          <MapPin className="size-4 text-court" />
+          <MapPinIcon className="size-4 text-court" />
           {reservation.terrainName}
         </span>
         <div
@@ -212,7 +219,7 @@ export default function JoinInvite() {
       {reservation.free ? (
         <>
           <p className="m-0 flex items-center gap-2 font-semibold text-ball">
-            <Gift className="size-5" />
+            <GiftIcon className="size-5" />
             {tx({
               fr: `${invite.invitedBy} a réservé le terrain : votre place est offerte.`,
               en: `${invite.invitedBy} booked the court: your spot is free.`,
@@ -224,17 +231,16 @@ export default function JoinInvite() {
             size="xl"
             onClick={() => handleAccept()}
             disabled={acceptInvite.isPending || reservation.openSpots === 0}
+            loading={acceptInvite.isPending}
           >
-            <Gift />
-            {acceptInvite.isPending
-              ? "…"
-              : isSignedIn
-                ? tx({ fr: "Rejoindre le match", en: "Join the match", ar: "انضم إلى المباراة" })
-                : tx({
-                    fr: "Se connecter et rejoindre",
-                    en: "Sign in and join",
-                    ar: "سجّل الدخول وانضم",
-                  })}
+            <GiftIcon />
+            {isSignedIn
+              ? tx({ fr: "Rejoindre le match", en: "Join the match", ar: "انضم إلى المباراة" })
+              : tx({
+                  fr: "Se connecter et rejoindre",
+                  en: "Sign in and join",
+                  ar: "سجّل الدخول وانضم",
+                })}
           </Button>
           {isSignedIn && inviteData?.invite.personal && (
             <Button
@@ -254,15 +260,14 @@ export default function JoinInvite() {
             size="xl"
             onClick={() => handleAccept("token")}
             disabled={acceptInvite.isPending || reservation.openSpots === 0}
+            loading={acceptInvite.isPending}
           >
-            <Coins />
-            {acceptInvite.isPending
-              ? "…"
-              : tx({
-                  fr: `Rejoindre · ${reservation.tokensPerSpot} token${reservation.tokensPerSpot > 1 ? "s" : ""}`,
-                  en: `Join · ${reservation.tokensPerSpot} token${reservation.tokensPerSpot > 1 ? "s" : ""}`,
-                  ar: `انضم · ${reservation.tokensPerSpot} رصيد`,
-                })}
+            <CoinsIcon />
+            {tx({
+              fr: `Rejoindre · ${reservation.tokensPerSpot} token${reservation.tokensPerSpot > 1 ? "s" : ""}`,
+              en: `Join · ${reservation.tokensPerSpot} token${reservation.tokensPerSpot > 1 ? "s" : ""}`,
+              ar: `انضم · ${reservation.tokensPerSpot} رصيد`,
+            })}
           </Button>
           {rules.cashPaymentEnabled && (
             <Button
@@ -271,7 +276,7 @@ export default function JoinInvite() {
               onClick={() => handleAccept("cash_club")}
               disabled={acceptInvite.isPending || reservation.openSpots === 0}
             >
-              <Banknote />
+              <MoneyIcon />
               {tx({
                 fr: `Réserver et payer au club (${reservation.pricePerPerson} ${rules.currency})`,
                 en: `Hold my spot, pay at the club (${reservation.pricePerPerson} ${rules.currency})`,

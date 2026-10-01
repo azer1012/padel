@@ -16,16 +16,17 @@ import {
 import type { Reservation } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  CalendarPlus,
-  CalendarDays,
-  MapPin,
-  X,
-  Download,
-  LogOut,
-  UserPlus,
-  Users,
-  UserRound,
-} from "lucide-react";
+  CalendarDotsIcon,
+  CalendarPlusIcon,
+  DownloadSimpleIcon,
+  MapPinIcon,
+  SignOutIcon,
+  SpinnerIcon,
+  UserCircleIcon,
+  UserPlusIcon,
+  UsersIcon,
+  XIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -215,7 +216,7 @@ export default function PlayerReservations() {
         actions={
           <Button asChild>
             <Link href="/terrains">
-              <CalendarPlus />
+              <CalendarPlusIcon />
               {t("bookCourt")}
             </Link>
           </Button>
@@ -257,7 +258,7 @@ export default function PlayerReservations() {
           </div>
         ) : list.length === 0 ? (
           <EmptyState
-            icon={<CalendarDays className="size-7" />}
+            icon={<CalendarDotsIcon className="size-7" />}
             title={t("noUpcoming")}
             text={tx({
               fr: "Trouvez un créneau libre, ça prend 30 secondes.",
@@ -271,7 +272,7 @@ export default function PlayerReservations() {
             }
           />
         ) : (
-          <ul className="m-0 flex list-none flex-col gap-3 p-0">
+          <ul className="stagger m-0 flex list-none flex-col gap-3 p-0">
             {list.map((r, i) => {
               const mine = r.players?.find((p) => p.userId === me?.id);
               const organiser = r.userId === me?.id;
@@ -303,9 +304,9 @@ export default function PlayerReservations() {
                         <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-muted-foreground">
                           <span className="flex items-center gap-1">
                             {full ? (
-                              <Users className="size-3.5" />
+                              <UsersIcon className="size-3.5" />
                             ) : (
-                              <UserRound className="size-3.5" />
+                              <UserCircleIcon className="size-3.5" />
                             )}
                             {full
                               ? tx({ fr: "Terrain complet", en: "Full court", ar: "ملعب كامل" })
@@ -325,7 +326,7 @@ export default function PlayerReservations() {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button variant="secondary" size="sm" onClick={() => downloadIcs(r)}>
-                        <Download />
+                        <DownloadSimpleIcon />
                         {tx({ fr: "Calendrier", en: "Calendar", ar: "التقويم" })}
                       </Button>
                       {canInvite && (
@@ -335,7 +336,7 @@ export default function PlayerReservations() {
                           onClick={() => setInviteFor(inviteFor === r.id ? null : r.id)}
                           aria-expanded={inviteFor === r.id}
                         >
-                          <UserPlus />
+                          <UserPlusIcon />
                           {tx({ fr: "Inviter", en: "Invite", ar: "دعوة" })}
                         </Button>
                       )}
@@ -345,7 +346,7 @@ export default function PlayerReservations() {
                           size="sm"
                           onClick={() => setToCancel(r)}
                         >
-                          <X />
+                          <XIcon />
                           {t("cancel")}
                         </Button>
                       )}
@@ -355,8 +356,9 @@ export default function PlayerReservations() {
                           size="sm"
                           onClick={() => leave(r)}
                           disabled={leaveSession.isPending}
+                          loading={leaveSession.isPending}
                         >
-                          <LogOut />
+                          <SignOutIcon />
                           {tx({ fr: "Quitter", en: "Leave", ar: "مغادرة" })}
                         </Button>
                       )}
@@ -387,14 +389,14 @@ export default function PlayerReservations() {
       ) : history.length === 0 ? (
         <EmptyState title={t("noPast")} />
       ) : (
-        <ul className="m-0 flex list-none flex-col gap-2 p-0">
+        <ul className="stagger m-0 flex list-none flex-col gap-2 p-0">
           {history.map((r) => (
             <li key={r.id} className="flex items-center gap-4 rounded-[22px] bg-card/70 p-3 pe-5">
               <DateBlock date={r.startTime} />
               <span className="flex flex-1 flex-col">
                 <span className="font-extrabold">{r.terrain?.name ?? "Court"}</span>
                 <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                  <MapPin className="size-3.5" />
+                  <MapPinIcon className="size-3.5" />
                   <span dir="ltr">{clubTime(r.startTime)}</span>
                 </span>
               </span>
@@ -436,9 +438,8 @@ export default function PlayerReservations() {
               disabled={cancelReservation.isPending}
               className="h-12 rounded-full bg-destructive"
             >
-              {cancelReservation.isPending
-                ? "…"
-                : tx({ fr: "Oui, annuler", en: "Yes, cancel", ar: "نعم، ألغِ" })}
+              {cancelReservation.isPending && <SpinnerIcon className="spin size-4" />}
+              {tx({ fr: "Oui, annuler", en: "Yes, cancel", ar: "نعم، ألغِ" })}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { format } from "date-fns";
 import { useListNews } from "@workspace/api-client-react";
 import type { NewsArticle } from "@workspace/api-client-react";
-import { Newspaper, ArrowRight } from "lucide-react";
+import { ArrowRightIcon, NewspaperIcon } from "@/components/icons";
 import {
   Dialog,
   DialogContent,
@@ -72,7 +72,7 @@ export default function News() {
         </span>
         <span className="mt-auto flex items-center gap-2 pt-2 font-bold text-court">
           {tx({ fr: "Lire", en: "Read", ar: "اقرأ" })}
-          <ArrowRight className="btn-ic size-4 transition-transform group-hover:translate-x-1 rtl:scale-x-[-1]" />
+          <ArrowRightIcon className="btn-ic size-4 transition-transform group-hover:translate-x-1 rtl:scale-x-[-1]" />
         </span>
       </span>
     </button>
@@ -101,7 +101,7 @@ export default function News() {
       ) : isLoading ? (
         <div className="flex flex-col gap-5">
           <Skeleton className="h-[360px] !rounded-[32px]" />
-          <div className="grid gap-5 md:grid-cols-3">
+          <div className="stagger grid gap-5 md:grid-cols-3">
             {[0, 1, 2].map((i) => (
               <Skeleton key={i} className="h-[340px] !rounded-[32px]" />
             ))}
@@ -109,14 +109,14 @@ export default function News() {
         </div>
       ) : articles.length === 0 ? (
         <EmptyState
-          icon={<Newspaper className="size-7" />}
+          icon={<NewspaperIcon className="size-7" />}
           title={tx({ fr: "Pas encore d'actualités", en: "No news yet", ar: "لا أخبار بعد" })}
         />
       ) : (
         <div className="flex flex-col gap-5">
           <Card a={featured} big />
           {rest.length > 0 && (
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            <div className="stagger grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {rest.map((a) => (
                 <Card key={a.id} a={a} />
               ))}

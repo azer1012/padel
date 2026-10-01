@@ -14,20 +14,20 @@ import {
 import type { Terrain } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Plus,
-  Pencil,
-  Trash2,
-  Clock,
-  Users,
-  Sun,
-  Warehouse,
-  LandPlot,
-  Archive,
-  ArchiveRestore,
-  ArrowUp,
-  ArrowDown,
-  Wrench,
-} from "lucide-react";
+  ArchiveIcon,
+  ArrowDownIcon,
+  ArrowUpIcon,
+  BoxArrowUpIcon,
+  ClockIcon,
+  CourtIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  SunIcon,
+  TrashIcon,
+  UsersIcon,
+  WarehouseIcon,
+  WrenchIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -313,21 +313,21 @@ export default function AdminTerrains() {
         }
         actions={
           <Button data-testid="btn-create-terrain" onClick={openCreate}>
-            <Plus />
+            <PlusIcon />
             {tx({ fr: "Ajouter un terrain", en: "Add a court", ar: "إضافة ملعب" })}
           </Button>
         }
       />
 
       {isLoading ? (
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <div className="stagger grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-[300px] !rounded-[30px]" />
           ))}
         </div>
       ) : !terrains?.length ? (
         <EmptyState
-          icon={<LandPlot className="size-7" />}
+          icon={<CourtIcon className="size-7" />}
           title={tx({ fr: "Aucun terrain", en: "No courts yet", ar: "لا ملاعب بعد" })}
           text={tx({
             fr: "Ajoutez votre premier terrain pour ouvrir les réservations.",
@@ -336,13 +336,13 @@ export default function AdminTerrains() {
           })}
           action={
             <Button onClick={openCreate}>
-              <Plus />
+              <PlusIcon />
               {tx({ fr: "Ajouter un terrain", en: "Add a court", ar: "إضافة ملعب" })}
             </Button>
           }
         />
       ) : (
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <div className="stagger grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {terrains.map((t, index) => (
             <article
               key={t.id}
@@ -367,7 +367,7 @@ export default function AdminTerrains() {
                 <span className="absolute start-3 top-3 flex gap-1.5">
                   {t.isMaintenance ? (
                     <Pill tone="warning">
-                      <Wrench className="size-3" />
+                      <WrenchIcon className="size-3" />
                       {tx({ fr: "Maintenance", en: "Maintenance", ar: "صيانة" })}
                     </Pill>
                   ) : (
@@ -380,9 +380,9 @@ export default function AdminTerrains() {
                 </span>
                 <span className="absolute bottom-3 end-3 flex items-center gap-1.5 rounded-full bg-night/70 px-3 py-1 text-xs font-bold text-white">
                   {t.type === "outdoor" ? (
-                    <Sun className="size-3.5" />
+                    <SunIcon className="size-3.5" />
                   ) : (
-                    <Warehouse className="size-3.5" />
+                    <WarehouseIcon className="size-3.5" />
                   )}
                   {t.type === "outdoor" ? "Outdoor" : "Indoor"}
                 </span>
@@ -402,7 +402,7 @@ export default function AdminTerrains() {
               <dl className="m-0 grid grid-cols-3 gap-2 text-sm">
                 <div className="rounded-2xl bg-mist p-3">
                   <dt className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Clock className="size-3" />
+                    <ClockIcon className="size-3" />
                     {tx({ fr: "Horaires", en: "Hours", ar: "الساعات" })}
                   </dt>
                   <dd className="m-0 mt-1 font-bold" dir="ltr">
@@ -413,7 +413,7 @@ export default function AdminTerrains() {
                 </div>
                 <div className="rounded-2xl bg-mist p-3">
                   <dt className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Users className="size-3" />
+                    <UsersIcon className="size-3" />
                     {tx({ fr: "Joueurs", en: "Players", ar: "لاعبون" })}
                   </dt>
                   <dd className="m-0 mt-1 font-bold">{rules.maxPlayers}</dd>
@@ -449,7 +449,7 @@ export default function AdminTerrains() {
                     onClick={() => move(t, -1)}
                     aria-label={tx({ fr: "Monter", en: "Move up", ar: "تحريك لأعلى" })}
                   >
-                    <ArrowUp />
+                    <ArrowUpIcon />
                   </Button>
                   <Button
                     variant="ghost"
@@ -458,7 +458,7 @@ export default function AdminTerrains() {
                     onClick={() => move(t, 1)}
                     aria-label={tx({ fr: "Descendre", en: "Move down", ar: "تحريك لأسفل" })}
                   >
-                    <ArrowDown />
+                    <ArrowDownIcon />
                   </Button>
                   <Button
                     variant="ghost"
@@ -471,7 +471,7 @@ export default function AdminTerrains() {
                       ar: `تعديل ${t.name}`,
                     })}
                   >
-                    <Pencil />
+                    <PencilSimpleIcon />
                   </Button>
                   <Button
                     variant="ghost"
@@ -484,7 +484,7 @@ export default function AdminTerrains() {
                       ar: `أرشفة ${t.name}`,
                     })}
                   >
-                    <Archive />
+                    <ArchiveIcon />
                   </Button>
                   <Button
                     variant="ghost"
@@ -498,7 +498,7 @@ export default function AdminTerrains() {
                       ar: `حذف ${t.name}`,
                     })}
                   >
-                    <Trash2 />
+                    <TrashIcon />
                   </Button>
                 </span>
               </div>
@@ -539,7 +539,7 @@ export default function AdminTerrains() {
                     {t.name}
                   </span>
                   <Button variant="outline" size="sm" onClick={() => handleArchive(t, false)}>
-                    <ArchiveRestore />
+                    <BoxArrowUpIcon />
                     {tx({ fr: "Restaurer", en: "Restore", ar: "استعادة" })}
                   </Button>
                 </li>
@@ -723,7 +723,13 @@ export default function AdminTerrains() {
                 />
               </Field>
             )}
-            <Button data-testid="btn-save-terrain" type="submit" size="lg" disabled={saving}>
+            <Button
+              data-testid="btn-save-terrain"
+              type="submit"
+              size="lg"
+              disabled={saving}
+              loading={saving}
+            >
               {saving
                 ? tx({ fr: "Enregistrement…", en: "Saving…", ar: "جارٍ الحفظ…" })
                 : tx({ fr: "Enregistrer", en: "Save court", ar: "حفظ" })}

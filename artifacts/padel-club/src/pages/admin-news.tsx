@@ -9,7 +9,14 @@ import {
 } from "@workspace/api-client-react";
 import type { NewsArticle } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Newspaper, ImageOff, Eye } from "lucide-react";
+import {
+  EyeIcon,
+  ImageBrokenIcon,
+  NewspaperIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -192,7 +199,7 @@ export default function AdminNews() {
         })}
         actions={
           <Button data-testid="btn-create-article" onClick={openCreate}>
-            <Plus />
+            <PlusIcon />
             {tx({ fr: "Nouvel article", en: "New article", ar: "مقال جديد" })}
           </Button>
         }
@@ -221,17 +228,17 @@ export default function AdminNews() {
         </div>
       ) : list.length === 0 ? (
         <EmptyState
-          icon={<Newspaper className="size-7" />}
+          icon={<NewspaperIcon className="size-7" />}
           title={tx({ fr: "Aucun article", en: "No articles", ar: "لا مقالات" })}
           action={
             <Button onClick={openCreate}>
-              <Plus />
+              <PlusIcon />
               {tx({ fr: "Écrire un article", en: "Write an article", ar: "اكتب مقالًا" })}
             </Button>
           }
         />
       ) : (
-        <ul className="m-0 flex list-none flex-col gap-3 p-0">
+        <ul className="stagger m-0 flex list-none flex-col gap-3 p-0">
           {list.map((a) => (
             <li
               key={a.id}
@@ -242,7 +249,7 @@ export default function AdminNews() {
                 {a.imageUrl ? (
                   <img src={a.imageUrl} alt="" loading="lazy" className="size-full object-cover" />
                 ) : (
-                  <Newspaper className="size-6 text-muted-foreground" />
+                  <NewspaperIcon className="size-6 text-muted-foreground" />
                 )}
               </span>
               <span className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -279,7 +286,7 @@ export default function AdminNews() {
                     data-testid={`btn-edit-article-${a.id}`}
                     aria-label={tx({ fr: "Modifier", en: "Edit", ar: "تعديل" })}
                   >
-                    <Pencil />
+                    <PencilSimpleIcon />
                   </Button>
                   <Button
                     variant="ghost"
@@ -289,7 +296,7 @@ export default function AdminNews() {
                     data-testid={`btn-delete-article-${a.id}`}
                     aria-label={tx({ fr: "Supprimer", en: "Delete", ar: "حذف" })}
                   >
-                    <Trash2 />
+                    <TrashIcon />
                   </Button>
                 </span>
               </span>
@@ -389,14 +396,14 @@ export default function AdminNews() {
                       className="size-full object-cover"
                     />
                   ) : (
-                    <ImageOff className="size-4 text-muted-foreground" />
+                    <ImageBrokenIcon className="size-4 text-muted-foreground" />
                   )}
                 </span>
               </div>
             </Field>
             <label className="flex cursor-pointer items-center justify-between gap-4 rounded-[20px] bg-secondary p-4">
               <span className="flex items-center gap-3">
-                <Eye className="size-5 text-court" />
+                <EyeIcon className="size-5 text-court" />
                 <span className="flex flex-col">
                   <span className="font-bold">
                     {tx({
@@ -416,7 +423,13 @@ export default function AdminNews() {
               </span>
               <Switch checked={form.isPublished} onCheckedChange={(v) => set("isPublished", v)} />
             </label>
-            <Button data-testid="btn-save-article" type="submit" size="lg" disabled={saving}>
+            <Button
+              data-testid="btn-save-article"
+              type="submit"
+              size="lg"
+              disabled={saving}
+              loading={saving}
+            >
               {saving
                 ? tx({ fr: "Enregistrement…", en: "Saving…", ar: "جارٍ الحفظ…" })
                 : form.isPublished

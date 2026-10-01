@@ -1,4 +1,10 @@
-import { CheckCircle2, Clock3, Gift, RotateCcw, Banknote } from "lucide-react";
+import {
+  ArrowCounterClockwiseIcon,
+  CheckCircleIcon,
+  ClockIcon,
+  GiftIcon,
+  MoneyIcon,
+} from "@/components/icons";
 import { Badge } from "@/components/ui/badge";
 import { useTx } from "@/lib/i18n";
 
@@ -15,32 +21,32 @@ export function PaymentBadge({ type, status, className }: Props) {
   if (status === "refunded")
     return (
       <Badge variant="muted" className={`gap-1 ${className ?? ""}`}>
-        <RotateCcw className="size-3" />
+        <ArrowCounterClockwiseIcon className="size-3" />
         {tx({ fr: "Remboursé", en: "Refunded", ar: "مسترجع" })}
       </Badge>
     );
   if (type === "invited_free")
     return (
       <Badge variant="lime" className={`gap-1 ${className ?? ""}`}>
-        <Gift className="size-3" />
+        <GiftIcon className="size-3" />
         {tx({ fr: "Invité", en: "Invited", ar: "مدعو" })}
       </Badge>
     );
   if (type === "cash_club")
     return status === "paid" ? (
       <Badge variant="success" className={`gap-1 ${className ?? ""}`}>
-        <Banknote className="size-3" />
+        <MoneyIcon className="size-3" />
         {tx({ fr: "Espèces · payé", en: "Cash · paid", ar: "نقدًا · مدفوع" })}
       </Badge>
     ) : (
       <Badge variant="warning" className={`gap-1 ${className ?? ""}`}>
-        <Clock3 className="size-3" />
+        <ClockIcon className="size-3" />
         {tx({ fr: "À payer au club", en: "Pay at the club", ar: "الدفع في النادي" })}
       </Badge>
     );
   return (
     <Badge variant="success" className={`gap-1 ${className ?? ""}`}>
-      <CheckCircle2 className="size-3" />
+      <CheckCircleIcon className="size-3" />
       {tx({ fr: "Payé · token", en: "Paid · token", ar: "مدفوع · رصيد" })}
     </Badge>
   );

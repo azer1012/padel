@@ -13,7 +13,7 @@ export default function NotFound() {
       >
         <CourtLines />
       </div>
-      <span className="relative flex size-20 items-center justify-center rounded-full bg-ball text-night">
+      <span className="ball-bounce relative flex size-20 items-center justify-center rounded-full bg-ball text-night shadow-[0_20px_40px_-16px_rgb(221_247_74/.6)]">
         <span className="disp text-3xl">404</span>
       </span>
       <h1 className="disp relative m-0 text-[clamp(56px,9vw,120px)] leading-[0.9]">
@@ -27,7 +27,7 @@ export default function NotFound() {
         })}
       </p>
       <div className="relative flex flex-wrap justify-center gap-3">
-        <Button asChild variant="lime" size="lg">
+        <Button asChild variant="lime" size="lg" className="shine">
           <Link href="/">{tx({ fr: "Accueil", en: "Home", ar: "الرئيسية" })}</Link>
         </Button>
         <Button asChild variant="outline-dark" size="lg">

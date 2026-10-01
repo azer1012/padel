@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { CaretLeftIcon, CaretRightIcon, MagnifyingGlassIcon, XIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,7 +43,7 @@ export function Pill({
   return (
     <span
       className={cn(
-        "inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-xs font-extrabold",
+        "inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-xs font-extrabold transition-colors duration-300 [&_svg]:size-3.5",
         TONES[tone],
         className,
       )}
@@ -70,7 +70,7 @@ export function Toolbar({
       {children}
       {showClear && onClear && (
         <Button variant="ghost" size="sm" onClick={onClear} className="ms-auto">
-          <X />
+          <XIcon />
           {tx({ fr: "Effacer", en: "Clear", ar: "مسح" })}
         </Button>
       )}
@@ -90,8 +90,8 @@ export function SearchInput({
   className?: string;
 }) {
   return (
-    <div className={cn("relative min-w-[220px] flex-1", className)}>
-      <Search className="pointer-events-none absolute start-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+    <div className={cn("group relative min-w-[220px] flex-1", className)}>
+      <MagnifyingGlassIcon className="pointer-events-none absolute start-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-[color,scale] duration-300 group-focus-within:scale-110 group-focus-within:text-court" />
       <Input
         type="search"
         value={value}
@@ -160,7 +160,7 @@ export function DataTable<T>({
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="stagger">
             {loading
               ? Array.from({ length: 5 }, (_, i) => (
                   <tr key={i} className="border-b border-[#EEF1FA] last:border-0">
@@ -230,7 +230,7 @@ export function Pagination({
           disabled={page <= 1}
           aria-label={tx({ fr: "Page précédente", en: "Previous page", ar: "الصفحة السابقة" })}
         >
-          <ChevronLeft className="rtl:scale-x-[-1]" />
+          <CaretLeftIcon className="rtl:scale-x-[-1]" />
         </Button>
         <span className="min-w-[56px] text-center text-sm font-bold">
           {page} / {pages}
@@ -242,7 +242,7 @@ export function Pagination({
           disabled={page >= pages}
           aria-label={tx({ fr: "Page suivante", en: "Next page", ar: "الصفحة التالية" })}
         >
-          <ChevronRight className="rtl:scale-x-[-1]" />
+          <CaretRightIcon className="rtl:scale-x-[-1]" />
         </Button>
       </div>
     </div>
@@ -307,7 +307,7 @@ export function Segmented<T extends string>({
           aria-checked={value === o.value}
           onClick={() => onChange(o.value)}
           className={cn(
-            "h-10 flex-1 rounded-full px-4 text-sm font-bold transition-colors",
+            "h-10 flex-1 rounded-full px-4 text-sm font-bold transition-[color,background-color,box-shadow,transform] duration-300 active:scale-95",
             value === o.value
               ? "bg-card text-ink shadow-sm"
               : "text-muted-foreground hover:text-ink",

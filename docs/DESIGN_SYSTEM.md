@@ -24,22 +24,60 @@ The shadcn tokens (`--primary`, `--card`, `--sidebar`…) are mapped to these, s
 - Body: **Figtree**. Arabic falls back to **IBM Plex Sans Arabic**.
 - Small labels: `.label` (uppercase, 0.14em tracking; tracking removed in RTL).
 
+## Icons
+
+[Phosphor](https://phosphoricons.com), always imported from `@/components/icons` (never from the
+package): that module lists every icon in use and sets the defaults (24 px fallback, decorative
+`aria-hidden`). Name an icon by what it shows (`CalendarPlusIcon`, `CourtIcon`), add new ones there.
+
+Weights carry meaning:
+
+| Weight    | Used for                                                                                |
+| --------- | --------------------------------------------------------------------------------------- |
+| `bold`    | default, matches the heavy display type                                                 |
+| `fill`    | the active nav item / tab, filled status icons (notification bell with unread, toasts)  |
+| `duotone` | large feature tiles, KPI badges, empty states (`<IconWeightProvider weight="duotone">`) |
+
 ## Interaction language
 
 - `Button` variants: `default` (court blue), `lime`, `dark`, `outline`, `outline-dark`, `outline-destructive`, `secondary`, `ghost`, `link`.
-  Hover = 2 px lift + colour sweep, press = scale .97, all under 200 ms.
-- `.lift` for cards, `.pill-tab` for segmented filters (`aria-pressed` / `aria-selected` drive the state).
+  Hover = 2 px lift + colour sweep + icon nudge, press = scale .97 + ink ripple from the pointer.
+- `<Button loading={mutation.isPending}>`: spinner replaces the leading icon, label stays put, clicks are blocked,
+  `aria-busy` is set. Use it on the button that started the action, not on every button sharing the mutation.
+- Add `shine` to the one main call-to-action of a screen (a light glint every few seconds). Never more than one per view (the sidebar button has none for that reason).
+- `.lift` for cards, `.tile` + `.tile-ic` + `.tile-arrow` for shortcut tiles (icon springs, arrow slides),
+  `.pill-tab` for segmented filters (`aria-pressed` / `aria-selected` drive the state).
 - Court tiles: `.court[data-state=free|partial|busy|selected]`. Booking cells: `.slot[data-state=available|partial|full|mine|past]`.
+
+## Feedback (toasts)
+
+`toast({ title, description, variant })` from `@/hooks/use-toast`.
+
+| Variant               | Icon                        | Use                                 |
+| --------------------- | --------------------------- | ----------------------------------- |
+| `default` / `success` | animated check, ball badge  | the action worked                   |
+| `destructive`         | warning circle, coral badge | the action failed (stays 7 s)       |
+| `warning`             | warning, amber badge        | done, but something needs attention |
+| `info`                | info, blue badge            | neutral information                 |
+
+Up to 3 stack (top of the screen on phones, bottom-right on desktop). Each one shows a countdown bar
+that pauses while hovered or focused; swipe right to dismiss.
 
 ## Motion
 
 - Scroll effects use native scroll-driven animations (`animation-timeline: view()`), no JS on scroll.
   `[data-reveal]` falls back to one shared IntersectionObserver (`hooks/use-reveal.ts`).
-- Only `transform` and `opacity` are animated. `prefers-reduced-motion: reduce` disables loops, reveals and parallax.
+- Route changes fade the new page up (`.page-in`, applied by the app shell).
+- `.stagger` on a list or grid cascades its children in (60 ms apart). `.enter` / `.delay-1…5` for single blocks.
+- `<CountUp value={n} />` for headline numbers (token balances, KPIs); screen readers get the final value.
+- `.grow-x` for bars and planning blocks, `.shimmer` on skeletons (`<Skeleton>` has it), `.icon-pop` for an icon that just changed state.
+- Dialogs, popovers and selects open with a spring zoom; the sidebar's active pill slides between links.
+- Only `transform` and `opacity` are animated (plus colour transitions). `prefers-reduced-motion: reduce` disables loops, reveals,
+  parallax, cascades, ripples and count-ups; spinners keep turning because they carry meaning.
 
 ## Building blocks (`src/components/smash/`)
 
-`brand.tsx` (Logo, BallMark) · `primitives.tsx` (Page, PageHeader, EmptyState, ErrorState, Avatar, LiveDot, CourtLines, Eyebrow)
+`brand.tsx` (Logo, BallMark) · `primitives.tsx` (Page, PageHeader, EmptyState, ErrorState, Avatar, LiveDot, CourtLines, Eyebrow, CountUp)
 · `live-board.tsx` (hero court board + `useTonight`) · `match-card.tsx`.
 
 ## Copy and languages

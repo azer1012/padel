@@ -13,7 +13,15 @@ import {
 import type { Reservation, User } from "@workspace/api-client-react";
 import { MemberPicker } from "@/components/smash/member-picker";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, LayoutGrid, List, X, CalendarDays, Phone, Repeat } from "lucide-react";
+import {
+  CalendarDotsIcon,
+  GridFourIcon,
+  ListBulletsIcon,
+  PhoneIcon,
+  PlusIcon,
+  RepeatIcon,
+  XIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -293,8 +301,9 @@ export default function AdminReservations() {
             className="text-destructive"
             onClick={() => handleCancel(r)}
             disabled={cancelMutation.isPending}
+            loading={cancelMutation.isPending}
           >
-            <X />
+            <XIcon />
             {tx({ fr: "Annuler", en: "Cancel", ar: "إلغاء" })}
           </Button>
         ),
@@ -320,11 +329,11 @@ export default function AdminReservations() {
               onClick={() => setSeriesOpen(true)}
               data-testid="btn-create-series"
             >
-              <Repeat />
+              <RepeatIcon />
               {tx({ fr: "Récurrente", en: "Recurring", ar: "متكرر" })}
             </Button>
             <Button data-testid="btn-create-reservation" onClick={() => setCreateOpen(true)}>
-              <Plus />
+              <PlusIcon />
               {tx({ fr: "Nouvelle réservation", en: "New booking", ar: "حجز جديد" })}
             </Button>
           </>
@@ -341,7 +350,7 @@ export default function AdminReservations() {
               value: "calendar",
               label: (
                 <span className="flex items-center gap-2">
-                  <LayoutGrid className="size-4" />
+                  <GridFourIcon className="size-4" />
                   {tx({ fr: "Planning", en: "Schedule", ar: "الجدول" })}
                 </span>
               ),
@@ -350,7 +359,7 @@ export default function AdminReservations() {
               value: "list",
               label: (
                 <span className="flex items-center gap-2">
-                  <List className="size-4" />
+                  <ListBulletsIcon className="size-4" />
                   {tx({ fr: "Liste", en: "List", ar: "القائمة" })}
                 </span>
               ),
@@ -359,7 +368,7 @@ export default function AdminReservations() {
               value: "series",
               label: (
                 <span className="flex items-center gap-2">
-                  <Repeat className="size-4" />
+                  <RepeatIcon className="size-4" />
                   {tx({ fr: "Récurrentes", en: "Recurring", ar: "متكررة" })}
                 </span>
               ),
@@ -373,7 +382,7 @@ export default function AdminReservations() {
           <div className="h-32 animate-pulse rounded-[26px] bg-card" />
         ) : !series?.length ? (
           <div className="enter flex flex-col items-center gap-3 rounded-[28px] bg-card px-6 py-12 text-center shadow-sm">
-            <Repeat className="size-8 text-muted-foreground" />
+            <RepeatIcon className="size-8 text-muted-foreground" />
             <p className="m-0 font-bold">
               {tx({
                 fr: "Aucune réservation récurrente",
@@ -382,12 +391,12 @@ export default function AdminReservations() {
               })}
             </p>
             <Button onClick={() => setSeriesOpen(true)}>
-              <Plus />
+              <PlusIcon />
               {tx({ fr: "Créer une série", en: "Create a series", ar: "إنشاء سلسلة" })}
             </Button>
           </div>
         ) : (
-          <ul className="m-0 grid list-none gap-3 p-0 md:grid-cols-2">
+          <ul className="stagger m-0 grid list-none gap-3 p-0 md:grid-cols-2">
             {series.map((sr) => (
               <li
                 key={sr.id}
@@ -431,6 +440,7 @@ export default function AdminReservations() {
                   size="sm"
                   className="self-start text-destructive"
                   disabled={cancelSeries.isPending}
+                  loading={cancelSeries.isPending}
                   onClick={async () => {
                     const ok = await confirm({
                       title: tx({
@@ -466,7 +476,7 @@ export default function AdminReservations() {
                       });
                   }}
                 >
-                  <X />
+                  <XIcon />
                   {tx({ fr: "Annuler la série", en: "Cancel series", ar: "إلغاء السلسلة" })}
                 </Button>
               </li>
@@ -549,7 +559,7 @@ export default function AdminReservations() {
             rowTestId={(r) => `row-reservation-${r.id}`}
             empty={
               <span className="flex flex-col items-center gap-2 text-muted-foreground">
-                <CalendarDays className="size-8" />
+                <CalendarDotsIcon className="size-8" />
                 {tx({
                   fr: "Aucune réservation ne correspond.",
                   en: "No bookings match.",
@@ -735,7 +745,7 @@ export default function AdminReservations() {
                     value: "phone",
                     label: (
                       <span className="flex items-center gap-1.5">
-                        <Phone className="size-3.5" />
+                        <PhoneIcon className="size-3.5" />
                         {typeLabel("phone")}
                       </span>
                     ),
@@ -759,6 +769,7 @@ export default function AdminReservations() {
               type="submit"
               size="lg"
               disabled={createMutation.isPending}
+              loading={createMutation.isPending}
             >
               {createMutation.isPending
                 ? tx({ fr: "Création…", en: "Creating…", ar: "جارٍ الإنشاء…" })

@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import { useEquipment, type EquipmentLine } from "@workspace/api-client-react";
-import { Minus, Plus, Package } from "lucide-react";
+import { MinusIcon, PackageIcon, PlusIcon } from "@/components/icons";
 import { useTx } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useClubRules } from "@/hooks/use-club-rules";
@@ -39,7 +39,7 @@ export function EquipmentPicker({
   return (
     <fieldset className="m-0 flex flex-col gap-2 rounded-[22px] border border-[#E4E8F7] p-4">
       <legend className="flex items-center gap-2 px-1 text-sm font-extrabold">
-        <Package className="size-4 text-court" />
+        <PackageIcon className="size-4 text-court" />
         {tx({ fr: "Louer du matériel", en: "Rent equipment", ar: "استئجار معدات" })}
         <span className="font-semibold text-muted-foreground">
           · {tx({ fr: "payé à l'accueil", en: "paid at the desk", ar: "يُدفع في الاستقبال" })}
@@ -91,7 +91,7 @@ export function EquipmentPicker({
                   })}
                   className="flex size-9 items-center justify-center rounded-full border-2 border-[#E4E8F7] transition-colors hover:border-ink disabled:opacity-40"
                 >
-                  <Minus className="size-4" />
+                  <MinusIcon className="size-4" />
                 </button>
                 <span className="w-7 text-center font-extrabold tabular-nums" aria-live="polite">
                   {q}
@@ -107,7 +107,7 @@ export function EquipmentPicker({
                   })}
                   className="flex size-9 items-center justify-center rounded-full border-2 border-[#E4E8F7] transition-colors hover:border-ink disabled:opacity-40"
                 >
-                  <Plus className="size-4" />
+                  <PlusIcon className="size-4" />
                 </button>
               </span>
             </li>

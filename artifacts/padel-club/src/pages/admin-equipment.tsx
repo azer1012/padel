@@ -14,15 +14,15 @@ import {
   type RentalStatus,
 } from "@workspace/api-client-react";
 import {
-  Plus,
-  Pencil,
-  Trash2,
-  Package,
-  HandHelping,
-  Undo2,
-  Check,
-  ClipboardList,
-} from "lucide-react";
+  ArrowUUpLeftIcon,
+  CheckIcon,
+  ClipboardTextIcon,
+  HandHeartIcon,
+  PackageIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -195,7 +195,7 @@ export default function AdminEquipment() {
         })}
         actions={
           <Button onClick={openNew} data-testid="btn-create-equipment">
-            <Plus />
+            <PlusIcon />
             {tx({ fr: "Ajouter un article", en: "Add item", ar: "إضافة عنصر" })}
           </Button>
         }
@@ -205,7 +205,7 @@ export default function AdminEquipment() {
       <section className="enter flex flex-col gap-4 rounded-[28px] bg-card p-5 shadow-sm sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="disp m-0 flex items-center gap-2 text-2xl">
-            <ClipboardList className="size-6 text-court" />
+            <ClipboardTextIcon className="size-6 text-court" />
             {tx({ fr: "À préparer", en: "Prep list", ar: "قائمة التحضير" })}
             {toPrepare > 0 && <Pill tone="warning">{toPrepare}</Pill>}
           </h2>
@@ -244,7 +244,7 @@ export default function AdminEquipment() {
             })}
           </p>
         ) : (
-          <ul className="m-0 flex list-none flex-col gap-3 p-0">
+          <ul className="stagger m-0 flex list-none flex-col gap-3 p-0">
             {groups.map((g) => {
               const res = g[0].reservation;
               return (
@@ -268,7 +268,7 @@ export default function AdminEquipment() {
                         className="flex flex-wrap items-center gap-3 rounded-2xl bg-mist/70 px-3 py-2"
                       >
                         <span className="flex min-w-0 flex-1 items-center gap-2 font-bold">
-                          <Package className="size-4 text-court" />
+                          <PackageIcon className="size-4 text-court" />
                           {r.quantity} × {r.item.name}
                           {r.player && g.length > 1 && (
                             <span className="truncate text-xs font-semibold text-muted-foreground">
@@ -287,7 +287,7 @@ export default function AdminEquipment() {
                             onClick={() => move(r, "handed_out")}
                             disabled={setRental.isPending}
                           >
-                            <HandHelping />
+                            <HandHeartIcon />
                             {tx({ fr: "Remis", en: "Handed out", ar: "سُلّم" })}
                           </Button>
                         )}
@@ -298,7 +298,7 @@ export default function AdminEquipment() {
                             onClick={() => move(r, "returned")}
                             disabled={setRental.isPending}
                           >
-                            <Check />
+                            <CheckIcon />
                             {tx({ fr: "Rendu", en: "Returned", ar: "أُعيد" })}
                           </Button>
                         )}
@@ -313,7 +313,7 @@ export default function AdminEquipment() {
                               ar: "تراجع",
                             })}
                           >
-                            <Undo2 />
+                            <ArrowUUpLeftIcon />
                           </Button>
                         )}
                       </li>
@@ -334,7 +334,7 @@ export default function AdminEquipment() {
         <Skeleton className="h-[140px] !rounded-[26px]" />
       ) : !items?.length ? (
         <EmptyState
-          icon={<Package className="size-7" />}
+          icon={<PackageIcon className="size-7" />}
           title={tx({
             fr: "Aucun article à louer",
             en: "Nothing to rent yet",
@@ -347,13 +347,13 @@ export default function AdminEquipment() {
           })}
           action={
             <Button onClick={openNew}>
-              <Plus />
+              <PlusIcon />
               {tx({ fr: "Ajouter un article", en: "Add item", ar: "إضافة عنصر" })}
             </Button>
           }
         />
       ) : (
-        <ul className="m-0 grid list-none gap-3 p-0 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="stagger m-0 grid list-none gap-3 p-0 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((i) => (
             <li
               key={i.id}
@@ -363,7 +363,7 @@ export default function AdminEquipment() {
               )}
             >
               <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-ball text-night">
-                <Package className="size-6" />
+                <PackageIcon className="size-6" />
               </span>
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="truncate text-[17px] font-extrabold">{i.name}</span>
@@ -383,7 +383,7 @@ export default function AdminEquipment() {
                   ar: `تعديل ${i.name}`,
                 })}
               >
-                <Pencil />
+                <PencilSimpleIcon />
               </Button>
               <Button
                 variant="ghost"
@@ -396,7 +396,7 @@ export default function AdminEquipment() {
                   ar: `إزالة ${i.name}`,
                 })}
               >
-                <Trash2 />
+                <TrashIcon />
               </Button>
             </li>
           ))}
@@ -483,7 +483,12 @@ export default function AdminEquipment() {
               {tx({ fr: "Proposé aux joueurs", en: "Offered to players", ar: "معروض للاعبين" })}
               <Switch checked={form.isActive} onCheckedChange={(v) => set("isActive", v)} />
             </label>
-            <Button type="submit" size="lg" disabled={create.isPending || update.isPending}>
+            <Button
+              type="submit"
+              size="lg"
+              disabled={create.isPending || update.isPending}
+              loading={create.isPending || update.isPending}
+            >
               {tx({ fr: "Enregistrer", en: "Save", ar: "حفظ" })}
             </Button>
           </form>

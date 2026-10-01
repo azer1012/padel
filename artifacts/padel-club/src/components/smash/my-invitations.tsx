@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { Gift, MailOpen, MapPin } from "lucide-react";
+import { EnvelopeOpenIcon, GiftIcon, MapPinIcon } from "@/components/icons";
 import {
   useMyInvites,
   useDeclineInvite,
@@ -26,7 +26,7 @@ export function MyInvitations() {
       aria-live="polite"
     >
       <h2 className="m-0 flex items-center gap-2 text-xl font-extrabold">
-        <MailOpen className="size-5" />
+        <EnvelopeOpenIcon className="size-5" />
         {tx({
           fr: `${invites.length} invitation(s) à un match`,
           en: `${invites.length} match invitation(s)`,
@@ -48,13 +48,13 @@ export function MyInvitations() {
                 })}
                 {i.reservation.free && (
                   <span className="ms-2 inline-flex items-center gap-1 text-sm">
-                    <Gift className="size-3.5" />
+                    <GiftIcon className="size-3.5" />
                     {tx({ fr: "place offerte", en: "spot paid", ar: "مكان مدفوع" })}
                   </span>
                 )}
               </span>
               <span className="flex items-center gap-1 text-sm capitalize">
-                <MapPin className="size-3.5" />
+                <MapPinIcon className="size-3.5" />
                 {i.reservation.terrainName} ·{" "}
                 {clubDate(i.reservation.startTime, "fr", {
                   weekday: "short",

@@ -6,7 +6,12 @@ import {
   useUpdateNotificationPrefs,
   pushTest,
 } from "@workspace/api-client-react";
-import { Bell, Mail, Smartphone, Send } from "lucide-react";
+import {
+  BellIcon,
+  DeviceMobileIcon,
+  EnvelopeSimpleIcon,
+  PaperPlaneTiltIcon,
+} from "@/components/icons";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -91,7 +96,7 @@ export function NotificationSettings({
     text,
     children,
   }: {
-    icon: typeof Bell;
+    icon: typeof BellIcon;
     title: string;
     text: string;
     children: React.ReactNode;
@@ -114,7 +119,7 @@ export function NotificationSettings({
       aria-labelledby="notif-title"
     >
       <h2 id="notif-title" className="disp m-0 flex items-center gap-2 text-2xl">
-        <Bell className="size-6 text-court" />
+        <BellIcon className="size-6 text-court" />
         {tx({ fr: "Notifications", en: "Notifications", ar: "الإشعارات" })}
       </h2>
       <p className="m-0 text-[15px] text-muted-foreground">
@@ -125,7 +130,7 @@ export function NotificationSettings({
         })}
       </p>
       <Row
-        icon={Mail}
+        icon={EnvelopeSimpleIcon}
         title="Email"
         text={tx({
           fr: "Récapitulatifs et rappels par email",
@@ -141,7 +146,7 @@ export function NotificationSettings({
         />
       </Row>
       <Row
-        icon={Smartphone}
+        icon={DeviceMobileIcon}
         title={tx({ fr: "Sur cet appareil", en: "On this device", ar: "على هذا الجهاز" })}
         text={
           iosNeedsInstall
@@ -202,7 +207,7 @@ export function NotificationSettings({
             )
           }
         >
-          <Send />
+          <PaperPlaneTiltIcon />
           {tx({ fr: "Envoyer un test", en: "Send a test", ar: "إرسال تجربة" })}
         </Button>
       )}

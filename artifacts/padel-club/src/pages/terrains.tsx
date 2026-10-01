@@ -1,5 +1,5 @@
 import { useGetMe } from "@workspace/api-client-react";
-import { Coins, Timer, Users } from "lucide-react";
+import { CoinsIcon, TimerIcon, UsersIcon } from "@/components/icons";
 import CourtCalendar from "@/components/court-calendar";
 import { Page, PageHeader } from "@/components/smash/primitives";
 import { useAuth } from "@/lib/auth";
@@ -13,7 +13,7 @@ export default function Terrains() {
   const rules = useClubRules();
   const facts = [
     {
-      icon: Coins,
+      icon: CoinsIcon,
       text: tx({
         fr: `Terrain complet : ${rules.tokenCostFullCourt} tokens`,
         en: `Full court: ${rules.tokenCostFullCourt} tokens`,
@@ -21,7 +21,7 @@ export default function Terrains() {
       }),
     },
     {
-      icon: Users,
+      icon: UsersIcon,
       text: tx({
         fr: `Votre place : ${rules.tokenCostPlayer} token`,
         en: `Your spot: ${rules.tokenCostPlayer} token`,
@@ -29,7 +29,7 @@ export default function Terrains() {
       }),
     },
     {
-      icon: Timer,
+      icon: TimerIcon,
       text: tx({
         fr: `${rules.bookingDurationMinutes} minutes par match`,
         en: `${rules.bookingDurationMinutes} minutes per match`,

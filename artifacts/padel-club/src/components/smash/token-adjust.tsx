@@ -9,7 +9,7 @@ import {
   getListAllTokenTransactionsQueryKey,
   getGetTokenBalanceQueryKey,
 } from "@workspace/api-client-react";
-import { ArrowRight, Coins } from "lucide-react";
+import { ArrowRightIcon, CoinsIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -398,12 +398,12 @@ export function TokenAdjustDialog({
               aria-live="polite"
             >
               <span className="flex items-center gap-2 font-bold">
-                <Coins className="size-4" />
+                <CoinsIcon className="size-4" />
                 {tx({ fr: "Solde", en: "Balance", ar: "الرصيد" })}
               </span>
               <span className="flex items-center gap-3 font-extrabold">
                 <span className="opacity-70">{current}</span>
-                <ArrowRight className="size-4 rtl:scale-x-[-1]" />
+                <ArrowRightIcon className="size-4 rtl:scale-x-[-1]" />
                 <span className="disp text-2xl">{next}</span>
               </span>
             </div>
@@ -413,6 +413,7 @@ export function TokenAdjustDialog({
             type="submit"
             size="lg"
             disabled={adjust.isPending}
+            loading={adjust.isPending}
           >
             {adjust.isPending
               ? tx({ fr: "Enregistrement…", en: "Saving…", ar: "جارٍ الحفظ…" })

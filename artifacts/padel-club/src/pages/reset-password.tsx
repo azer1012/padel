@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation } from "wouter";
-import { Check, KeyRound } from "lucide-react";
+import { CheckIcon, KeyIcon } from "@/components/icons";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { authErrorMessage } from "@/lib/auth-errors";
@@ -73,7 +73,7 @@ export default function ResetPassword() {
       <Logo tone="dark" />
       <div className="enter mx-auto flex w-full max-w-[420px] flex-1 flex-col justify-center gap-6 py-10">
         <span className="flex size-14 items-center justify-center rounded-full bg-ball text-night">
-          {done ? <Check className="size-6" /> : <KeyRound className="size-6" />}
+          {done ? <CheckIcon className="size-6" /> : <KeyIcon className="size-6" />}
         </span>
         <h1 className="disp m-0 text-[40px] leading-[0.95]">
           {done
@@ -146,8 +146,8 @@ export default function ResetPassword() {
                 {error}
               </p>
             )}
-            <Button type="submit" size="lg" disabled={saving || !isLoaded}>
-              {saving ? "…" : tx({ fr: "Enregistrer", en: "Save", ar: "حفظ" })}
+            <Button type="submit" size="lg" disabled={saving || !isLoaded} loading={saving}>
+              {tx({ fr: "Enregistrer", en: "Save", ar: "حفظ" })}
             </Button>
           </form>
         )}

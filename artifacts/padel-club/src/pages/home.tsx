@@ -7,7 +7,13 @@ import {
   useListTournaments,
   useListNews,
 } from "@workspace/api-client-react";
-import { ArrowRight, Check, Coins, Users, CalendarDays } from "lucide-react";
+import {
+  ArrowRightIcon,
+  CalendarDotsIcon,
+  CheckIcon,
+  CoinsIcon,
+  UsersIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { LiveBoard, useTonight } from "@/components/smash/live-board";
 import { BallIcon } from "@/components/smash/brand";
@@ -152,10 +158,10 @@ export default function Home() {
                       })}
                 </span>
               </span>
-              <Button asChild variant="lime" size="lg">
+              <Button asChild variant="lime" size="lg" className="shine">
                 <Link href="/terrains">
                   {tx({ fr: "Réserver", en: "Book a court", ar: "احجز ملعبًا" })}
-                  <ArrowRight className="btn-ic" />
+                  <ArrowRightIcon className="btn-ic" />
                 </Link>
               </Button>
             </div>
@@ -346,7 +352,7 @@ export default function Home() {
                     <span className="absolute inset-y-0 start-[85%] w-[3px] bg-white/75" />
                     <span className="absolute start-[15%] end-[15%] top-1/2 h-[3px] bg-white/75" />
                     <span className="absolute start-1/2 top-1/2 flex h-11 -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full bg-ball px-5 text-[15px] font-extrabold text-night rtl:translate-x-1/2">
-                      <Check className="size-4" />
+                      <CheckIcon className="size-4" />
                       {tx({ fr: "Terrain prêt", en: "Court ready", ar: "الملعب جاهز" })}
                     </span>
                   </div>
@@ -384,7 +390,7 @@ export default function Home() {
           <Button asChild size="xl" className="w-full lg:w-auto">
             <Link href="/terrains">
               {tx({ fr: "Voir les créneaux", en: "See available slots", ar: "شاهد المواعيد" })}
-              <ArrowRight className="btn-ic" />
+              <ArrowRightIcon className="btn-ic" />
             </Link>
           </Button>
         </div>
@@ -441,7 +447,7 @@ export default function Home() {
                 en: "All open matches",
                 ar: "كل المباريات المفتوحة",
               })}
-              <ArrowRight className="btn-ic" />
+              <ArrowRightIcon className="btn-ic" />
             </Link>
           </Button>
         </div>
@@ -732,7 +738,7 @@ export default function Home() {
                   p.dark ? "bg-white/8" : "bg-white",
                 )}
               >
-                <Coins className={cn("size-5", p.dark ? "text-ball" : "text-court")} />
+                <CoinsIcon className={cn("size-5", p.dark ? "text-ball" : "text-court")} />
                 <span className="text-base font-semibold">{p.sub}</span>
               </div>
               {tokenPrice && (
@@ -780,7 +786,7 @@ export default function Home() {
                 <Button asChild variant="outline">
                   <Link href="/tournaments">
                     {tx({ fr: "Tous les tournois", en: "All tournaments", ar: "كل البطولات" })}
-                    <ArrowRight className="btn-ic" />
+                    <ArrowRightIcon className="btn-ic" />
                   </Link>
                 </Button>
               </div>
@@ -802,13 +808,13 @@ export default function Home() {
                     </span>
                     <span className="flex flex-col gap-3 p-6">
                       <span className="flex items-center gap-2 text-sm font-bold text-court">
-                        <CalendarDays className="size-4" />
+                        <CalendarDotsIcon className="size-4" />
                         {format(new Date(t.startDate), "d MMMM yyyy", { locale })}
                       </span>
                       <span className="disp text-2xl tracking-[-0.02em]">{t.name}</span>
                       {t.maxTeams ? (
                         <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Users className="size-4" />
+                          <UsersIcon className="size-4" />
                           {t.registeredTeams ?? 0}/{t.maxTeams}{" "}
                           {tx({ fr: "équipes", en: "teams", ar: "فرق" })}
                         </span>

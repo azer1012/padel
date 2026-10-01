@@ -6,16 +6,16 @@ import {
   apiErrorMessage,
 } from "@workspace/api-client-react";
 import {
-  Check,
-  Copy,
-  MessageCircle,
-  QrCode,
-  Share2,
-  Gift,
-  Coins,
-  Search,
-  UserPlus,
-} from "lucide-react";
+  CheckIcon,
+  CoinsIcon,
+  CopyIcon,
+  GiftIcon,
+  MagnifyingGlassIcon,
+  QrCodeIcon,
+  ShareNetworkIcon,
+  UserPlusIcon,
+  WhatsappLogoIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -70,7 +70,7 @@ function InviteMember({ reservationId }: { reservationId: number }) {
         })}
       </label>
       <div className="relative">
-        <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 opacity-60" />
+        <MagnifyingGlassIcon className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 opacity-60" />
         <Input
           id={`invite-search-${reservationId}`}
           value={term}
@@ -99,7 +99,7 @@ function InviteMember({ reservationId }: { reservationId: number }) {
               <span className="truncate font-bold">{m.name}</span>
               {sent[m.id] ? (
                 <span className="flex items-center gap-1 text-sm font-bold">
-                  <Check className="size-4" />
+                  <CheckIcon className="size-4" />
                   {sent[m.id]}
                 </span>
               ) : (
@@ -128,7 +128,7 @@ function InviteMember({ reservationId }: { reservationId: number }) {
                     )
                   }
                 >
-                  <UserPlus />
+                  <UserPlusIcon />
                   {tx({ fr: "Inviter", en: "Invite", ar: "دعوة" })}
                 </Button>
               )}
@@ -205,7 +205,7 @@ export function InvitePanel({
   return (
     <div className="flex flex-col gap-3 rounded-[22px] bg-ball p-4 text-night">
       <span className="flex items-center gap-2 font-extrabold">
-        {free ? <Gift className="size-4" /> : <Coins className="size-4" />}
+        {free ? <GiftIcon className="size-4" /> : <CoinsIcon className="size-4" />}
         {free
           ? tx({
               fr: "Invitez vos partenaires, c'est déjà payé",
@@ -231,7 +231,7 @@ export function InvitePanel({
           </code>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="dark" onClick={copy}>
-              {copied ? <Check /> : <Copy />}
+              {copied ? <CheckIcon /> : <CopyIcon />}
               {copied
                 ? tx({ fr: "Copié", en: "Copied", ar: "تم النسخ" })
                 : tx({ fr: "Copier", en: "Copy", ar: "نسخ" })}
@@ -242,13 +242,13 @@ export function InvitePanel({
                 target="_blank"
                 rel="noreferrer"
               >
-                <MessageCircle />
+                <WhatsappLogoIcon />
                 WhatsApp
               </a>
             </Button>
             {typeof navigator !== "undefined" && "share" in navigator && (
               <Button size="sm" variant="outline" onClick={nativeShare}>
-                <Share2 />
+                <ShareNetworkIcon />
                 {tx({ fr: "Partager", en: "Share", ar: "مشاركة" })}
               </Button>
             )}
@@ -258,7 +258,7 @@ export function InvitePanel({
               onClick={() => setShowQr((v) => !v)}
               aria-expanded={showQr}
             >
-              <QrCode />
+              <QrCodeIcon />
               QR
             </Button>
           </div>

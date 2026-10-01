@@ -1,10 +1,11 @@
 import { format } from "date-fns";
 import type { OpenMatch } from "@workspace/api-client-react";
-import { Coins, Sun, Warehouse } from "lucide-react";
+import { CoinsIcon, PlusIcon, SunIcon, WarehouseIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/smash/primitives";
 import { useTx, useDateLocale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 export function MatchCard({
   match,
@@ -19,6 +20,7 @@ export function MatchCard({
 }) {
   const tx = useTx();
   const locale = useDateLocale();
+  const { tokenCostPlayer: cost } = useClubRules();
   const start = new Date(match.startTime);
   const outdoor = match.terrain?.type === "outdoor";
   return (
@@ -38,7 +40,7 @@ export function MatchCard({
           </span>
         </span>
         <span className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-[13px] font-bold">
-          {outdoor ? <Sun className="size-3.5" /> : <Warehouse className="size-3.5" />}
+          {outdoor ? <SunIcon className="size-3.5" /> : <WarehouseIcon className="size-3.5" />}
           {match.terrain?.name}
         </span>
       </div>
@@ -50,7 +52,7 @@ export function MatchCard({
             ar: "مباراة ودية لكل المستويات",
           })}
       </p>
-      <div className="mt-auto flex items-center justify-between gap-3 border-t border-[#E4E8F7] pt-5 text-court">
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-[#E4E8F7] pt-5 text-court">
         <span
           className="flex ps-2.5"
           aria-label={tx({
@@ -72,16 +74,16 @@ export function MatchCard({
           {Array.from({ length: match.openSpots }, (_, i) => (
             <span
               key={`o${i}`}
-              className="open-seat -ms-2.5 flex size-11 items-center justify-center rounded-full bg-card text-lg font-bold"
+              className="open-seat -ms-2.5 flex size-11 items-center justify-center rounded-full bg-card"
               style={{ "--i": match.players.length + i } as React.CSSProperties}
             >
-              +
+              <PlusIcon className="size-4" />
             </span>
           ))}
         </span>
-        <Button onClick={onJoin} disabled={pending} size="sm">
-          <Coins />
-          {pending ? "…" : tx({ fr: "Rejoindre · 1", en: "Join · 1", ar: "انضم · 1" })}
+        <Button onClick={onJoin} loading={pending} size="sm" className="shrink-0">
+          <CoinsIcon weight="fill" />
+          {tx({ fr: `Rejoindre · ${cost}`, en: `Join · ${cost}`, ar: `انضم · ${cost}` })}
         </Button>
       </div>
       <span className="-mt-2 text-sm font-semibold text-success">

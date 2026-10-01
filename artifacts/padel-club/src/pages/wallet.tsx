@@ -1,17 +1,17 @@
 import { format } from "date-fns";
 import { useGetTokenBalance, useListTokenTransactions } from "@workspace/api-client-react";
 import {
-  ArrowDownLeft,
-  ArrowUpRight,
-  RefreshCw,
-  Phone,
-  MessageCircle,
-  Coins,
-  AlarmClock,
-} from "lucide-react";
+  AlarmIcon,
+  ArrowDownLeftIcon,
+  ArrowUpRightIcon,
+  ArrowsClockwiseIcon,
+  CoinsIcon,
+  PhoneIcon,
+  WhatsappLogoIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
+import { CountUp, EmptyState, Page, PageHeader } from "@/components/smash/primitives";
 import { useI18n, useTx, useDateLocale } from "@/lib/i18n";
 import { CLUB } from "@/config/club";
 import { cn } from "@/lib/utils";
@@ -45,14 +45,14 @@ export default function Wallet() {
         <section className="on-dark enter relative flex min-h-[260px] flex-col justify-between gap-6 overflow-hidden rounded-[32px] bg-night p-7 text-white">
           <div
             aria-hidden="true"
-            className="absolute -end-16 -top-16 size-[260px] rounded-full border-[18px] border-ball/15"
+            className="spin-slow absolute -end-16 -top-16 size-[260px] rounded-full border-[18px] border-dashed border-ball/15"
           />
           <span className="label relative text-ball">{t("tokenBalance")}</span>
           {loadingBalance ? (
             <Skeleton className="h-24 w-40 bg-white/10" />
           ) : (
             <p className="relative m-0 flex items-baseline gap-3">
-              <span className="disp text-[120px] leading-[0.8] tracking-[-0.05em]">{bal}</span>
+              <CountUp value={bal} className="disp text-[120px] leading-[0.8] tracking-[-0.05em]" />
               <span className="disp text-3xl">tokens</span>
             </p>
           )}
@@ -70,7 +70,7 @@ export default function Wallet() {
           </div>
           {balance?.pendingExpiry ? (
             <span className="relative flex items-center gap-2 rounded-2xl bg-coral px-4 py-3 text-sm font-bold text-night">
-              <AlarmClock className="size-4" />
+              <AlarmIcon className="size-4" />
               {tx({
                 fr: `${balance.pendingExpiry} token(s) expirent`,
                 en: `${balance.pendingExpiry} token(s) expire`,
@@ -83,7 +83,7 @@ export default function Wallet() {
           ) : null}
         </section>
 
-        <section className="enter flex flex-col gap-4 rounded-[32px] bg-ball p-7 text-night">
+        <section className="enter delay-1 flex flex-col gap-4 rounded-[32px] bg-ball p-7 text-night">
           <span className="label">{tx({ fr: "Recharger", en: "Top up", ar: "الشحن" })}</span>
           <span className="disp text-[30px] leading-tight">
             {tx({
@@ -103,7 +103,7 @@ export default function Wallet() {
             {CLUB.phoneHref && (
               <Button asChild variant="dark" size="sm">
                 <a href={CLUB.phoneHref}>
-                  <Phone />
+                  <PhoneIcon />
                   {tx({ fr: "Appeler", en: "Call", ar: "اتصل" })}
                 </a>
               </Button>
@@ -111,7 +111,7 @@ export default function Wallet() {
             {CLUB.whatsappHref && (
               <Button asChild variant="outline" size="sm">
                 <a href={CLUB.whatsappHref} target="_blank" rel="noreferrer">
-                  <MessageCircle />
+                  <WhatsappLogoIcon />
                   WhatsApp
                 </a>
               </Button>
@@ -120,18 +120,22 @@ export default function Wallet() {
         </section>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="stagger grid grid-cols-2 gap-3">
         <div className="rounded-[24px] bg-card p-5 shadow-sm">
           <span className="text-sm font-semibold text-muted-foreground">
             {tx({ fr: "Crédités", en: "Credited", ar: "مضاف" })}
           </span>
-          <p className="disp m-0 mt-1 text-[40px] text-success">+{credits}</p>
+          <p className="disp m-0 mt-1 text-[40px] text-success">
+            +<CountUp value={credits} />
+          </p>
         </div>
         <div className="rounded-[24px] bg-card p-5 shadow-sm">
           <span className="text-sm font-semibold text-muted-foreground">
             {tx({ fr: "Utilisés", en: "Used", ar: "مستخدم" })}
           </span>
-          <p className="disp m-0 mt-1 text-[40px]">−{debits}</p>
+          <p className="disp m-0 mt-1 text-[40px]">
+            −<CountUp value={debits} />
+          </p>
         </div>
       </div>
 
@@ -144,20 +148,20 @@ export default function Wallet() {
             ))}
           </div>
         ) : list.length === 0 ? (
-          <EmptyState icon={<Coins className="size-7" />} title={t("noTransactions")} />
+          <EmptyState icon={<CoinsIcon className="size-7" />} title={t("noTransactions")} />
         ) : (
-          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+          <ul className="stagger m-0 flex list-none flex-col gap-2 p-0">
             {list.map((x) => {
               const credit = x.type === "credit";
               const adj = x.type === "adjustment";
               return (
                 <li
                   key={x.id}
-                  className="flex items-center gap-4 rounded-[22px] bg-card p-3 pe-5 shadow-sm"
+                  className="group flex items-center gap-4 rounded-[22px] bg-card p-3 pe-5 shadow-sm transition-[transform,box-shadow] duration-300 hover:-translate-y-0.5 hover:shadow-md"
                 >
                   <span
                     className={cn(
-                      "flex size-12 shrink-0 items-center justify-center rounded-2xl",
+                      "flex size-12 shrink-0 items-center justify-center rounded-2xl transition-transform duration-300 ease-[cubic-bezier(.3,1.4,.5,1)] group-hover:scale-110",
                       credit
                         ? "bg-[#DDF5E7] text-success"
                         : adj
@@ -166,11 +170,11 @@ export default function Wallet() {
                     )}
                   >
                     {credit ? (
-                      <ArrowDownLeft className="size-5" />
+                      <ArrowDownLeftIcon className="size-5" />
                     ) : adj ? (
-                      <RefreshCw className="size-5" />
+                      <ArrowsClockwiseIcon className="size-5" />
                     ) : (
-                      <ArrowUpRight className="size-5" />
+                      <ArrowUpRightIcon className="size-5" />
                     )}
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col">

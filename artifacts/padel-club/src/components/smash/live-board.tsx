@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { addDays, format, isSameDay } from "date-fns";
 import { useGetCalendar } from "@workspace/api-client-react";
 import type { CalendarSlot, CalendarTerrain } from "@workspace/api-client-react";
-import { ArrowRight, Hand } from "lucide-react";
+import { ArrowRightIcon, HandTapIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { CourtLines, LiveDot } from "@/components/smash/primitives";
 import { useTx } from "@/lib/i18n";
@@ -247,13 +247,13 @@ export function LiveBoard({
             <Button asChild>
               <Link href="/terrains">
                 {tx({ fr: "Réserver", en: "Book it", ar: "احجز" })}
-                <ArrowRight className="btn-ic" />
+                <ArrowRightIcon className="btn-ic" />
               </Link>
             </Button>
           </div>
         ) : (
           <div className="enter relative -mt-6 flex w-full max-w-[560px] items-center gap-4 rounded-3xl border border-white/14 bg-white/8 px-5 py-4 text-white">
-            <Hand className="size-7 shrink-0 text-ball" />
+            <HandTapIcon className="size-7 shrink-0 text-ball" />
             <span className="text-base leading-snug">
               {tx({
                 fr: "Touchez un terrain lumineux pour le garder. Les terrains occupés indiquent quand ils se libèrent.",

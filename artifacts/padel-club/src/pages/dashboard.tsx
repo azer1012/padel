@@ -7,18 +7,18 @@ import {
   useGetOpenMatches,
 } from "@workspace/api-client-react";
 import {
-  ArrowRight,
-  CalendarPlus,
-  Coins,
-  Swords,
-  Trophy,
-  Wallet,
-  Clock3,
-  MapPin,
-} from "lucide-react";
+  ArrowRightIcon,
+  CalendarPlusIcon,
+  ClockIcon,
+  CoinsIcon,
+  MapPinIcon,
+  TennisBallIcon,
+  TrophyIcon,
+  WalletIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CourtLines, EmptyState, LiveDot, Page } from "@/components/smash/primitives";
+import { CountUp, CourtLines, EmptyState, LiveDot, Page } from "@/components/smash/primitives";
 import { MatchCard } from "@/components/smash/match-card";
 import { useJoinMatch } from "@/hooks/use-join-match";
 import { InstallBanner } from "@/components/smash/install-banner";
@@ -55,7 +55,7 @@ export default function Dashboard() {
   const quick = [
     {
       href: "/terrains",
-      icon: CalendarPlus,
+      icon: CalendarPlusIcon,
       label: tx({ fr: "Réserver", en: "Book a court", ar: "احجز" }),
       tone: "bg-court text-white",
     },
@@ -63,7 +63,7 @@ export default function Dashboard() {
       ? [
           {
             href: "/open-matches",
-            icon: Swords,
+            icon: TennisBallIcon,
             label: "Open matches",
             tone: "bg-lilac text-night",
           },
@@ -71,13 +71,13 @@ export default function Dashboard() {
       : []),
     {
       href: "/tournaments",
-      icon: Trophy,
+      icon: TrophyIcon,
       label: tx({ fr: "Tournois", en: "Tournaments", ar: "البطولات" }),
       tone: "bg-coral text-night",
     },
     {
       href: "/wallet",
-      icon: Wallet,
+      icon: WalletIcon,
       label: tx({ fr: "Portefeuille", en: "Wallet", ar: "المحفظة" }),
       tone: "bg-ball text-night",
     },
@@ -108,7 +108,7 @@ export default function Dashboard() {
           >
             <div
               aria-hidden="true"
-              className="absolute -end-12 -top-8 h-[190px] w-[330px] rotate-[-9deg] rounded-xl border-[3px] border-white/20 bg-court/50"
+              className="absolute -end-12 -top-8 h-[190px] w-[330px] rotate-[-9deg] rounded-xl border-[3px] border-white/20 bg-court/50 transition-transform duration-700 ease-[cubic-bezier(.2,.7,.2,1)] group-hover:-translate-x-3 group-hover:translate-y-2 group-hover:rotate-[-5deg]"
             >
               <CourtLines />
             </div>
@@ -126,12 +126,12 @@ export default function Dashboard() {
             </div>
             <div className="relative flex flex-wrap items-center justify-between gap-3">
               <span className="flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 font-bold">
-                <MapPin className="size-4 text-ball" />
+                <MapPinIcon className="size-4 text-ball" />
                 {next.terrain?.name}
               </span>
               {minsToNext !== null && minsToNext > 0 && (
                 <span className="flex items-center gap-2 rounded-full bg-ball px-4 py-2 font-extrabold text-night">
-                  <Clock3 className="size-4" />
+                  <ClockIcon className="size-4" />
                   {tx({ fr: "dans ", en: "in ", ar: "بعد " })}
                   {formatDistanceToNowStrict(new Date(next.startTime), { locale })}
                 </span>
@@ -150,10 +150,10 @@ export default function Dashboard() {
                 ar: "الملعب بانتظارك.",
               })}
             </span>
-            <Button asChild variant="lime" size="lg" className="self-start">
+            <Button asChild variant="lime" size="lg" className="shine self-start">
               <Link href="/terrains">
                 {tx({ fr: "Réserver un terrain", en: "Book a court", ar: "احجز ملعبًا" })}
-                <ArrowRight className="btn-ic" />
+                <ArrowRightIcon className="btn-ic" />
               </Link>
             </Button>
           </div>
@@ -162,16 +162,24 @@ export default function Dashboard() {
         {/* Tokens */}
         <Link
           href="/wallet"
-          className="lift enter flex flex-col justify-between gap-5 rounded-[32px] bg-ball p-7 text-night"
+          className="lift enter delay-1 group relative flex flex-col justify-between gap-5 overflow-hidden rounded-[32px] bg-ball p-7 text-night"
         >
-          <span className="label flex items-center gap-2">
-            <Coins className="size-4" />
+          <CoinsIcon
+            aria-hidden="true"
+            weight="duotone"
+            className="pointer-events-none absolute -end-6 -top-6 size-40 text-night/[.07] transition-transform duration-700 ease-[cubic-bezier(.3,1.4,.5,1)] group-hover:rotate-[24deg] group-hover:scale-110"
+          />
+          <span className="label relative flex items-center gap-2">
+            <CoinsIcon className="size-4" weight="fill" />
             {tx({ fr: "Vos tokens", en: "Your tokens", ar: "رصيدك" })}
           </span>
           {loadingBalance ? (
             <Skeleton className="h-20 w-32 bg-night/10" />
           ) : (
-            <span className="disp text-[96px] leading-[0.8] tracking-[-0.05em]">{bal}</span>
+            <CountUp
+              value={bal}
+              className="disp relative text-[96px] leading-[0.8] tracking-[-0.05em]"
+            />
           )}
           <span className="text-[15px] font-semibold">
             {bal >= rules.tokenCostFullCourt
@@ -208,21 +216,23 @@ export default function Dashboard() {
 
       <nav
         aria-label={tx({ fr: "Raccourcis", en: "Shortcuts", ar: "اختصارات" })}
-        className="grid grid-cols-2 gap-3 md:grid-cols-4"
+        className="stagger grid grid-cols-2 gap-3 md:grid-cols-4"
       >
         {quick.map((q) => (
           <Link
             key={q.href}
             href={q.href}
-            className="lift group flex items-center justify-between gap-3 rounded-[24px] bg-card p-4 shadow-sm"
+            className="lift tile group flex items-center justify-between gap-3 rounded-[24px] bg-card p-4 shadow-sm"
           >
             <span className="flex items-center gap-3 font-extrabold">
-              <span className={`flex size-11 items-center justify-center rounded-2xl ${q.tone}`}>
-                <q.icon className="size-5" />
+              <span
+                className={`tile-ic flex size-11 items-center justify-center rounded-2xl ${q.tone}`}
+              >
+                <q.icon className="size-6" weight="duotone" />
               </span>
               {q.label}
             </span>
-            <ArrowRight className="btn-ic hidden size-4 text-muted-foreground transition-transform group-hover:translate-x-1 sm:block rtl:scale-x-[-1]" />
+            <ArrowRightIcon className="tile-arrow hidden size-4 text-muted-foreground transition-colors group-hover:text-court sm:block" />
           </Link>
         ))}
       </nav>
@@ -237,11 +247,11 @@ export default function Dashboard() {
               {tx({ fr: "Tout voir", en: "See all", ar: "عرض الكل" })}
             </Link>
           </div>
-          <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
+          <ul className="stagger m-0 flex list-none flex-col gap-2.5 p-0">
             {later.map((r) => (
               <li
                 key={r.id}
-                className="flex items-center gap-4 rounded-[22px] bg-card p-3 pe-5 shadow-sm"
+                className="flex items-center gap-4 rounded-[22px] bg-card p-3 pe-5 shadow-sm transition-[transform,box-shadow] duration-300 hover:-translate-y-0.5 hover:shadow-md"
               >
                 <span className="flex size-14 flex-col items-center justify-center rounded-2xl bg-mist">
                   <span className="text-[11px] font-bold uppercase text-muted-foreground">
@@ -280,7 +290,7 @@ export default function Dashboard() {
           </div>
           {(matches ?? []).length === 0 ? (
             <EmptyState
-              icon={<Swords className="size-7" />}
+              icon={<TennisBallIcon className="size-7" />}
               title={tx({ fr: "Aucun open match", en: "No open matches", ar: "لا مباريات مفتوحة" })}
               text={tx({
                 fr: "Ouvrez le vôtre depuis la page de réservation.",
@@ -289,7 +299,7 @@ export default function Dashboard() {
               })}
             />
           ) : (
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            <div className="stagger grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {(matches ?? []).slice(0, 3).map((m) => (
                 <MatchCard
                   key={m.reservationId}

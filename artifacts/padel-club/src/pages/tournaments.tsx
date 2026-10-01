@@ -8,7 +8,7 @@ import {
 } from "@workspace/api-client-react";
 import type { Tournament } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Trophy, Users, CalendarDays, Gift } from "lucide-react";
+import { CalendarDotsIcon, GiftIcon, TrophyIcon, UsersIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -132,14 +132,14 @@ export default function Tournaments() {
           onRetry={() => refetch()}
         />
       ) : isLoading ? (
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="stagger grid gap-5 md:grid-cols-2">
           {[0, 1].map((i) => (
             <Skeleton key={i} className="h-[440px] !rounded-[32px]" />
           ))}
         </div>
       ) : list.length === 0 ? (
         <EmptyState
-          icon={<Trophy className="size-7" />}
+          icon={<TrophyIcon className="size-7" />}
           title={tx({
             fr: "Pas de tournoi ici pour l'instant",
             en: "No tournaments here yet",
@@ -147,7 +147,7 @@ export default function Tournaments() {
           })}
         />
       ) : (
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="stagger grid gap-5 md:grid-cols-2">
           {list.map((x) => {
             const pct = x.maxTeams
               ? Math.min(100, Math.round(((x.registeredTeams ?? 0) / x.maxTeams) * 100))
@@ -174,7 +174,7 @@ export default function Tournaments() {
                 </div>
                 <div className="flex flex-1 flex-col gap-4 p-6 sm:p-7">
                   <span className="flex items-center gap-2 text-sm font-bold capitalize text-court">
-                    <CalendarDays className="size-4" />
+                    <CalendarDotsIcon className="size-4" />
                     {format(new Date(x.startDate), "EEEE d MMMM yyyy", { locale })}
                     {x.endDate ? ` → ${format(new Date(x.endDate), "d MMM", { locale })}` : ""}
                   </span>
@@ -186,7 +186,7 @@ export default function Tournaments() {
                   )}
                   {x.prizeInfo && (
                     <span className="flex items-center gap-2 rounded-2xl bg-ball/60 px-4 py-3 text-sm font-bold text-night">
-                      <Gift className="size-4" />
+                      <GiftIcon className="size-4" />
                       {x.prizeInfo}
                     </span>
                   )}
@@ -194,7 +194,7 @@ export default function Tournaments() {
                     <div className="flex flex-col gap-2">
                       <span className="flex items-center justify-between text-sm font-bold">
                         <span className="flex items-center gap-2">
-                          <Users className="size-4" />
+                          <UsersIcon className="size-4" />
                           {tx({ fr: "Équipes", en: "Teams", ar: "الفرق" })}
                         </span>
                         <span>
@@ -214,20 +214,18 @@ export default function Tournaments() {
                       className="mt-auto"
                       size="lg"
                       onClick={() => register(x.id)}
-                      disabled={
-                        full ||
-                        (registerMutation.isPending && registerMutation.variables?.id === x.id)
+                      disabled={full}
+                      loading={
+                        registerMutation.isPending && registerMutation.variables?.id === x.id
                       }
                     >
                       {full
                         ? tx({ fr: "Complet", en: "Full", ar: "مكتمل" })
-                        : registerMutation.isPending && registerMutation.variables?.id === x.id
-                          ? "…"
-                          : tx({
-                              fr: "Inscrire mon équipe",
-                              en: "Register my team",
-                              ar: "سجّل فريقي",
-                            })}
+                        : tx({
+                            fr: "Inscrire mon équipe",
+                            en: "Register my team",
+                            ar: "سجّل فريقي",
+                          })}
                     </Button>
                   )}
                 </div>

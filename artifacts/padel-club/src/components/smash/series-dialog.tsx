@@ -10,7 +10,7 @@ import {
   getListReservationsQueryKey,
   type SeriesPreview,
 } from "@workspace/api-client-react";
-import { AlertTriangle, CalendarRange, Check } from "lucide-react";
+import { CalendarBlankIcon, CheckIcon, WarningIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -268,11 +268,15 @@ export function SeriesDialog({
           </Field>
 
           {!dates ? (
-            <Button type="submit" size="lg" variant="dark" disabled={!ready || preview.isPending}>
-              <CalendarRange />
-              {preview.isPending
-                ? "…"
-                : tx({ fr: "Voir les dates", en: "Preview dates", ar: "عرض المواعيد" })}
+            <Button
+              type="submit"
+              size="lg"
+              variant="dark"
+              disabled={!ready || preview.isPending}
+              loading={preview.isPending}
+            >
+              <CalendarBlankIcon />
+              {tx({ fr: "Voir les dates", en: "Preview dates", ar: "عرض المواعيد" })}
             </Button>
           ) : (
             <>
@@ -300,9 +304,9 @@ export function SeriesDialog({
                     }
                   >
                     {d.conflict ? (
-                      <AlertTriangle className="size-3.5 shrink-0" />
+                      <WarningIcon className="size-3.5 shrink-0" />
                     ) : (
-                      <Check className="size-3.5 shrink-0" />
+                      <CheckIcon className="size-3.5 shrink-0" />
                     )}
                     <span className="capitalize">
                       {format(new Date(d.startTime), "EEE d MMM", { locale })}
@@ -333,14 +337,13 @@ export function SeriesDialog({
                   className="flex-[1.5]"
                   onClick={confirm}
                   disabled={!free || create.isPending}
+                  loading={create.isPending}
                 >
-                  {create.isPending
-                    ? "…"
-                    : tx({
-                        fr: `Réserver ${free} séance(s)`,
-                        en: `Book ${free} session(s)`,
-                        ar: `احجز ${free} حصة`,
-                      })}
+                  {tx({
+                    fr: `Réserver ${free} séance(s)`,
+                    en: `Book ${free} session(s)`,
+                    ar: `احجز ${free} حصة`,
+                  })}
                 </Button>
               </div>
             </>

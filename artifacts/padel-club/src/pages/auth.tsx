@@ -1,6 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation, useSearch } from "wouter";
-import { Eye, EyeOff, ArrowRight, Check, Mail } from "lucide-react";
+import {
+  ArrowRightIcon,
+  CheckIcon,
+  EnvelopeSimpleIcon,
+  EyeIcon,
+  EyeSlashIcon,
+} from "@/components/icons";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -195,11 +201,11 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
               ar: "مباراتك القادمة تبدأ هنا.",
             })}
           </h2>
-          <ul className="m-0 flex list-none flex-col gap-3 p-0 text-lg text-soft-d">
+          <ul className="stagger m-0 flex list-none flex-col gap-3 p-0 text-lg text-soft-d">
             {perks.map((p) => (
               <li key={p} className="flex items-center gap-3">
                 <span className="flex size-7 items-center justify-center rounded-full bg-ball text-night">
-                  <Check className="size-4" />
+                  <CheckIcon className="size-4" />
                 </span>
                 {p}
               </li>
@@ -399,7 +405,7 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
                   }
                   className="absolute end-1.5 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary"
                 >
-                  {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  {showPw ? <EyeSlashIcon className="size-4" /> : <EyeIcon className="size-4" />}
                 </button>
               </div>
               {isSignUp && (
@@ -425,7 +431,7 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
                 role="status"
                 className="m-0 flex items-center gap-2 rounded-2xl bg-[#DDF5E7] px-4 py-3 text-sm font-semibold text-[#0F6B3C]"
               >
-                <Mail className="size-4" />
+                <EnvelopeSimpleIcon className="size-4" />
                 {notice}
               </p>
             )}
@@ -448,7 +454,7 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
                 : isSignUp
                   ? tx({ fr: "Créer mon compte", en: "Create account", ar: "إنشاء الحساب" })
                   : tx({ fr: "Se connecter", en: "Sign in", ar: "تسجيل الدخول" })}
-              {!isSubmitting && <ArrowRight className="btn-ic" />}
+              {!isSubmitting && <ArrowRightIcon className="btn-ic" />}
             </Button>
           </form>
 

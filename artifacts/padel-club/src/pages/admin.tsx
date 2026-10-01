@@ -10,19 +10,19 @@ import {
 } from "@workspace/api-client-react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
-  CalendarDays,
-  Users,
-  Activity,
-  Coins,
-  Plus,
-  ArrowRight,
-  UserPlus,
-  CalendarX2,
-  CalendarCheck2,
-} from "lucide-react";
+  ArrowRightIcon,
+  CalendarCheckIcon,
+  CalendarDotsIcon,
+  CalendarXIcon,
+  CoinsIcon,
+  PlusIcon,
+  PulseIcon,
+  UserPlusIcon,
+  UsersIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
+import { CountUp, EmptyState, LiveDot, Page, PageHeader } from "@/components/smash/primitives";
 import { useTx, useDateLocale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useClubRules } from "@/hooks/use-club-rules";
@@ -81,35 +81,39 @@ export default function AdminDashboard() {
     {
       label: tx({ fr: "Réservations aujourd'hui", en: "Bookings today", ar: "حجوزات اليوم" }),
       value: stats?.totalReservationsToday ?? 0,
+      suffix: "",
       sub: tx({
         fr: `${stats?.upcomingReservations ?? 0} à venir`,
         en: `${stats?.upcomingReservations ?? 0} still to come`,
         ar: `${stats?.upcomingReservations ?? 0} قادمة`,
       }),
-      icon: CalendarDays,
+      icon: CalendarDotsIcon,
       tone: "on-dark bg-court text-white",
     },
     {
       label: tx({ fr: "Taux d'occupation", en: "Courts filled", ar: "نسبة الإشغال" }),
-      value: `${Math.round(stats?.occupancyRateToday ?? 0)}%`,
+      value: Math.round(stats?.occupancyRateToday ?? 0),
+      suffix: "%",
       bar: Math.round(stats?.occupancyRateToday ?? 0),
-      icon: Activity,
+      icon: PulseIcon,
       tone: "bg-ball text-night",
     },
     {
       label: tx({ fr: "Membres actifs", en: "Active members", ar: "أعضاء نشطون" }),
       value: stats?.activeUsers ?? 0,
+      suffix: "",
       sub: tx({
         fr: `${stats?.totalReservationsThisMonth ?? 0} réservations ce mois`,
         en: `${stats?.totalReservationsThisMonth ?? 0} bookings this month`,
         ar: `${stats?.totalReservationsThisMonth ?? 0} حجز هذا الشهر`,
       }),
-      icon: Users,
+      icon: UsersIcon,
       tone: "bg-card",
     },
     {
       label: tx({ fr: "Tokens émis", en: "Tokens issued", ar: "الرصيد المُصدر" }),
       value: stats?.totalTokensIssued ?? 0,
+      suffix: "",
       sub:
         stats?.revenueEquivalentToday != null
           ? tx({
@@ -118,18 +122,18 @@ export default function AdminDashboard() {
               ar: `≈ ${stats.revenueEquivalentToday} ${rules.currency} اليوم`,
             })
           : undefined,
-      icon: Coins,
+      icon: CoinsIcon,
       tone: "bg-coral text-night",
     },
   ];
   const activityIcon = (type: string) =>
     type === "reservation_cancelled"
-      ? CalendarX2
+      ? CalendarXIcon
       : type === "user_registered"
-        ? UserPlus
+        ? UserPlusIcon
         : type.startsWith("token")
-          ? Coins
-          : CalendarCheck2;
+          ? CoinsIcon
+          : CalendarCheckIcon;
 
   return (
     <Page wide>
@@ -140,13 +144,13 @@ export default function AdminDashboard() {
           <>
             <Button asChild variant="outline">
               <Link href="/admin/tokens">
-                <Coins />
+                <CoinsIcon />
                 {tx({ fr: "Créditer des tokens", en: "Credit tokens", ar: "إضافة رصيد" })}
               </Link>
             </Button>
             <Button asChild>
               <Link href="/admin/reservations">
-                <Plus />
+                <PlusIcon />
                 {tx({ fr: "Nouvelle réservation", en: "New booking", ar: "حجز جديد" })}
               </Link>
             </Button>
@@ -154,25 +158,32 @@ export default function AdminDashboard() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+      <div className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         {kpis.map((k) => (
           <div
             key={k.label}
-            className={cn("lift enter flex flex-col gap-2 rounded-[26px] p-5 shadow-sm", k.tone)}
+            className={cn(
+              "lift tile group flex flex-col gap-2 rounded-[26px] p-5 shadow-sm",
+              k.tone,
+            )}
           >
-            <span className="flex items-center justify-between gap-2 text-sm font-semibold opacity-80">
-              {k.label}
-              <k.icon className="size-4 shrink-0" />
+            <span className="flex items-start justify-between gap-2 text-sm font-semibold">
+              <span className="opacity-80">{k.label}</span>
+              <span className="tile-ic flex size-9 shrink-0 items-center justify-center rounded-xl bg-current/10">
+                <k.icon className="size-5" weight="duotone" />
+              </span>
             </span>
             {loadingStats ? (
               <Skeleton className="h-11 w-20 bg-current/10" />
             ) : (
-              <span className="disp text-[44px] leading-none">{k.value}</span>
+              <span className="disp text-[44px] leading-none">
+                <CountUp value={k.value} format={(n) => `${Math.round(n)}${k.suffix}`} />
+              </span>
             )}
             {k.bar !== undefined ? (
               <span className="h-2 overflow-hidden rounded-full bg-night/15">
                 <span
-                  className="block h-full rounded-full bg-night"
+                  className="grow-x block h-full rounded-full bg-night"
                   style={{ width: `${k.bar}%` }}
                 />
               </span>
@@ -228,7 +239,7 @@ export default function AdminDashboard() {
                   </div>
                 </div>
                 <div className="relative mt-2 flex flex-col gap-2" dir="ltr">
-                  {calendar.terrains.map(({ terrain, slots }) => (
+                  {calendar.terrains.map(({ terrain, slots }, row) => (
                     <div key={terrain.id} className="flex items-stretch">
                       <span className="flex w-[112px] shrink-0 flex-col justify-center pe-3">
                         <span className="truncate text-[15px] font-extrabold">{terrain.name}</span>
@@ -239,7 +250,7 @@ export default function AdminDashboard() {
                       <div className="relative h-[58px] flex-1 rounded-2xl bg-mist">
                         {slots
                           .filter((s) => s.reservationId)
-                          .map((s) => {
+                          .map((s, col) => {
                             const st = new Date(s.startTime),
                               en = new Date(s.endTime);
                             const h0 = st.getHours() + st.getMinutes() / 60,
@@ -258,10 +269,14 @@ export default function AdminDashboard() {
                                 href="/admin/reservations"
                                 title={`${s.creatorName ?? ""} ${format(st, "HH:mm")}–${format(en, "HH:mm")}`}
                                 className={cn(
-                                  "absolute inset-y-1 flex flex-col justify-center overflow-hidden rounded-xl px-2.5 transition-transform hover:-translate-y-0.5 hover:shadow-md",
+                                  "grow-x absolute inset-y-1 flex flex-col justify-center overflow-hidden rounded-xl px-2.5 transition-[translate,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md",
                                   tone,
                                 )}
-                                style={{ left: `${left}%`, width: `calc(${width}% - 4px)` }}
+                                style={{
+                                  left: `${left}%`,
+                                  width: `calc(${width}% - 4px)`,
+                                  animationDelay: `${Math.min(row * 70 + col * 40, 900)}ms`,
+                                }}
                               >
                                 <span className="truncate text-[13px] font-extrabold">
                                   {s.creatorName ??
@@ -283,7 +298,8 @@ export default function AdminDashboard() {
                       className="pointer-events-none absolute -top-2 bottom-0 w-0.5 bg-coral"
                       style={{ left: `calc(112px + (100% - 112px) * ${nowFrac})` }}
                     >
-                      <span className="absolute -top-5 -translate-x-1/2 rounded-full bg-coral px-2 py-0.5 text-[11px] font-extrabold text-night">
+                      <span className="absolute -top-5 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-coral px-2 py-0.5 text-[11px] font-extrabold text-night">
+                        <LiveDot color="var(--color-night)" className="!size-1.5" />
                         {format(now, "HH:mm")}
                       </span>
                     </div>
@@ -304,13 +320,16 @@ export default function AdminDashboard() {
               {tx({ fr: "Rien pour l'instant.", en: "Nothing yet.", ar: "لا شيء بعد." })}
             </p>
           ) : (
-            <ul className="m-0 flex list-none flex-col gap-2 p-0">
+            <ul className="stagger m-0 flex list-none flex-col gap-2 p-0">
               {(activity ?? []).map((a) => {
                 const Icon = activityIcon(a.type);
                 return (
-                  <li key={a.id} className="flex gap-3 rounded-2xl bg-white/6 p-3">
+                  <li
+                    key={a.id}
+                    className="flex gap-3 rounded-2xl bg-white/6 p-3 transition-colors duration-300 hover:bg-white/10"
+                  >
                     <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-ball">
-                      <Icon className="size-4" />
+                      <Icon className="size-[18px]" weight="duotone" />
                     </span>
                     <span className="flex min-w-0 flex-col">
                       <span className="text-sm font-semibold leading-snug">{a.message}</span>
@@ -340,7 +359,7 @@ export default function AdminDashboard() {
             className="ulink flex items-center gap-1 font-bold text-court"
           >
             {tx({ fr: "Réservations", en: "Bookings", ar: "الحجوزات" })}
-            <ArrowRight className="size-4 rtl:scale-x-[-1]" />
+            <ArrowRightIcon className="btn-ic size-4" />
           </Link>
         </div>
         {chart.length === 0 ? (

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Download, Share, SquarePlus, X } from "lucide-react";
+import { DownloadSimpleIcon, ExportIcon, PlusSquareIcon, XIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { useInstallPrompt } from "@/lib/pwa";
 import { useTx } from "@/lib/i18n";
@@ -55,12 +55,12 @@ export function InstallBanner() {
           <ol className="m-0 flex list-none flex-col gap-1.5 p-0 text-[15px] text-soft-d">
             <li className="flex items-center gap-2">
               1. {tx({ fr: "Touchez", en: "Tap", ar: "اضغط" })}{" "}
-              <Share className="size-4 text-ball" aria-label="Share" />{" "}
+              <ExportIcon className="size-4 text-ball" aria-label="Share" />{" "}
               {tx({ fr: "en bas de Safari", en: "at the bottom of Safari", ar: "أسفل Safari" })}
             </li>
             <li className="flex items-center gap-2">
               2. {tx({ fr: "Choisissez", en: "Choose", ar: "اختر" })}{" "}
-              <SquarePlus className="size-4 text-ball" aria-hidden="true" /> «&nbsp;
+              <PlusSquareIcon className="size-4 text-ball" aria-hidden="true" /> «&nbsp;
               {tx({
                 fr: "Sur l'écran d'accueil",
                 en: "Add to Home Screen",
@@ -87,7 +87,7 @@ export function InstallBanner() {
             else if (await install()) setHidden(true);
           }}
         >
-          <Download />
+          <DownloadSimpleIcon />
           {tx({ fr: "Installer", en: "Install", ar: "تثبيت" })}
         </Button>
       )}
@@ -97,7 +97,7 @@ export function InstallBanner() {
         className="absolute end-3 top-3 flex size-9 items-center justify-center rounded-full text-white/70 hover:bg-white/10"
         aria-label={tx({ fr: "Plus tard", en: "Not now", ar: "لاحقًا" })}
       >
-        <X className="size-4" />
+        <XIcon className="size-4" />
       </button>
     </aside>
   );

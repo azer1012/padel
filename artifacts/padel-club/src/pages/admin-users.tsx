@@ -9,7 +9,14 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "@workspace/api-client-react";
-import { Coins, Users as UsersIcon, Mail, Phone, ShieldCheck, ShieldOff } from "lucide-react";
+import {
+  CoinsIcon,
+  EnvelopeSimpleIcon,
+  PhoneIcon,
+  ShieldCheckIcon,
+  ShieldSlashIcon,
+  UsersIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Avatar, Page, PageHeader } from "@/components/smash/primitives";
 import {
@@ -114,7 +121,7 @@ export default function AdminUsers() {
               )}
             </span>
             <span className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-              <Mail className="size-3" />
+              <EnvelopeSimpleIcon className="size-3" />
               {u.email}
             </span>
           </span>
@@ -128,7 +135,7 @@ export default function AdminUsers() {
       cell: (u) =>
         u.phone ? (
           <a href={`tel:${u.phone}`} className="ulink flex items-center gap-1.5 text-sm" dir="ltr">
-            <Phone className="size-3.5" />
+            <PhoneIcon className="size-3.5" />
             {u.phone}
           </a>
         ) : (
@@ -161,7 +168,7 @@ export default function AdminUsers() {
                   : "bg-ball text-night",
             )}
           >
-            <Coins className="size-3.5" />
+            <CoinsIcon className="size-3.5" />
             {b}
           </span>
         );
@@ -179,7 +186,7 @@ export default function AdminUsers() {
             size="sm"
             onClick={() => setTokenUser(u.id)}
           >
-            <Coins />
+            <CoinsIcon />
             {tx({ fr: "Tokens", en: "Tokens", ar: "الرصيد" })}
           </Button>
           {u.id !== me?.id && (
@@ -207,7 +214,7 @@ export default function AdminUsers() {
                   : tx({ fr: "Donner l'accès admin", en: "Make admin", ar: "منح صلاحية المسؤول" })
               }
             >
-              {u.role === "admin" ? <ShieldOff /> : <ShieldCheck />}
+              {u.role === "admin" ? <ShieldSlashIcon /> : <ShieldCheckIcon />}
             </Button>
           )}
         </span>

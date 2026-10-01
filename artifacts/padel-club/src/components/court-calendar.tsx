@@ -31,25 +31,25 @@ import type {
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
-  Coins,
-  Globe,
-  Lock,
-  CheckCircle2,
-  X,
-  ShieldAlert,
-  UserPlus,
-  LogOut,
-  CalendarX2,
-  Sun,
-  Warehouse,
-  Zap,
-  Users,
-  Banknote,
-  PartyPopper,
-  Phone,
-  Wrench,
-  UserRound,
-} from "lucide-react";
+  CalendarXIcon,
+  CheckCircleIcon,
+  CoinsIcon,
+  ConfettiIcon,
+  GlobeIcon,
+  LightningIcon,
+  LockSimpleIcon,
+  MoneyIcon,
+  PhoneIcon,
+  ShieldWarningIcon,
+  SignOutIcon,
+  SunIcon,
+  UserCircleIcon,
+  UserPlusIcon,
+  UsersIcon,
+  WarehouseIcon,
+  WrenchIcon,
+  XIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -134,14 +134,14 @@ function DialogHero({
       <DialogHeader className="relative text-start">
         <span className="label flex items-center gap-2 text-ball">
           {terrain.type === "outdoor" ? (
-            <Sun className="size-4" />
+            <SunIcon className="size-4" />
           ) : (
-            <Warehouse className="size-4" />
+            <WarehouseIcon className="size-4" />
           )}
           {terrain.type === "outdoor" ? "Outdoor" : "Indoor"}
           {slot.isPeak && (
             <span className="flex items-center gap-1 rounded-full bg-coral px-2.5 py-0.5 text-[11px] font-extrabold normal-case tracking-normal text-night">
-              <Zap className="size-3" />
+              <LightningIcon className="size-3" />
               {slot.priceLabel ||
                 tx({ fr: "Heures pleines", en: "Peak hours", ar: "ساعات الذروة" })}
             </span>
@@ -277,7 +277,7 @@ function BookDialog({
       <div className="flex flex-col gap-5">
         <div className="flex flex-col items-center gap-2 text-center">
           <span className="flex size-16 animate-[pop_.45s_var(--ease-out-soft)_both] items-center justify-center rounded-full bg-ball text-night">
-            <PartyPopper className="size-7" />
+            <ConfettiIcon className="size-7" />
           </span>
           <h3 className="disp m-0 text-3xl">
             {tx({ fr: "C'est réservé !", en: "You're booked!", ar: "تم الحجز!" })}
@@ -320,7 +320,7 @@ function BookDialog({
   const modes = [
     {
       id: "full_court" as const,
-      icon: <Users className="size-5" />,
+      icon: <UsersIcon className="size-5" />,
       title: tx({ fr: "Terrain complet", en: "Full court", ar: "ملعب كامل" }),
       text: tx({
         fr: `Je paie les ${spots} places, mes ${spots - 1} amis jouent gratuitement`,
@@ -331,7 +331,7 @@ function BookDialog({
     },
     {
       id: "own_spot" as const,
-      icon: <UserRound className="size-5" />,
+      icon: <UserCircleIcon className="size-5" />,
       title: tx({ fr: "Ma place", en: "Just my spot", ar: "مكاني فقط" }),
       text: tx({
         fr: `Je paie 1 place, les ${spots - 1} autres restent ouvertes`,
@@ -384,7 +384,11 @@ function BookDialog({
                       payment === p ? "border-court bg-[#EEF1FF]" : "border-[#E4E8F7]",
                     )}
                   >
-                    {p === "token" ? <Coins className="size-4" /> : <Banknote className="size-4" />}
+                    {p === "token" ? (
+                      <CoinsIcon className="size-4" />
+                    ) : (
+                      <MoneyIcon className="size-4" />
+                    )}
                     {p === "token"
                       ? tx({ fr: "Ses tokens", en: "Their tokens", ar: "رصيده" })
                       : tx({ fr: "Espèces au club", en: "Cash at club", ar: "نقدًا في النادي" })}
@@ -457,7 +461,7 @@ function BookDialog({
               <span className="text-base font-extrabold">{m.title}</span>
               <span className="text-[13px] leading-snug text-muted-foreground">{m.text}</span>
               <span className="mt-1 flex items-center gap-1.5 text-lg font-extrabold text-court">
-                <Coins className="size-4" />
+                <CoinsIcon className="size-4" />
                 {tokens(m.cost)}
               </span>
             </button>
@@ -539,7 +543,7 @@ function BookDialog({
           role="alert"
           className="m-0 flex items-start gap-2 rounded-2xl bg-[#FFEBD9] px-4 py-3 text-sm font-semibold text-[#7A3A0D]"
         >
-          <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+          <ShieldWarningIcon className="mt-0.5 size-4 shrink-0" />
           {tx({
             fr: "Solde insuffisant. Les tokens s'achètent en espèces à l'accueil du club.",
             en: "Not enough tokens. Buy tokens with cash at the club front desk.",
@@ -561,6 +565,7 @@ function BookDialog({
           className="flex-[1.4]"
           onClick={book}
           disabled={createReservation.isPending || short || adminIncomplete}
+          loading={createReservation.isPending}
         >
           {createReservation.isPending
             ? tx({ fr: "Réservation…", en: "Booking…", ar: "جارٍ الحجز…" })
@@ -568,8 +573,13 @@ function BookDialog({
         </Button>
       </div>
       {isAdmin && (
-        <Button variant="outline-destructive" onClick={block} disabled={blockSlot.isPending}>
-          <Wrench />
+        <Button
+          variant="outline-destructive"
+          onClick={block}
+          disabled={blockSlot.isPending}
+          loading={blockSlot.isPending}
+        >
+          <WrenchIcon />
           {tx({ fr: "Bloquer (maintenance)", en: "Block (maintenance)", ar: "حجب (صيانة)" })}
         </Button>
       )}
@@ -701,7 +711,7 @@ function MatchDialog({
         )}
         {slot.isPublic && (
           <Badge variant="outline" className="gap-1">
-            <Globe className="size-3" />
+            <GlobeIcon className="size-3" />
             Open match
           </Badge>
         )}
@@ -725,7 +735,7 @@ function MatchDialog({
               className="flex items-center gap-1.5 font-semibold text-court"
               dir="ltr"
             >
-              <Phone className="size-3.5" />
+              <PhoneIcon className="size-3.5" />
               {slot.guestPhone}
             </a>
           )}
@@ -822,7 +832,7 @@ function MatchDialog({
                       )
                     }
                   >
-                    <X className="size-4" />
+                    <XIcon className="size-4" />
                   </button>
                 )}
               </li>
@@ -833,7 +843,7 @@ function MatchDialog({
                 className="flex items-center gap-3 rounded-2xl border-2 border-dashed border-[#DCE2F8] p-2.5"
               >
                 <span className="flex size-10 items-center justify-center rounded-full bg-ball/60 text-night">
-                  <UserPlus className="size-4" />
+                  <UserPlusIcon className="size-4" />
                 </span>
                 <span className="text-[15px] text-muted-foreground">
                   {tx({
@@ -868,7 +878,7 @@ function MatchDialog({
           </span>
           <div className="grid gap-2 sm:grid-cols-2">
             <Button onClick={() => join("token")} disabled={joinSession.isPending}>
-              <Coins />
+              <CoinsIcon />
               {tx({
                 fr: `Payer ${tokens(perSpot)}`,
                 en: `Pay ${tokens(perSpot)}`,
@@ -881,7 +891,7 @@ function MatchDialog({
                 onClick={() => join("cash_club")}
                 disabled={joinSession.isPending}
               >
-                <Banknote />
+                <MoneyIcon />
                 {tx({ fr: "Payer au club", en: "Pay at the club", ar: "الدفع في النادي" })}
               </Button>
             )}
@@ -902,7 +912,7 @@ function MatchDialog({
           />
         ) : (
           <Button variant="dark" onClick={() => setShowInvite(true)}>
-            <UserPlus />
+            <UserPlusIcon />
             {tx({ fr: "Inviter des joueurs", en: "Invite players", ar: "ادعُ لاعبين" })}
           </Button>
         ))}
@@ -923,6 +933,7 @@ function MatchDialog({
           {newPlayer && (
             <Button
               disabled={addPlayer.isPending}
+              loading={addPlayer.isPending}
               onClick={() =>
                 addPlayer.mutate(
                   { reservationId: id, userId: newPlayer.id, paymentType: "cash_club" },
@@ -940,7 +951,7 @@ function MatchDialog({
                 )
               }
             >
-              <UserPlus />
+              <UserPlusIcon />
               {tx({ fr: "Ajouter", en: "Add", ar: "إضافة" })}
             </Button>
           )}
@@ -952,6 +963,7 @@ function MatchDialog({
           <Button
             variant="outline"
             disabled={makePublic.isPending || makePrivate.isPending}
+            loading={makePublic.isPending || makePrivate.isPending}
             onClick={() =>
               (slot.isPublic ? makePrivate : makePublic).mutate(
                 { id },
@@ -972,7 +984,7 @@ function MatchDialog({
               )
             }
           >
-            {slot.isPublic ? <Lock /> : <Globe />}
+            {slot.isPublic ? <LockSimpleIcon /> : <GlobeIcon />}
             {slot.isPublic
               ? tx({ fr: "Rendre privé", en: "Make private", ar: "اجعلها خاصة" })
               : tx({ fr: "Ouvrir au club", en: "Open to the club", ar: "افتحها للنادي" })}
@@ -982,6 +994,7 @@ function MatchDialog({
           <Button
             variant="outline-destructive"
             disabled={leaveSession.isPending}
+            loading={leaveSession.isPending}
             onClick={() =>
               leaveSession.mutate(
                 { id },
@@ -1000,7 +1013,7 @@ function MatchDialog({
               )
             }
           >
-            <LogOut />
+            <SignOutIcon />
             {tx({ fr: "Quitter", en: "Leave", ar: "مغادرة" })}
           </Button>
         )}
@@ -1009,6 +1022,7 @@ function MatchDialog({
             <Button
               variant="destructive"
               disabled={cancelReservation.isPending}
+              loading={cancelReservation.isPending}
               onClick={() =>
                 cancelReservation.mutate(
                   { id },
@@ -1036,7 +1050,7 @@ function MatchDialog({
                 )
               }
             >
-              <CheckCircle2 />
+              <CheckCircleIcon />
               {tx({
                 fr: "Confirmer l'annulation",
                 en: "Confirm cancellation",
@@ -1045,7 +1059,7 @@ function MatchDialog({
             </Button>
           ) : (
             <Button variant="outline-destructive" onClick={() => setConfirmCancel(true)}>
-              <X />
+              <XIcon />
               {slot.isBlocked
                 ? tx({ fr: "Débloquer", en: "Unblock", ar: "إلغاء الحجب" })
                 : tx({ fr: "Annuler la réservation", en: "Cancel booking", ar: "إلغاء الحجز" })}
@@ -1200,10 +1214,10 @@ export default function CourtCalendar({
               aria-pressed={on}
               aria-label={format(d, "EEEE d MMMM", { locale })}
               className={cn(
-                "flex h-[74px] w-[64px] flex-col items-center justify-center gap-0.5 rounded-[22px] border-2 transition-[background-color,border-color,color,transform] active:scale-95",
+                "flex h-[74px] w-[64px] flex-col items-center justify-center gap-0.5 rounded-[22px] border-2 transition-[background-color,border-color,color,transform,box-shadow] duration-300 ease-[cubic-bezier(.3,1.4,.5,1)] active:scale-95",
                 on
-                  ? "border-ink bg-ink text-white"
-                  : "border-[#E4E8F7] bg-card hover:border-[#C6CEF6]",
+                  ? "-translate-y-1 border-ink bg-ink text-white shadow-[0_14px_28px_-14px_rgb(16_26_77/.8)]"
+                  : "border-[#E4E8F7] bg-card hover:-translate-y-0.5 hover:border-[#C6CEF6]",
               )}
             >
               <span className="text-xs font-bold capitalize opacity-80">
@@ -1243,11 +1257,11 @@ export default function CourtCalendar({
             </li>
           ))}
           <li className="flex items-center gap-2">
-            <Globe className="size-4 text-[#7B5CF0]" />
+            <GlobeIcon className="size-4 text-[#7B5CF0]" />
             Open match
           </li>
           <li className="flex items-center gap-2">
-            <Zap className="size-4 text-[#B1452A]" />
+            <LightningIcon className="size-4 text-[#B1452A]" />
             {tx({ fr: "Heures pleines", en: "Peak", ar: "ذروة" })}
           </li>
         </ul>
@@ -1255,7 +1269,7 @@ export default function CourtCalendar({
 
       {isError ? (
         <EmptyState
-          icon={<CalendarX2 className="size-7" />}
+          icon={<CalendarXIcon className="size-7" />}
           title={tx({
             fr: "Le planning n'a pas chargé",
             en: "The schedule didn't load",
@@ -1275,7 +1289,7 @@ export default function CourtCalendar({
         </div>
       ) : terrains.length === 0 || times.length === 0 ? (
         <EmptyState
-          icon={<CalendarX2 className="size-7" />}
+          icon={<CalendarXIcon className="size-7" />}
           title={
             closedReason !== undefined
               ? tx({
@@ -1329,9 +1343,9 @@ export default function CourtCalendar({
                         </span>
                         <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
                           {ct.terrain.type === "outdoor" ? (
-                            <Sun className="size-3" />
+                            <SunIcon className="size-3" />
                           ) : (
-                            <Warehouse className="size-3" />
+                            <WarehouseIcon className="size-3" />
                           )}
                           {ct.terrain.type === "outdoor" ? "Outdoor" : "Indoor"}
                         </span>
@@ -1348,7 +1362,8 @@ export default function CourtCalendar({
                   ))}
                 </tr>
               </thead>
-              <tbody>
+              {/* Keyed by day: switching date replays the cascade so the change is felt. */}
+              <tbody key={date}>
                 {times.map((time, row) => {
                   const past = rowIsPast(time);
                   const firstUpcoming = !past && (row === 0 || rowIsPast(times[row - 1]));
@@ -1368,7 +1383,7 @@ export default function CourtCalendar({
                           {time}
                         </span>
                       </th>
-                      {terrains.map((ct) => {
+                      {terrains.map((ct, col) => {
                         const slot = slotAt(ct, time);
                         if (!slot) {
                           // A match that started earlier (e.g. booked before a duration change) still runs
@@ -1395,9 +1410,10 @@ export default function CourtCalendar({
                             <button
                               type="button"
                               className={cn(
-                                "slot flex h-[62px] w-full flex-col justify-center px-2",
+                                "slot slot-in flex h-[62px] w-full flex-col justify-center px-2",
                                 slot.isPast && st !== "past" && "opacity-60",
                               )}
+                              style={{ animationDelay: `${Math.min(row * 30 + col * 20, 500)}ms` }}
                               data-state={st}
                               data-public={slot.isPublic || undefined}
                               disabled={!clickable}
@@ -1409,9 +1425,9 @@ export default function CourtCalendar({
                                   <span className="flex items-center justify-between gap-1 text-[13px] font-extrabold leading-tight">
                                     <span className="truncate">{label}</span>
                                     {slot.isPublic && st !== "mine" ? (
-                                      <Globe className="size-3.5 shrink-0 text-[#7B5CF0]" />
+                                      <GlobeIcon className="size-3.5 shrink-0 text-[#7B5CF0]" />
                                     ) : slot.isPeak && st === "available" ? (
-                                      <Zap className="size-3.5 shrink-0 text-[#B1452A]" />
+                                      <LightningIcon className="size-3.5 shrink-0 text-[#B1452A]" />
                                     ) : null}
                                   </span>
                                   {st === "available" ? (

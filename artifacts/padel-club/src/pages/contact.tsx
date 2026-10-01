@@ -1,4 +1,11 @@
-import { MapPin, Phone, Mail, Clock, MessageCircle, Navigation } from "lucide-react";
+import {
+  ClockIcon,
+  EnvelopeSimpleIcon,
+  MapPinIcon,
+  NavigationArrowIcon,
+  PhoneIcon,
+  WhatsappLogoIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Page, PageHeader } from "@/components/smash/primitives";
 import { useI18n, useTx } from "@/lib/i18n";
@@ -14,7 +21,7 @@ export default function Contact() {
     ...(CLUB.fullAddress
       ? [
           {
-            icon: MapPin,
+            icon: MapPinIcon,
             label: tx({ fr: "Adresse", en: "Address", ar: "العنوان" }),
             value: (
               <>
@@ -27,7 +34,7 @@ export default function Contact() {
         ]
       : []),
     {
-      icon: Clock,
+      icon: ClockIcon,
       label: tx({ fr: "Horaires", en: "Opening hours", ar: "ساعات العمل" }),
       value: (
         <>
@@ -41,7 +48,7 @@ export default function Contact() {
     ...(CLUB.phone
       ? [
           {
-            icon: Phone,
+            icon: PhoneIcon,
             label: tx({ fr: "Téléphone", en: "Phone", ar: "الهاتف" }),
             value: (
               <a href={CLUB.phoneHref} className="ulink" dir="ltr">
@@ -54,7 +61,7 @@ export default function Contact() {
     ...(CLUB.email
       ? [
           {
-            icon: Mail,
+            icon: EnvelopeSimpleIcon,
             label: "Email",
             value: (
               <a href={`mailto:${CLUB.email}`} className="ulink">
@@ -80,7 +87,7 @@ export default function Contact() {
             {CLUB.whatsappHref && (
               <Button asChild variant="lime">
                 <a href={CLUB.whatsappHref} target="_blank" rel="noreferrer">
-                  <MessageCircle />
+                  <WhatsappLogoIcon />
                   WhatsApp
                 </a>
               </Button>
@@ -88,7 +95,7 @@ export default function Contact() {
             {CLUB.phoneHref && (
               <Button asChild variant="dark">
                 <a href={CLUB.phoneHref}>
-                  <Phone />
+                  <PhoneIcon />
                   {tx({ fr: "Appeler", en: "Call", ar: "اتصل" })}
                 </a>
               </Button>
@@ -97,7 +104,7 @@ export default function Contact() {
         }
       />
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        <ul className="m-0 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-1">
+        <ul className="stagger m-0 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-1">
           {items.map((i) => (
             <li
               key={i.label}
@@ -128,7 +135,7 @@ export default function Contact() {
                 target="_blank"
                 rel="noreferrer"
               >
-                <Navigation />
+                <NavigationArrowIcon />
                 {tx({ fr: "Itinéraire", en: "Directions", ar: "الاتجاهات" })}
               </a>
             </Button>

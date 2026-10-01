@@ -7,7 +7,13 @@ import {
   getListUsersQueryKey,
 } from "@workspace/api-client-react";
 import type { TokenTransaction } from "@workspace/api-client-react";
-import { ArrowDownLeft, ArrowUpRight, RefreshCw, Plus, Coins } from "lucide-react";
+import {
+  ArrowDownLeftIcon,
+  ArrowUpRightIcon,
+  ArrowsClockwiseIcon,
+  CoinsIcon,
+  PlusIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -54,26 +60,27 @@ export default function AdminTokens() {
   const debited = rows.filter((r) => r.type === "debit").reduce((s, r) => s + r.amount, 0);
   const circulating = (users?.data ?? []).reduce((s, u) => s + (u.tokenBalance ?? 0), 0);
 
-  const meta: Record<string, { tone: Tone; icon: typeof Coins; label: string; sign: string }> = {
-    credit: {
-      tone: "success",
-      icon: ArrowDownLeft,
-      label: tx({ fr: "Crédit", en: "Credit", ar: "إضافة" }),
-      sign: "+",
-    },
-    debit: {
-      tone: "info",
-      icon: ArrowUpRight,
-      label: tx({ fr: "Débit", en: "Debit", ar: "خصم" }),
-      sign: "−",
-    },
-    adjustment: {
-      tone: "muted",
-      icon: RefreshCw,
-      label: tx({ fr: "Ajustement", en: "Adjustment", ar: "تعديل" }),
-      sign: "=",
-    },
-  };
+  const meta: Record<string, { tone: Tone; icon: typeof CoinsIcon; label: string; sign: string }> =
+    {
+      credit: {
+        tone: "success",
+        icon: ArrowDownLeftIcon,
+        label: tx({ fr: "Crédit", en: "Credit", ar: "إضافة" }),
+        sign: "+",
+      },
+      debit: {
+        tone: "info",
+        icon: ArrowUpRightIcon,
+        label: tx({ fr: "Débit", en: "Debit", ar: "خصم" }),
+        sign: "−",
+      },
+      adjustment: {
+        tone: "muted",
+        icon: ArrowsClockwiseIcon,
+        label: tx({ fr: "Ajustement", en: "Adjustment", ar: "تعديل" }),
+        sign: "=",
+      },
+    };
 
   const columns: Column<TokenTransaction>[] = [
     {
@@ -173,7 +180,7 @@ export default function AdminTokens() {
         })}
         actions={
           <Button data-testid="btn-adjust-tokens" onClick={() => setOpen(true)}>
-            <Plus />
+            <PlusIcon />
             {tx({ fr: "Créditer / débiter", en: "Credit / debit", ar: "إضافة / خصم" })}
           </Button>
         }
@@ -248,7 +255,7 @@ export default function AdminTokens() {
         rowKey={(t) => t.id}
         empty={
           <span className="flex flex-col items-center gap-2 text-muted-foreground">
-            <Coins className="size-8" />
+            <CoinsIcon className="size-8" />
             {tx({ fr: "Aucune transaction.", en: "No transactions.", ar: "لا معاملات." })}
           </span>
         }

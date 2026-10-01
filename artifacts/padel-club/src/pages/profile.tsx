@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useGetMe, useUpdateMe, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { KeyRound, LogOut, Save } from "lucide-react";
+import { FloppyDiskIcon, KeyIcon, SignOutIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -123,7 +123,7 @@ export default function Profile() {
             )}
             <div className="flex w-full flex-col gap-2 pt-2">
               <Button variant="outline-dark" size="sm" onClick={sendReset}>
-                <KeyRound />
+                <KeyIcon />
                 {tx({
                   fr: "Changer le mot de passe",
                   en: "Change password",
@@ -131,7 +131,7 @@ export default function Profile() {
                 })}
               </Button>
               <Button variant="outline-dark" size="sm" onClick={signOut}>
-                <LogOut />
+                <SignOutIcon />
                 {t("signOut")}
               </Button>
             </div>
@@ -220,8 +220,9 @@ export default function Profile() {
               size="lg"
               className="self-start"
               disabled={!dirty || updateMutation.isPending}
+              loading={updateMutation.isPending}
             >
-              <Save />
+              <FloppyDiskIcon />
               {updateMutation.isPending
                 ? tx({ fr: "Enregistrement…", en: "Saving…", ar: "جارٍ الحفظ…" })
                 : tx({ fr: "Enregistrer", en: "Save changes", ar: "حفظ" })}
