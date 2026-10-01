@@ -60,7 +60,7 @@
 }
 
 /* ============================================================
-   Smash Padel design system — shadcn tokens mapped to the brand.
+   Club design system — shadcn tokens mapped to the brand.
    mist surfaces · ink text · court blue actions · ball lime for
    free / live / selected · coral for in-play · night for immersion
    ============================================================ */
@@ -302,7 +302,7 @@
 }
 
 /* ============================================================
-   Smash Padel components
+   Club components
    ============================================================ */
 @layer components {
   .disp {

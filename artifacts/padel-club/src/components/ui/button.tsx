@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * Smash Padel button language.
+ * Club button language.
  * Hover: 2px lift + colour sweep. Press: scale .97. Everything under 200ms.
  */
 const buttonVariants = cva(

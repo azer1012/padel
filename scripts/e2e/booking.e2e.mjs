@@ -332,14 +332,23 @@ await step("admin sets 60-minute matches and 30 TND per player in Réglages", as
   // Upcoming bookings exist: the admin is warned they keep their times
   await a.page.getByRole("alertdialog").getByRole("button", { name: "Appliquer" }).click();
   await a.page.getByText("Réglages enregistrés").first().waitFor({ timeout: 10000 });
+  // Edit two sections, save one: the other keeps its unsaved edits
   const pricing = a.page.locator("#pricing");
   await pricing.locator("#set-player-price").fill("30");
   await pricing.locator("#set-court-price").fill("120");
-  await pricing.getByTestId("btn-save-settings").click();
-  await a.page.getByText("Réglages enregistrés").first().waitFor({ timeout: 10000 });
   const tokens = a.page.locator("#tokens");
   await tokens.locator("#set-token-player").fill("2");
   await tokens.locator("#set-token-court").fill("6");
+  const saved = a.page.waitForResponse(
+    (r) => r.url().endsWith("/api/admin/settings") && r.request().method() === "PATCH",
+  );
+  await pricing.getByTestId("btn-save-settings").click();
+  await saved;
+  await a.page.waitForTimeout(300);
+  assert(
+    (await tokens.locator("#set-token-court").inputValue()) === "6",
+    "token edits lost after saving pricing",
+  );
   await tokens.getByTestId("btn-save-settings").click();
   await a.page.getByText("Réglages enregistrés").first().waitFor({ timeout: 10000 });
   await shot(a.page, "18-admin-settings");

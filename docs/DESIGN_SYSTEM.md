@@ -1,4 +1,4 @@
-# Smash Padel — design system
+# Design system
 
 The whole web app (visitor site, player app, admin) shares one visual language.
 Everything below lives in `artifacts/padel-club/src/index.css` and `src/components/smash/`.

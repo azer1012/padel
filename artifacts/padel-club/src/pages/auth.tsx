@@ -12,6 +12,9 @@ import { PHOTOS } from "@/config/club";
 import { authErrorMessage } from "@/lib/auth-errors";
 
 const GOOGLE_ENABLED = import.meta.env.VITE_AUTH_GOOGLE_ENABLED === "true";
+// Prepared for a future release: needs an Apple Developer account and the Apple
+// provider enabled in Supabase (docs/GOOGLE_AUTH_CONFIGURATION.md → "Apple").
+const APPLE_ENABLED = import.meta.env.VITE_AUTH_APPLE_ENABLED === "true";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -123,17 +126,18 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
       );
   };
 
-  const handleGoogle = async () => {
+  const handleOAuth = async (provider: "google" | "apple") => {
     setError(null);
     const { error: err } = await supabase.auth.signInWithOAuth({
-      provider: "google",
+      provider,
       options: {
         redirectTo: `${window.location.origin}${basePath}${redirect}`,
-        queryParams: { prompt: "select_account" },
+        ...(provider === "google" ? { queryParams: { prompt: "select_account" } } : {}),
       },
     });
     if (err) setError(authErrorMessage(err, tx));
   };
+  const handleGoogle = () => handleOAuth("google");
 
   // Errors sent back by Supabase after an OAuth / email-link redirect
   useEffect(() => {
@@ -239,33 +243,52 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
             </p>
           </div>
 
-          {GOOGLE_ENABLED && (
+          {(GOOGLE_ENABLED || APPLE_ENABLED) && (
             <>
-              <Button type="button" variant="outline" size="lg" onClick={handleGoogle}>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    fill="#4285F4"
-                    d="M22.5 12.3c0-.8-.1-1.5-.2-2.3H12v4.4h5.9a5 5 0 0 1-2.2 3.3v2.7h3.5c2.1-1.9 3.3-4.8 3.3-8.1z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c3 0 5.5-1 7.3-2.7l-3.5-2.7c-1 .7-2.3 1-3.8 1-2.9 0-5.4-2-6.3-4.6H2.1v2.8A11 11 0 0 0 12 23z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.7 14c-.2-.7-.4-1.4-.4-2s.1-1.4.4-2V7.2H2.1a11 11 0 0 0 0 9.6L5.7 14z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.1-3.1A11 11 0 0 0 2.1 7.2L5.7 10c.9-2.6 3.4-4.6 6.3-4.6z"
-                  />
-                </svg>
-                {tx({
-                  fr: "Continuer avec Google",
-                  en: "Continue with Google",
-                  ar: "المتابعة عبر Google",
-                })}
-              </Button>
+              {APPLE_ENABLED && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  onClick={() => handleOAuth("apple")}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                    <path d="M16.4 12.6c0-2.4 2-3.5 2-3.6-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.2-2.8.8-3.5.8-.7 0-1.8-.8-3-.8-1.5 0-3 .9-3.8 2.3-1.6 2.8-.4 7 1.2 9.3.8 1.1 1.7 2.4 2.9 2.3 1.2 0 1.6-.7 3-.7s1.8.7 3 .7c1.3 0 2.1-1.1 2.8-2.3.9-1.3 1.3-2.6 1.3-2.6s-2.5-1-2.5-3.6zM14.1 5.6c.6-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.1 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4z" />
+                  </svg>
+                  {tx({
+                    fr: "Continuer avec Apple",
+                    en: "Continue with Apple",
+                    ar: "المتابعة عبر Apple",
+                  })}
+                </Button>
+              )}
+              {GOOGLE_ENABLED && (
+                <Button type="button" variant="outline" size="lg" onClick={handleGoogle}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      fill="#4285F4"
+                      d="M22.5 12.3c0-.8-.1-1.5-.2-2.3H12v4.4h5.9a5 5 0 0 1-2.2 3.3v2.7h3.5c2.1-1.9 3.3-4.8 3.3-8.1z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c3 0 5.5-1 7.3-2.7l-3.5-2.7c-1 .7-2.3 1-3.8 1-2.9 0-5.4-2-6.3-4.6H2.1v2.8A11 11 0 0 0 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.7 14c-.2-.7-.4-1.4-.4-2s.1-1.4.4-2V7.2H2.1a11 11 0 0 0 0 9.6L5.7 14z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.1-3.1A11 11 0 0 0 2.1 7.2L5.7 10c.9-2.6 3.4-4.6 6.3-4.6z"
+                    />
+                  </svg>
+                  {tx({
+                    fr: "Continuer avec Google",
+                    en: "Continue with Google",
+                    ar: "المتابعة عبر Google",
+                  })}
+                </Button>
+              )}
               <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-[.14em] text-muted-foreground">
                 <span className="h-px flex-1 bg-border" />
                 {tx({ fr: "ou par email", en: "or with email", ar: "أو عبر البريد" })}

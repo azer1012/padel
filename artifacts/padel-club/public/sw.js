@@ -1,4 +1,4 @@
-/* Smash Padel service worker
+/* Club service worker
  * - App shell works offline (navigation falls back to the cached index.html)
  * - Hashed build assets are cache-first; API calls are NEVER cached (live availability)
  * - Shows push notifications and opens the right page on tap
@@ -45,7 +45,7 @@ self.addEventListener("fetch", (event) => {
 self.addEventListener("push", (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch { data = { body: event.data && event.data.text() }; }
-  const title = data.title || "Smash Padel";
+  const title = data.title || "Padel";
   event.waitUntil(self.registration.showNotification(title, {
     body: data.body || "",
     icon: "icon-192.png",

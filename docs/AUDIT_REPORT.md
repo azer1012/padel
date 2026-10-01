@@ -1,207 +1,190 @@
-# Production audit — Smash Padel (October 2026)
+# Audit and hardening report — reusable padel club product
 
-## Executive summary
+Two passes on `main`: (1) production audit and hardening of the platform,
+(2) turning it into a reusable product sold one club at a time, with every
+operational rule configurable by the club. This report covers the current state.
 
-**Status: code ready, launch blocked on 4 actions only you can do.** Until the
-first one is done, the live site can't work and the live database is insecure.
+## 1. Executive summary
 
-1. **Apply the database migrations to the hosted project** (one paste in the SQL
-   editor, `docs/PRODUCTION_SETUP.md` §1). Two attempts from this session were
-   cancelled at the approval prompt, so nothing has been applied live.
-2. **Configure custom SMTP** in Supabase Auth: real players won't receive
-   confirmation or reset e-mails otherwise.
-3. **Choose the production domain** and set Site URL, redirect URLs and the
-   `VITE_SITE_URL` / `FRONTEND_URL` / `CORS_ORIGIN` variables.
-4. **Deploy** the API (Node host) and the website, with the variables of `.env.example`.
+- **Product model**: one codebase, one Supabase project and one deployment per
+  club. No multi-tenancy, no `tenant_id` / `club_id`, no shared customer data.
+  Branding is design-time (`VITE_CLUB_*` + image files). Operational rules are
+  edited by the club in **Admin → Réglages** and **Admin → Terrains**.
+- **Nothing operational is hard-coded any more**: match duration, players per
+  match, booking window, cancellation policy, prices, currency, token costs and
+  packs, opening hours, holidays/exceptions, court list and overrides, feature
+  switches and notification switches all come from the database, validated in
+  the form, the API and by database constraints.
+- **Security**: browsers reach Supabase for auth only; every table is behind the
+  API, which never trusts user ids, roles, balances or prices from the client.
+  No project ref, URL or key in the source.
+- **Verified locally**: typecheck 0 errors, lint clean, 61/61 API tests, 11/11
+  database invariant blocks, 26/26 browser E2E steps (including the admin
+  switching to 60-minute matches at new prices and players following), build OK,
+  `pnpm audit --prod` clean.
+- **Not done**: the hosted project still holds the old empty prototype schema;
+  applying the migrations is one paste in the SQL editor (§13). Real e-mail,
+  Google sign-in and the live API can't be tested from this environment.
 
-Google sign-in is optional and ready to switch on (`GOOGLE_AUTH_SETUP.md`).
+## 2. Fixed
 
-What the audit found on the live project `bnbdeymvdfrklbegwfgd`: a **different,
-empty schema** (UUID `profiles / courts / reservation_payments`, 5 migrations
-from 2026-06-29 that aren't in the repository) that the application cannot run
-against, with critical holes:
+Pass 2 (this release):
 
-- any signed-in user could set their own `token_balance` or `role = 'admin'`;
-- every profile (e-mail, phone, balance) was readable without logging in;
-- anyone could insert reservations without paying.
+| Area               | Fix                                                                                                                                                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hard-coded rules   | 90 min, 4 spots, 25 TND, 1/4 tokens, 08:00–23:00, "TND" removed from API, e-mails and UI; read from settings                                                                                                                    |
+| Calendar           | Grid built from the club's duration and the day's hours (weekly, court override, exceptions); bookings mapped by overlap, so a duration change never hides or double-sells an existing match; closed days and maintenance shown |
+| Admin booking form | Time chips came from a local 90-minute grid in the **browser's** time zone; now the API's free slots (club time, real availability)                                                                                             |
+| Settings cache     | `GET /settings` was cacheable 30 s by the browser: players saw old prices after a change. Now `no-cache` (found by E2E)                                                                                                         |
+| Réglages form      | Saving one section wiped unsaved edits in the others (found by E2E); sections now keep pending edits                                                                                                                            |
+| Cancellation       | Notice hours were an env variable; now a setting with "forbid" or "no refund" after the deadline (other players always refunded)                                                                                                |
+| Branding           | "Smash Padel", address and Tunis defaults removed from code, HTML and manifest; generated from `VITE_CLUB_*`                                                                                                                    |
+| Project ref        | Removed from `.env.example`, `supabase/config.toml` and docs                                                                                                                                                                    |
 
-You chose to replace it with the repository's schema. It's empty (0 rows,
-0 auth users, 0 files), so no data is lost.
+Pass 1 (still in place): legacy insecure prototype schema handled by a guarded
+migration; RLS lockdown; overlap exclusion constraint; capacity trigger;
+append-only ledger with a balance/ledger check; idempotent admin credits;
+payment states `token` / `cash_club` / `invited_free`; full-court invites free;
+admin cash marking; last-admin protection; Google OAuth wiring; password reset;
+club-time display; Replit leftovers removed.
 
-## Fixed
+## 3. Database
 
-### Booking and token logic (critical)
+New migration `20261003000000_club_settings.sql` (additive; the only data change
+turns court prices/hours equal to the old defaults into "use club setting",
+which behaves identically):
 
-- **Overlapping bookings** were possible (only identical start times were
-  blocked). The database now rejects any overlap (exclusion constraint), and the
-  API answers `409 SLOT_TAKEN` with no token charged.
-- **Every restart converted guest phone bookings and maintenance blocks into
-  joinable "own spot" matches** (startup "migration" + calendar heuristic), so the
-  court could be sold twice. Removed.
-- **Admins could cancel through `PATCH status=cancelled` without refunding** anyone.
-  Refused now; cancellation always goes through the refunding path.
-- **Players could cancel after the match was played** and get their tokens back.
-  Cancelling is closed once the match starts (or `CANCELLATION_NOTICE_HOURS` before).
-- **Admins could set a token-paid spot back to "pending"/"refunded" by hand**,
-  desynchronising the ledger. Only cash spots can be marked by hand now.
-- **Full court didn't allow inviting the 3 friends** (invites were refused). Now
-  the booker shares one link / WhatsApp / QR code and friends join as `invited_free`.
-- **Own spot**: others join with a token **or reserve and pay cash at the club**
-  (`cash_club / pending`), staff tick it paid. 1/4 → 4/4 is enforced by a database trigger.
-- Per-player payment states: `token`, `cash_club`, `invited_free` × `paid / pending / refunded`.
-- Last player leaving an own-spot match frees the court. The organiser role passes
-  to the next player if the organiser leaves.
-- Bookings must sit on the court's 90-minute grid and opening hours.
-- Token ledger: single `moveTokens()` helper, append-only ledger, deferred
-  database check that every balance change has a ledger entry, idempotency key
-  against double credits.
-- Tournament registration: capacity, duplicates and concurrency handled
-  (was unlimited and crashed on duplicates).
+- `club_settings` (single row, CHECK ranges), `opening_hours` (7 days),
+  `schedule_exceptions` (holidays, special hours, per court or club),
+  `token_packages` (10/250, 20/480, 50/1150)
+- `terrains`: number, order, maintenance + note, archived; price and hours become
+  optional overrides
+- `token_transactions`: `cash_amount`, `package_id`
+- `player_invites`: `invited_user_id`, `responded_at`, status `declined`,
+  one pending personal invite per member and match
+- activity type `settings_updated`; same RLS lockdown on the new tables
 
-### Security
+Docs: `docs/DATABASE.md`, `docs/DATABASE_DIAGRAM.md`. Legacy unused tables kept
+(private, empty): `clubs`, `staff_roles`; column `terrains.capacity`.
 
-- Browser roles revoked from every table (also future tables). All permissive
-  RLS policies dropped. Realtime publication emptied. Unused storage write
-  policies dropped. `SECURITY DEFINER` functions no longer callable by `anon`.
-- Undeployed edge function `token-processing` (any signed-in user could credit
-  themselves) removed with the other unused functions.
-- Rollback SQL files moved out of `migrations/`: they shared the migrations'
-  version numbers and could have been run by the Supabase CLI.
-- Uniform `{ error, code }` responses without internals, input validation and
-  length limits, 100 kB body limit, per-IP write rate limit, security headers,
-  graceful shutdown.
-- Demo mode (fake club, fake auth) was shipped in the production bundle. It's now
-  compiled only into demo builds.
-- Production dependencies: `pnpm audit --prod` reports no known vulnerabilities
-  (was 4). Dev tooling patched (orval with 11 critical RCE advisories removed).
+## 4. Supabase
 
-### Authentication
+- Live project checked this session (read-only): reachable; still the 5 prototype
+  migrations of 2026-06-29; every prototype table **empty**; **0 auth users**.
+  The repository migrations are **not applied** there yet (§13).
+- `supabase/config.toml` is now a neutral local-stack config; each club's
+  project is linked by ref at deploy time.
+- New guide per club: `docs/SUPABASE_NEW_CUSTOMER.md`.
 
-- Sign-up collects first name, last name, phone (optional). The profile is created
-  by a database trigger at signup (no more race with the first API calls).
-- Password reset had no page to set the new password. Added `/reset-password`.
-- Translated, human error messages. "Resend confirmation e-mail". Errors coming
-  back from OAuth redirects are displayed.
-- The Apple button (never configured) was removed. Google appears only when
-  `VITE_AUTH_GOOGLE_ENABLED=true`.
-- Profile edits are no longer overwritten by the sign-in sync.
-- Optional local JWT verification (`SUPABASE_JWT_SECRET`) removes a network call
-  to Supabase Auth on every API request.
+## 5. Authentication
 
-### UX / UI
+- E-mail/password with confirmation and reset (`/reset-password`); Google OAuth
+  behind `VITE_AUTH_GOOGLE_ENABLED`; **Apple prepared** behind
+  `VITE_AUTH_APPLE_ENABLED` (off; needs an Apple Developer account).
+- Profiles are created by a trigger on `auth.users`; the API reads the role from
+  `public.users`, never from the token.
+- Guides: `docs/GOOGLE_AUTH_CONFIGURATION.md` (Apple included),
+  `docs/EMAIL_CONFIGURATION.md`.
 
-- Planning: **courts as columns, 90-minute rows**, sticky time column and court
-  header, horizontal swipe on phones with equal columns, the grid above the fold
-  on mobile, legend, peak and open-match markers, auto-scroll to the next slot,
-  tomorrow shown when today is over.
-- Booking in 3 taps: slot → full court / my spot → confirm → **success screen with
-  invite link, WhatsApp, native share and a locally generated QR code**.
-- Match dialog: players with payment badges, empty seats ("paid spot for a friend"
-  vs "open spot"), join by token or cash, invite, leave, cancel with confirmation.
-- A slot taken meanwhile closes the dialog with "no token was charged".
-- **All match times in club time (Africa/Tunis)**: a phone set to another timezone
-  showed shifted times.
-- My bookings: Cancel for the organiser, Leave for joined players, own payment
-  badge, real player count, inline invite.
-- Invite page: "your spot is free" for full-court friends, token or cash otherwise.
-- Admin: front-desk booking on the grid (member with tokens or cash, phone guest),
-  mark cash paid, add/remove players with member search, block a slot, new-booking
-  dialog on the court grid, role management, token dialog with member search
-  (the list was capped at 200 members). A misleading "tokens expire on" field was
-  removed (nothing expires tokens).
-- Placeholder contact details (fake phone number, `#` social links) replaced by
-  `VITE_CLUB_*` variables. Empty channels are hidden.
+## 6. Reservations
 
-### Architecture & code quality
+- Bookable = active, not archived, not in maintenance, open that day, on the
+  duration grid, ends by closing, and (players) within min notice / max days.
+- End time = start + the duration at booking time; spots = max players at
+  booking time. Existing bookings are never changed by a settings change.
+- Full court: booker pays the full-court cost, friends join free via link, QR or
+  **personal invitation** (accept/decline, notification, dashboard card).
+- Own spot: others join with a token or pay at the club (if enabled).
+- Open matches, invitations and pay-at-the-club can each be switched off
+  (hidden in the UI and refused by the API).
+- Cancellation within the deadline refunds everyone; after it, "forbid" or
+  "no refund" for the canceller's own tokens. Admins can always cancel and refund.
+- Recurring series check every session against hours, holidays and maintenance.
 
-- 8 dead modules, 38 unused UI components, 31 unused dependencies, 13 MB of unused
-  images, Replit leftovers (`.agents`, `attached_assets`, aliases, ignores) removed.
-- Duplicate auth helpers, unused transaction wrapper and `terrain-slots` endpoint removed.
-- ESLint 10 (TypeScript + React hooks) set up and clean. The old config couldn't
-  parse TypeScript.
-- Dashboard numbers computed from real courts and prices (were hardcoded:
-  20 slots/day, 100 TND per booking, UTC peak hours).
-- SEO from `VITE_SITE_URL`: canonical, absolute OG image, JSON-LD, sitemap, robots
-  (private pages disallowed).
-- Migrations are the single schema source (`drizzle-kit push` removed), the runner
-  writes the Supabase CLI history table, and `db:bundle` produces the one-time script.
+## 7. Token system
 
-## Database (after the migrations)
+- Costs per spot / per full court from Réglages, overridable by peak/off-peak rules.
+- Desk sales: a **pack** (tokens + price from `token_packages`) or a number of
+  tokens with the **cash received**; minimum purchase applies to sales, not to
+  gifts or corrections. Every move is in the append-only ledger with the admin.
+- Token expiry: **not implemented** (tokens never expire); documented.
 
-| Area        | State                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tables      | users, terrains, reservations, reservation_players, player_invites, token_transactions, notifications, tournaments, tournament_registrations, news, activity, clubs, staff_roles, pricing_rules, equipment_items, reservation_equipment, reservation_series, push_subscriptions, notification_log. The requested `open_matches` is a view over `reservations` (`is_public`); `reservation_payments` is covered by the per-player payment columns. |
-| Constraints | overlap exclusion, capacity trigger, unique player per match, non-negative balances, ledger triggers, idempotency key                                                                                                                                                                                                                                                                                                                             |
-| Indexes     | foreign keys and hot paths (status/start, reservation, user, admin, invites…)                                                                                                                                                                                                                                                                                                                                                                     |
-| RLS         | on for every table, no policies, browser roles revoked                                                                                                                                                                                                                                                                                                                                                                                            |
-| Functions   | `search_path` pinned, execute revoked from public roles                                                                                                                                                                                                                                                                                                                                                                                           |
-| Triggers    | signup → profile, e-mail change sync, capacity, ledger, append-only                                                                                                                                                                                                                                                                                                                                                                               |
-| Realtime    | nothing published (the app polls every 30 s and on focus)                                                                                                                                                                                                                                                                                                                                                                                         |
-| Storage     | 5 public buckets kept, no browser write or listing policies                                                                                                                                                                                                                                                                                                                                                                                       |
+## 8. UX/UI
 
-## Tests (actual results in this session)
+- **Admin → Réglages**: sections Terrains, Réservations, Tarifs, Tokens,
+  Horaires (+ exceptions), Fonctionnalités, Notifications; French labels with
+  explanations and examples, inline validation, confirmation when bookings exist,
+  save toast, **Valeurs par défaut** per section, last-change date.
+- **Admin → Terrains**: number, photo, maintenance note, price/hours override,
+  reorder, archive/restore, archived list.
+- Players: prices, durations and token costs everywhere come from the club's
+  settings; invitations card on the dashboard; "Occupé" for matches spanning
+  grid rows; closed-day message with the reason.
 
-| Suite                                                                            | Result                                                                                                                                                                                   |
-| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm run typecheck`                                                             | 0 errors                                                                                                                                                                                 |
-| `pnpm run lint`                                                                  | 0 problems                                                                                                                                                                               |
-| API integration (`artifacts/api-server/test`, real Postgres 16 + all migrations) | **38 / 38 passed** (auth, tokens, reservations incl. a 10-way race for one slot, full-court invites, own-spot 1/4→4/4, cash payments, cancellation and refunds, admin desk, tournaments) |
-| Database invariants (`supabase/tests/db-invariants.sql`)                         | **10 / 10 passed**                                                                                                                                                                       |
-| Browser E2E (`scripts/e2e/booking.e2e.mjs`, Chromium)                            | **19 / 19 passed** (player, invited friend on mobile, cash player, admin, public mobile pages). Ledger reconciled afterwards.                                                            |
-| One-time live script dry-run on a copy of the live legacy state                  | applied, history correct, invariants 10/10                                                                                                                                               |
-| `pnpm run build`                                                                 | succeeds, no warnings                                                                                                                                                                    |
-| `pnpm audit --prod`                                                              | no known vulnerabilities                                                                                                                                                                 |
+## 9. Architecture
 
-**Not testable from this session**: anything that needs the hosted project or
-real e-mail. Signup e-mails, e-mail verification, password-reset e-mails, Google
-OAuth, and the API against the live database (the session's network blocks
-`*.supabase.co`, and the migrations weren't approved). These are on the checklist below.
+- API: `lib/settings.ts` (cached settings, 10 s TTL + invalidation),
+  `lib/slots.ts` (schedule engine), `lib/pricing.ts` (rule > court > settings),
+  `routes/settings.ts` (zod-validated, strict). All club data goes through Express.
+- Client: typed hooks in `lib/api-client-react/src/extras.ts`; `useClubRules()`
+  for every screen. Demo mode mocks the new endpoints.
+- Configuration layers: `docs/CONFIGURATION.md`.
 
-## Remaining configuration
+## 10. Security
 
-| What                                                                                          | Where                                       | Doc                  |
-| --------------------------------------------------------------------------------------------- | ------------------------------------------- | -------------------- |
-| Apply migrations                                                                              | Dashboard → SQL Editor (`db:bundle` output) | PRODUCTION_SETUP §1  |
-| Production domain                                                                             | your registrar / host                       | —                    |
-| Site URL + redirect URLs                                                                      | Auth → URL Configuration                    | PRODUCTION_SETUP §2  |
-| SMTP host, user, password, sender                                                             | Auth → Emails → SMTP                        | PRODUCTION_SETUP §2  |
-| Google Client ID + secret                                                                     | Google Cloud → Supabase Auth → Google       | GOOGLE_AUTH_SETUP.md |
-| Secrets (`SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `RESEND_API_KEY`, `CRON_SECRET`, VAPID) | API host env                                | `.env.example`       |
-| Club phone / WhatsApp / e-mail / socials                                                      | website build env (`VITE_CLUB_*`)           | `.env.example`       |
-| First admin                                                                                   | SQL editor                                  | PRODUCTION_SETUP §1  |
-| CAPTCHA (recommended)                                                                         | Auth → Attack Protection + site key         | SECURITY.md          |
-| Mobile: installable PWA works as is; no native app in this repo                               | —                                           | —                    |
+See `docs/SECURITY.md`. Highlights: browser roles revoked on all tables
+(including the new ones), settings admin-only and strict (no injected fields),
+member search returns public names only with escaped wildcards, features off are
+refused server-side, secrets only in host environments, one set of secrets per club.
 
-## Decisions for you
+## 11. Test results (this session, local)
 
-- **Cash already paid for a cancelled match**: the token spots are refunded
-  automatically, but a `cash_club / paid` spot stays as is. Staff refund at the
-  desk (or credit tokens). Decide the policy and it can be automated.
-- **Cancellation deadline**: currently "until the match starts"
-  (`CANCELLATION_NOTICE_HOURS=0`). Many clubs use 12–24 h.
-- **No-shows on cash spots**: holding a spot "pay at the club" costs nothing up front.
+| Suite                                               | Result                                                                                                                                                                                                                                                              |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm run typecheck`                                | 0 errors                                                                                                                                                                                                                                                            |
+| `pnpm run lint`                                     | clean                                                                                                                                                                                                                                                               |
+| API integration (real Postgres 16 + all migrations) | **61 / 61** (38 existing + 23 new: settings API & validation, 60-min scenario, max players, booking window, weekly hours, holidays and special hours, courts, cancellation policies, feature switches, personal invitations, packs and cash, notification switches) |
+| Database invariants                                 | **11 / 11** blocks (new: single settings row, ranges, hours, unique exceptions, court inheritance)                                                                                                                                                                  |
+| Browser E2E (Chromium)                              | **26 / 26**, run three times on fresh databases; ledger reconciled                                                                                                                                                                                                  |
+| `pnpm run build`                                    | OK; branding injected into HTML and manifest                                                                                                                                                                                                                        |
+| `pnpm audit --prod`                                 | no known vulnerabilities                                                                                                                                                                                                                                            |
+
+Not testable here: real e-mails, Google/Apple sign-in, the API against the live
+project (network policy blocks `*.supabase.co`).
+
+## 12. Manual configuration still required
+
+| What                                 | Where                                 | Guide                                   |
+| ------------------------------------ | ------------------------------------- | --------------------------------------- |
+| Apply migrations to the live project | SQL Editor (paste `db:bundle` output) | `docs/PRODUCTION_DEPLOYMENT.md` §1      |
+| Domain, DNS, HTTPS                   | registrar / host                      | `docs/DOMAIN_SETUP.md`                  |
+| Auth URLs, SMTP, templates           | Supabase dashboard                    | `docs/EMAIL_CONFIGURATION.md`           |
+| Google client (and Apple later)      | Google Cloud + Supabase               | `docs/GOOGLE_AUTH_CONFIGURATION.md`     |
+| Secrets and branding variables       | hosts' environment                    | `.env.example`, `docs/CONFIGURATION.md` |
+| Club images (logo, icons, photos)    | `artifacts/padel-club/public/`        | `docs/CONFIGURATION.md` §2              |
+| First admin, courts, Réglages        | SQL editor, then the app              | `docs/NEW_CUSTOMER_SETUP.md` phase 6    |
+| CAPTCHA (recommended)                | Supabase Attack Protection + site key | `docs/SECURITY.md`                      |
+
+## 13. New customer process
+
+`docs/NEW_CUSTOMER_SETUP.md`, in 7 phases: collect → accounts → configuration →
+database & auth → deploy → club setup with the owner → acceptance & handover,
+plus how to roll a release out to every club.
 
 ## Production checklist
 
 - [x] Production build succeeds
-- [x] No TypeScript errors
-- [x] No ESLint errors
-- [x] No broken routes or imports (build + 19-step browser run, 404 page checked)
-- [ ] Supabase connection works with the production database (blocked: migrations not applied, network blocked here)
-- [ ] Authentication works end to end with real e-mails (needs SMTP)
-- [x] RLS / access model secure — verified on a local copy with the exact migrations
-- [ ] RLS secure **on the live project** (needs the migrations applied)
-- [x] Reservations work (API + browser tests, local)
-- [x] Token accounting works and reconciles (API + browser tests, local)
-- [x] No double booking (10-way race, overlap constraint)
-- [x] Mobile responsive (375–390 px screenshots, no horizontal overflow)
-- [x] Desktop responsive (1366 px)
-- [x] Production environment documented (`.env.example`, PRODUCTION_SETUP.md)
-- [x] E-mail configuration documented
-- [x] Google login configuration documented
-- [ ] Google login tested (needs your Google client)
-- [x] No Replit dependency
-- [x] No secrets committed
-- [ ] Production domain chosen and configured
-- [ ] SMTP configured
+- [x] No TypeScript errors, no ESLint errors
+- [x] No hard-coded operational rule (duration, spots, prices, tokens, hours, courts)
+- [x] No project ref / Supabase URL / key in the source
+- [x] Settings validated in UI, API and database; reset to defaults works
+- [x] Admin change of duration and price applies to the next booking (E2E)
+- [x] No double booking (overlap constraint, 10-way race, duration change)
+- [x] Token accounting reconciles (API tests + E2E)
+- [x] Access model: browsers have no table access (local copy with the exact migrations)
+- [ ] Migrations applied on the live project
+- [ ] Access model verified **on the live project**
+- [ ] Authentication end to end with real e-mails (needs SMTP)
+- [ ] Google login tested (needs the club's Google client)
+- [ ] Production domain configured
 - [ ] First admin created

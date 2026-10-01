@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -234,8 +234,18 @@ function useSettingsSection(
   const update = useUpdateSettings();
   const reset = useResetSettings();
   const [draft, setDraft] = useState<Draft>({});
+  // Last server values shown in this section. When another section saves, the
+  // settings object changes: follow it only if this section has no pending edits.
+  const base = useRef<string>("");
   useEffect(() => {
-    if (settings) setDraft(draftOf(settings, keys));
+    if (!settings) return;
+    const next = draftOf(settings, keys);
+    setDraft((current) =>
+      base.current === "" || JSON.stringify(current) === base.current
+        ? next
+        : { ...next, ...current },
+    );
+    base.current = JSON.stringify(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings]);
   const dirty = !!settings && JSON.stringify(draft) !== JSON.stringify(draftOf(settings, keys));
@@ -247,6 +257,7 @@ function useSettingsSection(
   const save = (onSaved?: () => void) =>
     update.mutate(patchOf(draft), {
       onSuccess: (data) => {
+        base.current = JSON.stringify(draft); // adopt the saved values as returned by the server
         after(data);
         toast({
           title: tx({ fr: "Réglages enregistrés", en: "Settings saved", ar: "تم حفظ الإعدادات" }),
@@ -263,6 +274,7 @@ function useSettingsSection(
   const resetToDefault = () =>
     reset.mutate(section, {
       onSuccess: (data) => {
+        base.current = "";
         after(data);
         toast({
           title: tx({
@@ -951,7 +963,14 @@ function HoursSection({ settings }: { settings: AdminSettings }) {
   const saveHours = useSaveOpeningHours();
   const reset = useResetSettings();
   const [days, setDays] = useState<OpeningHoursDay[]>(settings.openingHours);
-  useEffect(() => setDays(settings.openingHours), [settings.openingHours]);
+  const hoursBase = useRef(JSON.stringify(settings.openingHours));
+  useEffect(() => {
+    // Keep unsaved hour edits when another section saves
+    setDays((current) =>
+      JSON.stringify(current) === hoursBase.current ? settings.openingHours : current,
+    );
+    hoursBase.current = JSON.stringify(settings.openingHours);
+  }, [settings.openingHours]);
   const dirty = JSON.stringify(days) !== JSON.stringify(settings.openingHours);
   const dayError = (d: OpeningHoursDay) =>
     !d.isClosed && d.openTime >= d.closeTime

@@ -1,7 +1,9 @@
-# Supabase CLI configuration (local stack + reference for the hosted project).
-# Hosted project settings (Auth URLs, SMTP, Google) are set in the dashboard:
-# see docs/PRODUCTION_SETUP.md and GOOGLE_AUTH_SETUP.md.
-project_id = "bnbdeymvdfrklbegwfgd"
+# Supabase CLI configuration for the LOCAL stack (`supabase start`).
+# project_id is only the local stack's name, not a hosted project: each customer's
+# hosted project is chosen with `supabase link --project-ref <project-ref>`.
+# Hosted settings (Auth URLs, SMTP, Google) are set in that project's dashboard:
+# see docs/SUPABASE_NEW_CUSTOMER.md.
+project_id = "padel-club"
 
 [api]
 enabled = true

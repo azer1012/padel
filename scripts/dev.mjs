@@ -200,7 +200,7 @@ if (!demo) {
 console.log("");
 if (demo) {
   console.log(
-    `  ${bold("Smash Padel")} ${yellow("· demo mode")} ${dim("(in-memory club, no backend)")}`,
+    `  ${bold("Padel club platform")} ${yellow("· demo mode")} ${dim("(in-memory club, no backend)")}`,
   );
   console.log(`  ${green("➜")}  Website   ${bold(`http://localhost:${webPort}`)}`);
   if (missing.length && !process.argv.includes("--demo")) {
@@ -212,7 +212,7 @@ if (demo) {
       console.log(`  ${dim("Start from .env.example:")} cp .env.example .env`);
   }
 } else {
-  console.log(`  ${bold("Smash Padel")} ${green("· development")}`);
+  console.log(`  ${bold("Padel club platform")} ${green("· development")}`);
   console.log(`  ${green("➜")}  Website   ${bold(`http://localhost:${webPort}`)}`);
   console.log(
     `  ${green("➜")}  API       http://localhost:${apiPort}/api ${dim("(proxied by the website)")}`,
