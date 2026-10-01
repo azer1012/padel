@@ -88,7 +88,7 @@ export default function Home() {
   return (
     <>
       {/* ─────────── HERO ─────────── */}
-      <section className="on-dark relative grid items-center gap-10 overflow-clip bg-night px-5 pb-16 pt-28 text-white lg:grid-cols-[540px_minmax(0,1fr)] lg:gap-8 lg:px-16 lg:pb-[110px] lg:pt-[150px]">
+      <section className="on-dark relative grid grid-cols-[minmax(0,1fr)] items-center gap-10 overflow-clip bg-night px-5 pb-16 pt-28 text-white lg:grid-cols-[540px_minmax(0,1fr)] lg:gap-8 lg:px-16 lg:pb-[110px] lg:pt-[150px]">
         <img
           src={PHOTOS.hero}
           alt=""
