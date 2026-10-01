@@ -17,7 +17,10 @@ for (const candidate of [
     if (separator === -1) continue;
 
     const key = trimmed.slice(0, separator).trim();
-    const value = trimmed.slice(separator + 1).trim().replace(/^["']|["']$/g, "");
+    const value = trimmed
+      .slice(separator + 1)
+      .trim()
+      .replace(/^["']|["']$/g, "");
     process.env[key] ??= value;
   }
 }
@@ -32,11 +35,32 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default("*"),
   FRONTEND_URL: z.string().optional(),
   LOG_LEVEL: z.string().optional(),
+  // Club identity used in emails and push notifications
+  CLUB_NAME: z.string().default("Smash Padel"),
+  CLUB_TIMEZONE: z.string().default("Africa/Tunis"),
+  CLUB_ADDRESS: z.string().optional(),
+  // Email (Resend). When RESEND_API_KEY is missing, emails are logged instead of sent.
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
+  EMAIL_REPLY_TO: z.string().optional(),
+  // Web push (generate once with: npx web-push generate-vapid-keys)
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().optional(),
+  // Scheduled jobs (reminders, "match finished" emails)
+  JOBS_ENABLED: z.enum(["true", "false"]).default("true"),
+  CRON_SECRET: z.string().optional(),
 });
 
 // Normalize environment variables
-process.env.SUPABASE_URL ||= process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
-process.env.SUPABASE_ANON_KEY ||= process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+process.env.SUPABASE_URL ||=
+  process.env.VITE_SUPABASE_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.EXPO_PUBLIC_SUPABASE_URL;
+process.env.SUPABASE_ANON_KEY ||=
+  process.env.VITE_SUPABASE_ANON_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 const parsed = envSchema.parse(process.env);
 
@@ -47,7 +71,21 @@ export const env = {
   supabaseUrl: parsed.SUPABASE_URL,
   supabaseAnonKey: parsed.SUPABASE_ANON_KEY,
   supabaseServiceRoleKey: parsed.SUPABASE_SERVICE_ROLE_KEY,
-  corsOrigin: parsed.CORS_ORIGIN === "*" ? true : parsed.CORS_ORIGIN.split(",").map((origin: string) => origin.trim()),
+  corsOrigin:
+    parsed.CORS_ORIGIN === "*"
+      ? true
+      : parsed.CORS_ORIGIN.split(",").map((origin: string) => origin.trim()),
   frontendUrl: parsed.FRONTEND_URL,
   logLevel: parsed.LOG_LEVEL,
+  clubName: parsed.CLUB_NAME,
+  clubTimezone: parsed.CLUB_TIMEZONE,
+  clubAddress: parsed.CLUB_ADDRESS,
+  resendApiKey: parsed.RESEND_API_KEY,
+  emailFrom: parsed.EMAIL_FROM ?? `${parsed.CLUB_NAME} <no-reply@example.com>`,
+  emailReplyTo: parsed.EMAIL_REPLY_TO,
+  vapidPublicKey: parsed.VAPID_PUBLIC_KEY,
+  vapidPrivateKey: parsed.VAPID_PRIVATE_KEY,
+  vapidSubject: parsed.VAPID_SUBJECT ?? "mailto:contact@example.com",
+  jobsEnabled: parsed.JOBS_ENABLED === "true",
+  cronSecret: parsed.CRON_SECRET,
 };

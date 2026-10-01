@@ -10,11 +10,15 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "tokens_added",
   "reservation_reminder",
   "announcement",
+  "match_finished",
+  "welcome",
 ]);
 
 export const notificationsTable = pgTable("notifications", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => usersTable.id),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => usersTable.id),
   type: notificationTypeEnum("type").notNull(),
   title: text("title").notNull(),
   message: text("message").notNull(),
@@ -29,6 +33,9 @@ export const notificationsRelations = relations(notificationsTable, ({ one }) =>
   }),
 }));
 
-export const insertNotificationSchema = createInsertSchema(notificationsTable).omit({ id: true, createdAt: true });
+export const insertNotificationSchema = createInsertSchema(notificationsTable).omit({
+  id: true,
+  createdAt: true,
+});
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notificationsTable.$inferSelect;

@@ -354,6 +354,101 @@ function seed(day: string) {
   }
 }
 
+// ─── Pricing, equipment, series (demo state) ─────────────────────────────────
+const pricingRules: any[] = [
+  {
+    id: 1,
+    name: "Heures pleines",
+    terrainId: null,
+    daysOfWeek: [1, 2, 3, 4, 5],
+    startTime: "17:00",
+    endTime: "24:00",
+    tokensPerSpot: 2,
+    pricePerPerson: 35,
+    isPeak: true,
+    priority: 0,
+    isActive: true,
+    createdAt: "2026-09-01T10:00:00Z",
+  },
+  {
+    id: 2,
+    name: "Matinées creuses",
+    terrainId: null,
+    daysOfWeek: [1, 2, 3, 4, 5],
+    startTime: "08:00",
+    endTime: "12:00",
+    tokensPerSpot: 1,
+    pricePerPerson: 20,
+    isPeak: false,
+    priority: 0,
+    isActive: true,
+    createdAt: "2026-09-01T10:00:00Z",
+  },
+];
+const hhmm = (d: Date) =>
+  `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+function priceAt(terrainId: number, start: Date) {
+  const time = hhmm(start),
+    day = start.getDay();
+  const m = pricingRules
+    .filter(
+      (r) =>
+        r.isActive &&
+        (r.terrainId == null || r.terrainId === terrainId) &&
+        r.daysOfWeek.includes(day) &&
+        time >= r.startTime &&
+        time < r.endTime,
+    )
+    .sort(
+      (a, b) =>
+        b.priority - a.priority ||
+        Number(b.terrainId != null) - Number(a.terrainId != null) ||
+        b.id - a.id,
+    )[0];
+  return {
+    tokensPerSpot: m?.tokensPerSpot ?? 1,
+    pricePerPerson: m?.pricePerPerson ?? 25,
+    isPeak: m?.isPeak ?? false,
+    priceLabel: m?.name ?? null,
+    ruleId: m?.id ?? null,
+    ruleName: m?.name ?? null,
+  };
+}
+const equipment: any[] = [
+  {
+    id: 1,
+    name: "Raquette carbone",
+    description: null,
+    category: "racket",
+    price: 10,
+    stock: 6,
+    isActive: true,
+    createdAt: "2026-09-01T10:00:00Z",
+  },
+  {
+    id: 2,
+    name: "Tube de 3 balles",
+    description: null,
+    category: "balls",
+    price: 15,
+    stock: 30,
+    isActive: true,
+    createdAt: "2026-09-01T10:00:00Z",
+  },
+];
+const rentals: any[] = [];
+const series: any[] = [];
+const rentedAt = (start: Date, itemId: number) =>
+  rentals
+    .filter(
+      (r) =>
+        r.itemId === itemId &&
+        ["reserved", "handed_out"].includes(r.status) &&
+        byId(r.reservationId)?.status === "confirmed" &&
+        byId(r.reservationId)!.start.getTime() === start.getTime(),
+    )
+    .reduce((n, r) => n + r.quantity, 0);
+
 function calendarSlot(t: (typeof terrains)[number], start: Date, end: Date) {
   const b = bookings.get(key(t.id, start));
   const past = end.getTime() < Date.now();
@@ -379,6 +474,8 @@ function calendarSlot(t: (typeof terrains)[number], start: Date, end: Date) {
     publicDescription: live?.desc ?? null,
     players: live?.players ?? [],
     creatorName: live?.creator ?? null,
+    seriesId: (live as any)?.seriesId ?? null,
+    ...priceAt(t.id, start),
   };
 }
 
@@ -391,7 +488,7 @@ const asReservation = (b: Booking) => ({
   startTime: b.start.toISOString(),
   endTime: b.end.toISOString(),
   status: b.status,
-  tokensCharged: b.mode === "full_court" ? 4 : 1,
+  tokensCharged: (b as any).cost ?? (b.mode === "full_court" ? 4 : 1),
   bookingType: "online",
   notes: null,
   terrain: terrainOf(b.terrainId),
@@ -417,6 +514,282 @@ function charge(n: number, description: string, credit = false) {
 
 type Handler = (m: RegExpMatchArray, url: URL, body: any, method: string) => [number, any];
 const routes: [string, RegExp, Handler][] = [
+  ["GET", /^\/api\/pricing\/rules$/, () => [200, pricingRules.filter((r) => r.isActive)]],
+  [
+    "GET",
+    /^\/api\/pricing\/quote$/,
+    (_m, u) => {
+      const p = priceAt(
+        Number(u.searchParams.get("terrainId")),
+        new Date(u.searchParams.get("startTime")!),
+      );
+      return [200, { ...p, fullCourtTokens: p.tokensPerSpot * 4 }];
+    },
+  ],
+  ["GET", /^\/api\/admin\/pricing\/rules$/, () => [200, pricingRules]],
+  [
+    "POST",
+    /^\/api\/admin\/pricing\/rules$/,
+    (_m, _u, b) => {
+      if (b.startTime >= b.endTime) return [400, { error: "End time must be after start time" }];
+      const r = {
+        priority: 0,
+        isActive: true,
+        isPeak: false,
+        daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+        ...b,
+        id: nextId++,
+        createdAt: new Date().toISOString(),
+      };
+      pricingRules.push(r);
+      return [201, r];
+    },
+  ],
+  [
+    "PATCH",
+    /^\/api\/admin\/pricing\/rules\/(\d+)$/,
+    (m, _u, b) => {
+      const r = pricingRules.find((x) => x.id === +m[1]);
+      if (!r) return [404, { error: "Introuvable" }];
+      Object.assign(r, b);
+      return [200, r];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/pricing\/rules\/(\d+)$/,
+    (m) => {
+      const i = pricingRules.findIndex((x) => x.id === +m[1]);
+      if (i >= 0) pricingRules.splice(i, 1);
+      return [204, null];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/equipment$/,
+    (_m, u) => {
+      const st = u.searchParams.get("startTime");
+      return [
+        200,
+        equipment
+          .filter((e) => e.isActive)
+          .map((e) => ({
+            ...e,
+            available: st ? Math.max(0, e.stock - rentedAt(new Date(st), e.id)) : e.stock,
+          })),
+      ];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/equipment$/,
+    () => [200, equipment.map((e) => ({ ...e, available: e.stock }))],
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/equipment$/,
+    (_m, _u, b) => {
+      const e = {
+        description: null,
+        category: "other",
+        price: 0,
+        stock: 0,
+        isActive: true,
+        ...b,
+        id: nextId++,
+        createdAt: new Date().toISOString(),
+      };
+      equipment.push(e);
+      return [201, e];
+    },
+  ],
+  [
+    "PATCH",
+    /^\/api\/admin\/equipment\/(\d+)$/,
+    (m, _u, b) => {
+      const e = equipment.find((x) => x.id === +m[1]);
+      if (!e) return [404, { error: "Introuvable" }];
+      Object.assign(e, b);
+      return [200, e];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/equipment\/(\d+)$/,
+    (m) => {
+      const e = equipment.find((x) => x.id === +m[1]);
+      if (e && rentals.some((r) => r.itemId === e.id)) {
+        e.isActive = false;
+        return [200, { archived: true }];
+      }
+      const i = equipment.findIndex((x) => x.id === +m[1]);
+      if (i >= 0) equipment.splice(i, 1);
+      return [204, null];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/equipment\/rentals$/,
+    (_m, u) => {
+      const day = u.searchParams.get("date");
+      return [
+        200,
+        rentals
+          .filter((r) => {
+            const b = byId(r.reservationId);
+            return b && b.status === "confirmed" && dayKey(b.start) === day;
+          })
+          .map((r) => {
+            const b = byId(r.reservationId)!,
+              it = equipment.find((e) => e.id === r.itemId)!;
+            return {
+              id: r.id,
+              quantity: r.quantity,
+              unitPrice: r.unitPrice,
+              status: r.status,
+              item: { id: it.id, name: it.name, category: it.category },
+              player: r.player,
+              reservation: {
+                id: b.id,
+                startTime: b.start.toISOString(),
+                endTime: b.end.toISOString(),
+                terrainName: terrainOf(b.terrainId).name,
+                guestName: null,
+              },
+            };
+          })
+          .sort((a, b) => a.reservation.startTime.localeCompare(b.reservation.startTime)),
+      ];
+    },
+  ],
+  [
+    "PATCH",
+    /^\/api\/admin\/equipment\/rentals\/(\d+)$/,
+    (m, _u, b) => {
+      const r = rentals.find((x) => x.id === +m[1]);
+      if (r) r.status = b.status;
+      return [200, r];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/series\/preview$/,
+    (_m, _u, b) => {
+      const first = new Date(b.firstStart);
+      return [
+        200,
+        {
+          dates: Array.from({ length: b.occurrences }, (_, i) => {
+            const d = new Date(first);
+            d.setDate(d.getDate() + i * 7 * (b.intervalWeeks ?? 1));
+            seed(dayKey(d));
+            const hit = bookings.get(key(b.terrainId, d)),
+              busy = !!hit && hit.status === "confirmed";
+            return {
+              startTime: d.toISOString(),
+              conflict: busy,
+              conflictWith: busy ? hit!.creator : null,
+            };
+          }),
+        },
+      ];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/series$/,
+    (_m, _u, b) => {
+      const first = new Date(b.firstStart),
+        id = nextId++,
+        created: string[] = [],
+        skipped: string[] = [];
+      const who = b.userId
+        ? (users.find((x) => x.id === b.userId)?.firstName ?? "Membre")
+        : b.guestName;
+      for (let i = 0; i < b.occurrences; i++) {
+        const d = new Date(first);
+        d.setDate(d.getDate() + i * 7 * (b.intervalWeeks ?? 1));
+        seed(dayKey(d));
+        const hit = bookings.get(key(b.terrainId, d));
+        if (hit && hit.status === "confirmed") {
+          skipped.push(d.toISOString());
+          continue;
+        }
+        const bk: any = {
+          id: nextId++,
+          terrainId: b.terrainId,
+          start: d,
+          end: new Date(d.getTime() + 90 * 60e3),
+          mode: "full_court",
+          isPublic: false,
+          desc: null,
+          players: [
+            {
+              id: nextId++,
+              userId: b.userId ?? null,
+              name: who,
+              paymentType: "cash",
+              paymentStatus: "pending",
+            },
+          ],
+          creator: b.label || who,
+          createdAt: new Date().toISOString(),
+          status: "confirmed",
+          seriesId: id,
+          cost: 0,
+        };
+        bookings.set(key(b.terrainId, d), bk);
+        created.push(d.toISOString());
+      }
+      series.unshift({
+        id,
+        label: b.label ?? null,
+        terrain: { id: b.terrainId, name: terrainOf(b.terrainId).name },
+        who,
+        guestPhone: b.guestPhone ?? null,
+        firstStart: first.toISOString(),
+        occurrences: b.occurrences,
+        intervalWeeks: b.intervalWeeks ?? 1,
+      });
+      return [201, { series: { id }, created, skipped }];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/series$/,
+    () => [
+      200,
+      series
+        .filter((x) => !x.cancelled)
+        .map((x) => {
+          const up = Array.from(bookings.values())
+            .filter(
+              (bk: any) =>
+                bk.seriesId === x.id &&
+                bk.status === "confirmed" &&
+                bk.start.getTime() > Date.now(),
+            )
+            .sort((a, b) => +a.start - +b.start);
+          return { ...x, remaining: up.length, nextStart: up[0]?.start.toISOString() ?? null };
+        }),
+    ],
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/series\/(\d+)\/cancel$/,
+    (m) => {
+      let n = 0;
+      for (const bk of bookings.values() as any)
+        if (bk.seriesId === +m[1] && bk.status === "confirmed" && bk.start.getTime() > Date.now()) {
+          bk.status = "cancelled";
+          n++;
+        }
+      const sr = series.find((x) => x.id === +m[1]);
+      if (sr) sr.cancelled = true;
+      return [200, { cancelled: n }];
+    },
+  ],
+  ["GET", /^\/api\/push\/public-key$/, () => [200, { enabled: false, publicKey: null }]],
   ["GET", /^\/api\/users\/me$/, () => [200, me]],
   [
     "PATCH",
@@ -663,8 +1036,14 @@ const routes: [string, RegExp, Handler][] = [
         bookings.set(key(b.terrainId, start), bk);
         return [201, asReservation(bk)];
       }
-      const cost = b.bookingMode === "own_spot" ? 1 : 4;
+      const per = priceAt(b.terrainId, start).tokensPerSpot;
+      const cost = b.bookingMode === "own_spot" ? per : per * 4;
       if (balance < cost) return [400, { error: "Solde de tokens insuffisant" }];
+      for (const l of b.equipment ?? []) {
+        const it = equipment.find((e) => e.id === l.itemId);
+        if (!it || it.stock - rentedAt(start, it.id) < l.quantity)
+          return [409, { error: `Plus assez de ${it?.name ?? "matériel"} disponible` }];
+      }
       const booking: Booking = {
         id: nextId++,
         terrainId: b.terrainId,
@@ -686,7 +1065,20 @@ const routes: [string, RegExp, Handler][] = [
         createdAt: new Date().toISOString(),
         status: "confirmed",
       };
+      (booking as any).cost = cost;
       bookings.set(key(b.terrainId, start), booking);
+      for (const l of b.equipment ?? []) {
+        const it = equipment.find((e) => e.id === l.itemId)!;
+        rentals.push({
+          id: nextId++,
+          reservationId: booking.id,
+          itemId: it.id,
+          quantity: l.quantity,
+          unitPrice: it.price,
+          status: "reserved",
+          player: "Yasmine Ben Ali",
+        });
+      }
       charge(cost, `Réservation · ${terrainOf(b.terrainId).name}`);
       return [201, asReservation(booking)];
     },
@@ -721,7 +1113,7 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   [
-    "POST",
+    "DELETE",
     /^\/api\/reservations\/(\d+)\/leave$/,
     (m) => {
       const b = byId(+m[1]);

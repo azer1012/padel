@@ -8,4 +8,12 @@ export * from "./notifications";
 export * from "./activity";
 export * from "./clubs";
 export * from "./staff-roles";
-export { reservationPlayersTable, reservationPlayersRelations, playerInvitesTable, playerInvitesRelations } from "./reservations";
+export * from "./pricing";
+export * from "./equipment";
+export * from "./push";
+export {
+  reservationPlayersTable,
+  reservationPlayersRelations,
+  playerInvitesTable,
+  playerInvitesRelations,
+} from "./reservations";

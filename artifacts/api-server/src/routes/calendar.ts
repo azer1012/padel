@@ -2,8 +2,23 @@ import { Router } from "express";
 import { db, terrainsTable, reservationsTable, reservationPlayersTable } from "@workspace/db";
 import { eq, and, gte, lte, inArray } from "drizzle-orm";
 import { loadUser } from "../lib/auth";
+import { loadActiveRules, priceFor } from "../lib/pricing";
+import type { PricingRule } from "@workspace/db";
 
 const router = Router();
+
+/** Admins see full names; everyone else sees "Yasmine B." and never an email address. */
+function displayName(
+  u: { firstName?: string | null; lastName?: string | null; email?: string } | null | undefined,
+  full: boolean,
+  fallback: string,
+) {
+  if (!u) return fallback;
+  if (full) return `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email || fallback;
+  const first = (u.firstName ?? "").trim(),
+    initial = (u.lastName ?? "").trim().charAt(0);
+  return first ? `${first}${initial ? ` ${initial}.` : ""}` : fallback;
+}
 
 function buildSlotsForTerrainDay(
   terrain: typeof terrainsTable.$inferSelect,
@@ -12,6 +27,7 @@ function buildSlotsForTerrainDay(
   now: Date,
   dbUserId: number | null,
   isAdmin: boolean,
+  rules: PricingRule[] = [],
 ): object[] {
   const [openH, openM] = terrain.openingTime.split(":").map(Number);
   const [closeH, closeM] = terrain.closingTime.split(":").map(Number);
@@ -21,9 +37,7 @@ function buildSlotsForTerrainDay(
   const closing = new Date(requestedDate);
   closing.setHours(closeH, closeM, 0, 0);
 
-  const reservationMap = new Map(
-    reservationsForTerrain.map(r => [r.startTime.toISOString(), r])
-  );
+  const reservationMap = new Map(reservationsForTerrain.map((r) => [r.startTime.toISOString(), r]));
 
   const slots: object[] = [];
   const cursor = new Date(opening);
@@ -32,6 +46,13 @@ function buildSlotsForTerrainDay(
     const slotEnd = new Date(cursor.getTime() + 90 * 60 * 1000);
     const reservation = reservationMap.get(cursor.toISOString());
     const isPast = cursor <= now;
+    const p = priceFor(rules, terrain, cursor);
+    const price = {
+      tokensPerSpot: p.tokensPerSpot,
+      pricePerPerson: p.pricePerPerson,
+      isPeak: p.isPeak,
+      priceLabel: p.ruleName,
+    };
 
     if (reservation) {
       // Legacy detection: bookingMode is NOT NULL (default full_court), but
@@ -67,10 +88,8 @@ function buildSlotsForTerrainDay(
         const isOwn = p.userId === dbUserId;
         return {
           id: p.id,
-          name: p.user
-            ? `${p.user.firstName ?? ""} ${p.user.lastName ?? ""}`.trim() || p.user.email
-            : "Player",
-          userId: (isAdmin || isOwn) ? p.userId : null,
+          name: displayName(p.user, isAdmin || isOwn, "Player"),
+          userId: isAdmin || isOwn ? p.userId : null,
           paymentType: isAdmin ? p.paymentType : null,
           paymentStatus: isAdmin ? p.paymentStatus : null,
         };
@@ -89,8 +108,12 @@ function buildSlotsForTerrainDay(
         publicDescription: reservation.publicDescription,
         players,
         creatorName: reservation.user
-          ? `${reservation.user.firstName ?? ""} ${reservation.user.lastName ?? ""}`.trim() || reservation.user.email
-          : reservation.guestName ?? "Guest",
+          ? displayName(reservation.user, isAdmin || reservation.userId === dbUserId, "Player")
+          : isAdmin
+            ? (reservation.guestName ?? "Guest")
+            : "Guest",
+        seriesId: reservation.seriesId ?? null,
+        ...price,
       });
     } else {
       slots.push({
@@ -106,6 +129,8 @@ function buildSlotsForTerrainDay(
         publicDescription: null,
         players: [],
         creatorName: null,
+        seriesId: null,
+        ...price,
       });
     }
 
@@ -145,13 +170,12 @@ router.get("/calendar", loadUser, async (req, res) => {
     }
   }
 
-  const allTerrains = await db.select().from(terrainsTable)
-    .where(eq(terrainsTable.isActive, true));
+  const allTerrains = await db.select().from(terrainsTable).where(eq(terrainsTable.isActive, true));
 
   let terrains = allTerrains;
   if (terrainIds) {
     const ids = terrainIds.split(",").map(Number).filter(Boolean);
-    terrains = allTerrains.filter(t => ids.includes(t.id));
+    terrains = allTerrains.filter((t) => ids.includes(t.id));
   }
 
   if (terrains.length === 0) {
@@ -164,7 +188,7 @@ router.get("/calendar", loadUser, async (req, res) => {
   const dayEnd = new Date(rangeEnd);
   dayEnd.setHours(23, 59, 59, 999);
 
-  const tids = terrains.map(t => t.id);
+  const tids = terrains.map((t) => t.id);
 
   const reservations = await db.query.reservationsTable.findMany({
     where: and(
@@ -180,24 +204,33 @@ router.get("/calendar", loadUser, async (req, res) => {
   });
 
   const now = new Date();
+  const rules = await loadActiveRules();
 
   // Build result: for each terrain, collect slots across the entire date range
-  const result = terrains.map(terrain => {
-    const terrainReservations = reservations.filter(r => r.terrainId === terrain.id);
+  const result = terrains.map((terrain) => {
+    const terrainReservations = reservations.filter((r) => r.terrainId === terrain.id);
     const allSlots: object[] = [];
 
     // Iterate each day in the range
     const cursor = new Date(startDate);
     while (cursor <= rangeEnd) {
-      const dayReservations = terrainReservations.filter(r => {
+      const dayReservations = terrainReservations.filter((r) => {
         const d = r.startTime;
-        return d.getFullYear() === cursor.getFullYear() &&
+        return (
+          d.getFullYear() === cursor.getFullYear() &&
           d.getMonth() === cursor.getMonth() &&
-          d.getDate() === cursor.getDate();
+          d.getDate() === cursor.getDate()
+        );
       });
 
       const daySlots = buildSlotsForTerrainDay(
-        terrain, dayReservations, cursor, now, currentUserId, isAdmin,
+        terrain,
+        dayReservations,
+        cursor,
+        now,
+        currentUserId,
+        isAdmin,
+        rules,
       );
       allSlots.push(...daySlots);
 

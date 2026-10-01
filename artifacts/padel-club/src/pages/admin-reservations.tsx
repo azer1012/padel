@@ -12,7 +12,7 @@ import {
 } from "@workspace/api-client-react";
 import type { Reservation } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, LayoutGrid, List, X, CalendarDays, Phone } from "lucide-react";
+import { Plus, LayoutGrid, List, X, CalendarDays, Phone, Repeat } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,6 +31,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import CourtCalendar from "@/components/court-calendar";
+import { SeriesDialog } from "@/components/smash/series-dialog";
+import { useSeries, useCancelSeries, extrasKeys } from "@workspace/api-client-react";
 import { Avatar, Page, PageHeader } from "@/components/smash/primitives";
 import {
   DataTable,
@@ -67,7 +69,12 @@ export default function AdminReservations() {
   const { confirm, dialog } = useConfirm();
   const { data: me } = useGetMe();
 
-  const [view, setView] = useState<"calendar" | "list">("calendar");
+  const [view, setView] = useState<"calendar" | "list" | "series">("calendar");
+  const [seriesOpen, setSeriesOpen] = useState(false);
+  const { data: series, isLoading: loadingSeries } = useSeries({
+    enabled: view === "series",
+  } as any);
+  const cancelSeries = useCancelSeries();
   const [date, setDate] = useState("");
   const [terrainFilter, setTerrainFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -289,10 +296,20 @@ export default function AdminReservations() {
           ar: "جدول النادي المباشر أو القائمة الكاملة.",
         })}
         actions={
-          <Button data-testid="btn-create-reservation" onClick={() => setCreateOpen(true)}>
-            <Plus />
-            {tx({ fr: "Nouvelle réservation", en: "New booking", ar: "حجز جديد" })}
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              onClick={() => setSeriesOpen(true)}
+              data-testid="btn-create-series"
+            >
+              <Repeat />
+              {tx({ fr: "Récurrente", en: "Recurring", ar: "متكرر" })}
+            </Button>
+            <Button data-testid="btn-create-reservation" onClick={() => setCreateOpen(true)}>
+              <Plus />
+              {tx({ fr: "Nouvelle réservation", en: "New booking", ar: "حجز جديد" })}
+            </Button>
+          </>
         }
       />
 
@@ -300,7 +317,7 @@ export default function AdminReservations() {
         <Segmented
           label={tx({ fr: "Affichage", en: "View", ar: "العرض" })}
           value={view}
-          onChange={(v) => setView(v as "calendar" | "list")}
+          onChange={(v) => setView(v as "calendar" | "list" | "series")}
           options={[
             {
               value: "calendar",
@@ -320,11 +337,125 @@ export default function AdminReservations() {
                 </span>
               ),
             },
+            {
+              value: "series",
+              label: (
+                <span className="flex items-center gap-2">
+                  <Repeat className="size-4" />
+                  {tx({ fr: "Récurrentes", en: "Recurring", ar: "متكررة" })}
+                </span>
+              ),
+            },
           ]}
         />
       </div>
 
-      {view === "calendar" ? (
+      {view === "series" ? (
+        loadingSeries ? (
+          <div className="h-32 animate-pulse rounded-[26px] bg-card" />
+        ) : !series?.length ? (
+          <div className="enter flex flex-col items-center gap-3 rounded-[28px] bg-card px-6 py-12 text-center shadow-sm">
+            <Repeat className="size-8 text-muted-foreground" />
+            <p className="m-0 font-bold">
+              {tx({
+                fr: "Aucune réservation récurrente",
+                en: "No recurring bookings",
+                ar: "لا حجوزات متكررة",
+              })}
+            </p>
+            <Button onClick={() => setSeriesOpen(true)}>
+              <Plus />
+              {tx({ fr: "Créer une série", en: "Create a series", ar: "إنشاء سلسلة" })}
+            </Button>
+          </div>
+        ) : (
+          <ul className="m-0 grid list-none gap-3 p-0 md:grid-cols-2">
+            {series.map((sr) => (
+              <li
+                key={sr.id}
+                className="lift enter flex flex-col gap-3 rounded-[26px] bg-card p-5 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-lg font-extrabold">{sr.label || sr.who}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {sr.label ? `${sr.who} · ` : ""}
+                      {sr.terrain?.name}
+                    </span>
+                  </span>
+                  <Pill tone={sr.remaining ? "lime" : "muted"}>
+                    {tx({
+                      fr: `${sr.remaining} à venir`,
+                      en: `${sr.remaining} left`,
+                      ar: `${sr.remaining} متبقية`,
+                    })}
+                  </Pill>
+                </div>
+                <span className="text-sm font-semibold capitalize">
+                  {format(new Date(sr.firstStart), "EEEE", { locale })} ·{" "}
+                  <span dir="ltr">{format(new Date(sr.firstStart), "HH:mm")}</span>
+                  {sr.intervalWeeks > 1
+                    ? tx({
+                        fr: ` · toutes les ${sr.intervalWeeks} semaines`,
+                        en: ` · every ${sr.intervalWeeks} weeks`,
+                        ar: ` · كل ${sr.intervalWeeks} أسابيع`,
+                      })
+                    : ""}
+                </span>
+                {sr.nextStart && (
+                  <span className="text-sm capitalize text-muted-foreground">
+                    {tx({ fr: "Prochaine : ", en: "Next: ", ar: "القادمة: " })}
+                    {format(new Date(sr.nextStart), "EEE d MMM", { locale })}
+                  </span>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="self-start text-destructive"
+                  disabled={cancelSeries.isPending}
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: tx({
+                        fr: "Annuler les séances à venir ?",
+                        en: "Cancel upcoming sessions?",
+                        ar: "إلغاء الحصص القادمة؟",
+                      }),
+                      description: tx({
+                        fr: `${sr.remaining} séance(s) seront libérées. L'historique est conservé.`,
+                        en: `${sr.remaining} session(s) will be freed. History is kept.`,
+                        ar: `سيتم تحرير ${sr.remaining} حصة.`,
+                      }),
+                      confirmLabel: tx({
+                        fr: "Annuler la série",
+                        en: "Cancel series",
+                        ar: "إلغاء السلسلة",
+                      }),
+                      destructive: true,
+                    });
+                    if (ok)
+                      cancelSeries.mutate(sr.id, {
+                        onSuccess: (r) => {
+                          toast({
+                            title: tx({
+                              fr: `${r.cancelled} séance(s) annulée(s)`,
+                              en: `${r.cancelled} session(s) cancelled`,
+                              ar: `تم إلغاء ${r.cancelled} حصة`,
+                            }),
+                          });
+                          qc.invalidateQueries({ queryKey: extrasKeys.series });
+                          qc.invalidateQueries({ queryKey: ["/api/calendar"] });
+                        },
+                      });
+                  }}
+                >
+                  <X />
+                  {tx({ fr: "Annuler la série", en: "Cancel series", ar: "إلغاء السلسلة" })}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : view === "calendar" ? (
         <CourtCalendar isAdmin currentUserId={me?.id ?? null} />
       ) : (
         <>
@@ -567,6 +698,7 @@ export default function AdminReservations() {
           </form>
         </DialogContent>
       </Dialog>
+      <SeriesDialog open={seriesOpen} onOpenChange={setSeriesOpen} />
       {dialog}
     </Page>
   );

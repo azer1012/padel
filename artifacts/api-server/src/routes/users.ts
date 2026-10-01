@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { notifyLater } from "../lib/notify";
 import { db, usersTable } from "@workspace/db";
 import { eq, ilike, or, count, sql } from "drizzle-orm";
 import { requireAuth, requireUser, requireAdmin } from "../lib/auth";
@@ -12,9 +13,13 @@ router.get("/users/me", requireUser, async (req, res) => {
 
 router.patch("/users/me", requireUser, async (req, res) => {
   const user = (req as any).dbUser;
-  const { firstName, lastName, phone, language } = req.body;
-  const [updated] = await db.update(usersTable)
-    .set({ firstName, lastName, phone, language, updatedAt: new Date() })
+  const { firstName, lastName, phone, language, emailNotifications, pushNotifications } = req.body;
+  const prefs: Record<string, boolean> = {};
+  if (typeof emailNotifications === "boolean") prefs.emailNotifications = emailNotifications;
+  if (typeof pushNotifications === "boolean") prefs.pushNotifications = pushNotifications;
+  const [updated] = await db
+    .update(usersTable)
+    .set({ firstName, lastName, phone, language, ...prefs, updatedAt: new Date() })
     .where(eq(usersTable.id, user.id))
     .returning();
   res.json(updated);
@@ -26,26 +31,36 @@ router.post("/users/sync", requireAuth, async (req, res) => {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
-  const { email, firstName, lastName, imageUrl } = req.body;
-  const existing = await db.select().from(usersTable).where(eq(usersTable.supabaseAuthId, authUserId));
+  const { firstName, lastName, imageUrl } = req.body;
+  // Never trust an email sent by the browser: use the one Supabase verified for this token.
+  const email = (req as any).authEmail as string | undefined;
+  const existing = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.supabaseAuthId, authUserId));
   if (existing.length > 0) {
-    const [updated] = await db.update(usersTable)
+    const [updated] = await db
+      .update(usersTable)
       .set({ email, firstName, lastName, avatarUrl: imageUrl, updatedAt: new Date() })
       .where(eq(usersTable.supabaseAuthId, authUserId))
       .returning();
     res.json(updated);
     return;
   }
-  const [created] = await db.insert(usersTable).values({
-    supabaseAuthId: authUserId,
-    email: email || `${authUserId}@placeholder.local`,
-    firstName,
-    lastName,
-    avatarUrl: imageUrl,
-    role: "player",
-    tokenBalance: 0,
-    language: "fr",
-}).returning();
+  const [created] = await db
+    .insert(usersTable)
+    .values({
+      supabaseAuthId: authUserId,
+      email: email || `${authUserId}@placeholder.local`,
+      firstName,
+      lastName,
+      avatarUrl: imageUrl,
+      role: "player",
+      tokenBalance: 0,
+      language: "fr",
+    })
+    .returning();
+  notifyLater(created, { kind: "welcome", firstName: created.firstName }, "welcome");
   res.status(201).json(created);
 });
 
@@ -62,7 +77,7 @@ router.get("/users", requireAdmin, async (req, res) => {
         ilike(usersTable.email, `%${search}%`),
         ilike(usersTable.firstName, `%${search}%`),
         ilike(usersTable.lastName, `%${search}%`),
-      )
+      ),
     );
   }
 

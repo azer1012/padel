@@ -1,10 +1,32 @@
 import { Router } from "express";
-import { db, reservationsTable, reservationPlayersTable, playerInvitesTable, usersTable, tokenTransactionsTable, notificationsTable, activityTable, terrainsTable } from "@workspace/db";
+import {
+  db,
+  reservationsTable,
+  reservationPlayersTable,
+  playerInvitesTable,
+  usersTable,
+  tokenTransactionsTable,
+  notificationsTable,
+  activityTable,
+  terrainsTable,
+} from "@workspace/db";
 import { eq, and, count } from "drizzle-orm";
 import { requireUser, requireAdmin } from "../lib/auth";
 import crypto from "node:crypto";
+import { quote } from "../lib/pricing";
+import { notifyLater } from "../lib/notify";
+import { formatClubDate, formatClubTime, type Lang } from "../lib/club-time";
+import { EquipmentError, normalizeRequest, reserveEquipment } from "../lib/equipment";
+import { reservationEquipmentTable } from "@workspace/db";
 
 const router = Router();
+
+/** Public-safe name: "Yasmine B.", never an email address. */
+const publicName = (u?: { firstName?: string | null; lastName?: string | null } | null) => {
+  const first = (u?.firstName ?? "").trim(),
+    initial = (u?.lastName ?? "").trim().charAt(0);
+  return first ? `${first}${initial ? ` ${initial}.` : ""}` : "Player";
+};
 
 // ─── Join a session (book own spot) ──────────────────────────────────────────
 router.post("/reservations/:id/join", requireUser, async (req, res) => {
@@ -33,24 +55,39 @@ router.post("/reservations/:id/join", requireUser, async (req, res) => {
     return;
   }
 
-  const alreadyJoined = reservation.players.find(p => p.userId === currentUser.id);
+  const alreadyJoined = reservation.players.find((p) => p.userId === currentUser.id);
   if (alreadyJoined) {
     res.status(409).json({ error: "You already have a spot in this session" });
     return;
   }
 
-  const tokensNeeded = 1;
+  // Peak / off-peak: a spot costs what the slot costs, not a flat 1 token
+  const price = await quote(reservation.terrain!, reservation.startTime);
+  const tokensNeeded = price.tokensPerSpot;
+  const equipmentReq = normalizeRequest(req.body?.equipment);
 
   try {
-    await db.transaction(async (tx) => {
-      const [freshUser] = await tx.select().from(usersTable)
-        .where(eq(usersTable.id, currentUser.id)).for("update");
+    const gear = await db.transaction(async (tx) => {
+      // Lock the reservation first so concurrent joins are serialized (no 5th player)
+      await tx
+        .select({ id: reservationsTable.id })
+        .from(reservationsTable)
+        .where(eq(reservationsTable.id, id))
+        .for("update");
+
+      const [freshUser] = await tx
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.id, currentUser.id))
+        .for("update");
       if (!freshUser || freshUser.tokenBalance < tokensNeeded) {
         throw new Error("INSUFFICIENT_TOKENS");
       }
 
       // Re-check capacity inside transaction
-      const [{ c }] = await tx.select({ c: count() }).from(reservationPlayersTable)
+      const [{ c }] = await tx
+        .select({ c: count() })
+        .from(reservationPlayersTable)
         .where(eq(reservationPlayersTable.reservationId, id));
       const currentFilled = Number(c);
       if (currentFilled >= (reservation.totalSpots ?? 4)) {
@@ -58,7 +95,10 @@ router.post("/reservations/:id/join", requireUser, async (req, res) => {
       }
 
       const newBalance = freshUser.tokenBalance - tokensNeeded;
-      await tx.update(usersTable).set({ tokenBalance: newBalance }).where(eq(usersTable.id, freshUser.id));
+      await tx
+        .update(usersTable)
+        .set({ tokenBalance: newBalance })
+        .where(eq(usersTable.id, freshUser.id));
 
       await tx.insert(reservationPlayersTable).values({
         reservationId: id,
@@ -77,17 +117,37 @@ router.post("/reservations/:id/join", requireUser, async (req, res) => {
         description: `Joined session: ${reservation.terrain?.name ?? "court"} on ${reservation.startTime.toLocaleDateString()}`,
       });
 
-      await tx.insert(notificationsTable).values({
+      return reserveEquipment(tx, {
+        reservationId: id,
         userId: freshUser.id,
-        type: "booking_confirmed",
-        title: "Spot Confirmed",
-        message: `You joined a session on ${reservation.terrain?.name} at ${reservation.startTime.toLocaleTimeString()}.`,
+        start: reservation.startTime,
+        end: reservation.endTime,
+        items: equipmentReq,
       });
     });
 
-    res.status(201).json({ message: "Spot joined successfully" });
+    const lang = (currentUser.language ?? "fr") as Lang;
+    notifyLater(
+      currentUser,
+      {
+        kind: "booking_confirmed",
+        terrain: reservation.terrain?.name ?? "",
+        date: formatClubDate(reservation.startTime, lang),
+        time: formatClubTime(reservation.startTime),
+        tokens: tokensNeeded,
+        mode: "joined",
+        isPeak: price.isPeak,
+        equipment: gear,
+      },
+      `join:${id}:${Date.now()}`,
+    );
+    res.status(201).json({ message: "Spot joined successfully", tokensCharged: tokensNeeded });
   } catch (err: any) {
-    if (err.message === "INSUFFICIENT_TOKENS") {
+    if (err instanceof EquipmentError) {
+      res
+        .status(409)
+        .json({ error: `Not enough ${err.itemName} available (${err.available} left)` });
+    } else if (err.message === "INSUFFICIENT_TOKENS") {
       res.status(400).json({ error: "Insufficient tokens" });
     } else if (err.message === "NO_SPOTS") {
       res.status(409).json({ error: "No open spots left in this session" });
@@ -121,7 +181,9 @@ router.delete("/reservations/:id/leave", requireUser, async (req, res) => {
   const isCreator = reservation.userId === currentUser.id;
   const isFullCourt = reservation.bookingMode === "full_court";
   if (isCreator && isFullCourt) {
-    res.status(400).json({ error: "Court creator cannot leave — please cancel the reservation instead" });
+    res
+      .status(400)
+      .json({ error: "Court creator cannot leave — please cancel the reservation instead" });
     return;
   }
 
@@ -132,15 +194,24 @@ router.delete("/reservations/:id/leave", requireUser, async (req, res) => {
   }
 
   await db.transaction(async (tx) => {
-    await tx.delete(reservationPlayersTable)
-      .where(eq(reservationPlayersTable.id, playerRow.id));
+    await tx.delete(reservationPlayersTable).where(eq(reservationPlayersTable.id, playerRow.id));
 
-    if (playerRow.paymentStatus === "paid" && playerRow.paymentType === "token" && playerRow.tokensCharged > 0) {
-      const [freshUser] = await tx.select().from(usersTable)
-        .where(eq(usersTable.id, currentUser.id)).for("update");
+    if (
+      playerRow.paymentStatus === "paid" &&
+      playerRow.paymentType === "token" &&
+      playerRow.tokensCharged > 0
+    ) {
+      const [freshUser] = await tx
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.id, currentUser.id))
+        .for("update");
       if (freshUser) {
         const newBalance = freshUser.tokenBalance + playerRow.tokensCharged;
-        await tx.update(usersTable).set({ tokenBalance: newBalance }).where(eq(usersTable.id, freshUser.id));
+        await tx
+          .update(usersTable)
+          .set({ tokenBalance: newBalance })
+          .where(eq(usersTable.id, freshUser.id));
         await tx.insert(tokenTransactionsTable).values({
           userId: freshUser.id,
           reservationId: id,
@@ -149,16 +220,36 @@ router.delete("/reservations/:id/leave", requireUser, async (req, res) => {
           balanceAfter: newBalance,
           description: `Left session: ${reservation.terrain?.name ?? "court"}`,
         });
-        await tx.insert(notificationsTable).values({
-          userId: freshUser.id,
-          type: "booking_cancelled",
-          title: "Spot Released",
-          message: `You left the session. ${playerRow.tokensCharged} token(s) refunded.`,
-        });
       }
     }
+    await tx
+      .update(reservationEquipmentTable)
+      .set({ status: "cancelled" })
+      .where(
+        and(
+          eq(reservationEquipmentTable.reservationId, id),
+          eq(reservationEquipmentTable.userId, currentUser.id),
+          eq(reservationEquipmentTable.status, "reserved" as any),
+        ),
+      );
   });
 
+  const refunded =
+    playerRow.paymentStatus === "paid" && playerRow.paymentType === "token"
+      ? playerRow.tokensCharged
+      : 0;
+  const lang = (currentUser.language ?? "fr") as Lang;
+  notifyLater(
+    currentUser,
+    {
+      kind: "booking_cancelled",
+      terrain: reservation.terrain?.name ?? "",
+      date: formatClubDate(reservation.startTime, lang),
+      time: formatClubTime(reservation.startTime),
+      refunded,
+    },
+    `leave:${id}:${Date.now()}`,
+  );
   res.json({ message: "Left session successfully" });
 });
 
@@ -180,7 +271,7 @@ router.post("/reservations/:id/invite", requireUser, async (req, res) => {
 
   // Must be creator or a player in the session or admin
   const isCreator = reservation.userId === currentUser.id;
-  const isPlayer = reservation.players.some(p => p.userId === currentUser.id);
+  const isPlayer = reservation.players.some((p) => p.userId === currentUser.id);
   if (!isCreator && !isPlayer && currentUser.role !== "admin") {
     res.status(403).json({ error: "Forbidden" });
     return;
@@ -200,14 +291,17 @@ router.post("/reservations/:id/invite", requireUser, async (req, res) => {
   const token = crypto.randomBytes(24).toString("hex");
   const expiresAt = new Date(reservation.startTime.getTime() - 30 * 60 * 1000); // 30 min before session
 
-  const [invite] = await db.insert(playerInvitesTable).values({
-    inviteToken: token,
-    reservationId: id,
-    invitedByUserId: currentUser.id,
-    invitedEmail: email || null,
-    expiresAt,
-    status: "pending",
-  }).returning();
+  const [invite] = await db
+    .insert(playerInvitesTable)
+    .values({
+      inviteToken: token,
+      reservationId: id,
+      invitedByUserId: currentUser.id,
+      invitedEmail: email || null,
+      expiresAt,
+      status: "pending",
+    })
+    .returning();
 
   const inviteUrl = `${process.env.FRONTEND_URL ?? ""}/join/${invite.inviteToken}`;
 
@@ -237,7 +331,8 @@ router.get("/invites/:token", async (req, res) => {
   }
 
   if (invite.expiresAt < new Date()) {
-    await db.update(playerInvitesTable)
+    await db
+      .update(playerInvitesTable)
       .set({ status: "expired" })
       .where(eq(playerInvitesTable.id, invite.id));
     res.status(410).json({ error: "Invite has expired" });
@@ -252,9 +347,7 @@ router.get("/invites/:token", async (req, res) => {
       id: invite.id,
       status: invite.status,
       expiresAt: invite.expiresAt,
-      invitedBy: invite.invitedBy
-        ? `${invite.invitedBy.firstName ?? ""} ${invite.invitedBy.lastName ?? ""}`.trim() || invite.invitedBy.email
-        : "Someone",
+      invitedBy: invite.invitedBy ? publicName(invite.invitedBy) : "Someone",
     },
     reservation: {
       id: invite.reservation.id,
@@ -287,7 +380,10 @@ router.post("/invites/:token/accept", requireUser, async (req, res) => {
     return;
   }
   if (invite.expiresAt < new Date()) {
-    await db.update(playerInvitesTable).set({ status: "expired" }).where(eq(playerInvitesTable.id, invite.id));
+    await db
+      .update(playerInvitesTable)
+      .set({ status: "expired" })
+      .where(eq(playerInvitesTable.id, invite.id));
     res.status(410).json({ error: "Invite has expired" });
     return;
   }
@@ -307,19 +403,31 @@ router.post("/invites/:token/accept", requireUser, async (req, res) => {
     return;
   }
 
-  const tokensNeeded = 1;
+  const price = await quote(invite.reservation.terrain!, invite.reservation.startTime);
+  const tokensNeeded = price.tokensPerSpot;
 
   try {
     await db.transaction(async (tx) => {
+      // Serialize concurrent joins on this reservation
+      await tx
+        .select({ id: reservationsTable.id })
+        .from(reservationsTable)
+        .where(eq(reservationsTable.id, invite.reservation.id))
+        .for("update");
+
       // Lock user row and check tokens
-      const [freshUser] = await tx.select().from(usersTable)
-        .where(eq(usersTable.id, currentUser.id)).for("update");
+      const [freshUser] = await tx
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.id, currentUser.id))
+        .for("update");
       if (!freshUser || freshUser.tokenBalance < tokensNeeded) {
         throw new Error("INSUFFICIENT_TOKENS");
       }
 
       // Transactional capacity re-check (prevents concurrent overbooking)
-      const [{ c: existingCount }] = await tx.select({ c: count() })
+      const [{ c: existingCount }] = await tx
+        .select({ c: count() })
         .from(reservationPlayersTable)
         .where(eq(reservationPlayersTable.reservationId, invite.reservation.id));
       if (Number(existingCount) >= (invite.reservation.totalSpots ?? 4)) {
@@ -327,17 +435,24 @@ router.post("/invites/:token/accept", requireUser, async (req, res) => {
       }
 
       // Check not already joined
-      const [alreadyIn] = await tx.select().from(reservationPlayersTable)
-        .where(and(
-          eq(reservationPlayersTable.reservationId, invite.reservation.id),
-          eq(reservationPlayersTable.userId, currentUser.id),
-        ));
+      const [alreadyIn] = await tx
+        .select()
+        .from(reservationPlayersTable)
+        .where(
+          and(
+            eq(reservationPlayersTable.reservationId, invite.reservation.id),
+            eq(reservationPlayersTable.userId, currentUser.id),
+          ),
+        );
       if (alreadyIn) {
         throw new Error("ALREADY_JOINED");
       }
 
       const newBalance = freshUser.tokenBalance - tokensNeeded;
-      await tx.update(usersTable).set({ tokenBalance: newBalance }).where(eq(usersTable.id, freshUser.id));
+      await tx
+        .update(usersTable)
+        .set({ tokenBalance: newBalance })
+        .where(eq(usersTable.id, freshUser.id));
 
       await tx.insert(reservationPlayersTable).values({
         reservationId: invite.reservation.id,
@@ -347,7 +462,8 @@ router.post("/invites/:token/accept", requireUser, async (req, res) => {
         tokensCharged: tokensNeeded,
       });
 
-      await tx.update(playerInvitesTable)
+      await tx
+        .update(playerInvitesTable)
         .set({ status: "accepted" })
         .where(eq(playerInvitesTable.id, invite.id));
 
@@ -359,16 +475,24 @@ router.post("/invites/:token/accept", requireUser, async (req, res) => {
         balanceAfter: newBalance,
         description: `Joined via invite: ${invite.reservation.terrain?.name ?? "court"}`,
       });
-
-      await tx.insert(notificationsTable).values({
-        userId: freshUser.id,
-        type: "booking_confirmed",
-        title: "Spot Confirmed",
-        message: `You joined a session on ${invite.reservation.terrain?.name} via invite.`,
-      });
     });
 
-    res.status(201).json({ message: "Joined session via invite" });
+    const r = invite.reservation,
+      lang = (currentUser.language ?? "fr") as Lang;
+    notifyLater(
+      currentUser,
+      {
+        kind: "booking_confirmed",
+        terrain: r.terrain?.name ?? "",
+        date: formatClubDate(r.startTime, lang),
+        time: formatClubTime(r.startTime),
+        tokens: tokensNeeded,
+        mode: "joined",
+        isPeak: price.isPeak,
+      },
+      `join:${r.id}:${Date.now()}`,
+    );
+    res.status(201).json({ message: "Joined session via invite", tokensCharged: tokensNeeded });
   } catch (err: any) {
     if (err.message === "INSUFFICIENT_TOKENS") {
       res.status(400).json({ error: "Insufficient tokens" });
@@ -397,12 +521,15 @@ router.patch("/reservations/:id/players/:playerId", requireAdmin, async (req, re
     return;
   }
 
-  const [updated] = await db.update(reservationPlayersTable)
+  const [updated] = await db
+    .update(reservationPlayersTable)
     .set(updates)
-    .where(and(
-      eq(reservationPlayersTable.id, playerId),
-      eq(reservationPlayersTable.reservationId, reservationId),
-    ))
+    .where(
+      and(
+        eq(reservationPlayersTable.id, playerId),
+        eq(reservationPlayersTable.reservationId, reservationId),
+      ),
+    )
     .returning();
 
   if (!updated) {
@@ -433,8 +560,8 @@ router.get("/open-matches", async (req, res) => {
   });
 
   const openMatches = sessions
-    .filter(s => s.startTime > now)
-    .map(s => {
+    .filter((s) => s.startTime > now)
+    .map((s) => {
       const filledSpots = s.players.length;
       const openSpots = Math.max(0, (s.totalSpots ?? 4) - filledSpots);
       return {
@@ -447,14 +574,12 @@ router.get("/open-matches", async (req, res) => {
         openSpots,
         publicDescription: s.publicDescription,
         // Public-safe: names only, no payment details
-        players: s.players.map(p => ({
-          name: p.user
-            ? `${p.user.firstName ?? ""} ${p.user.lastName ?? ""}`.trim() || "Player"
-            : "Player",
+        players: s.players.map((p) => ({
+          name: publicName(p.user),
         })),
       };
     })
-    .filter(m => m.openSpots > 0);
+    .filter((m) => m.openSpots > 0);
 
   res.json(openMatches);
 });
@@ -476,7 +601,7 @@ router.post("/reservations/:id/open-match", requireUser, async (req, res) => {
   }
 
   const isCreator = reservation.userId === currentUser.id;
-  const isPlayer = reservation.players.some(p => p.userId === currentUser.id);
+  const isPlayer = reservation.players.some((p) => p.userId === currentUser.id);
   if (!isCreator && !isPlayer && currentUser.role !== "admin") {
     res.status(403).json({ error: "Forbidden" });
     return;
@@ -487,7 +612,8 @@ router.post("/reservations/:id/open-match", requireUser, async (req, res) => {
     return;
   }
 
-  const [updated] = await db.update(reservationsTable)
+  const [updated] = await db
+    .update(reservationsTable)
     .set({ isPublic: true, publicDescription: publicDescription || null })
     .where(eq(reservationsTable.id, id))
     .returning();
@@ -510,13 +636,14 @@ router.delete("/reservations/:id/open-match", requireUser, async (req, res) => {
   }
 
   const isCreator = reservation.userId === currentUser.id;
-  const isPlayer = reservation.players.some(p => p.userId === currentUser.id);
+  const isPlayer = reservation.players.some((p) => p.userId === currentUser.id);
   if (!isCreator && !isPlayer && currentUser.role !== "admin") {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
 
-  const [updated] = await db.update(reservationsTable)
+  const [updated] = await db
+    .update(reservationsTable)
     .set({ isPublic: false })
     .where(eq(reservationsTable.id, id))
     .returning();
@@ -534,7 +661,9 @@ router.post("/reservations/:id/players", requireAdmin, async (req, res) => {
     return;
   }
 
-  const [reservation] = await db.select().from(reservationsTable)
+  const [reservation] = await db
+    .select()
+    .from(reservationsTable)
     .where(eq(reservationsTable.id, id));
   if (!reservation) {
     res.status(404).json({ error: "Reservation not found" });
@@ -552,7 +681,9 @@ router.post("/reservations/:id/players", requireAdmin, async (req, res) => {
   }
 
   // Check capacity
-  const [{ c }] = await db.select({ c: count() }).from(reservationPlayersTable)
+  const [{ c }] = await db
+    .select({ c: count() })
+    .from(reservationPlayersTable)
     .where(eq(reservationPlayersTable.reservationId, id));
   if (Number(c) >= (reservation.totalSpots ?? 4)) {
     res.status(409).json({ error: "No open spots left in this session" });
@@ -560,20 +691,30 @@ router.post("/reservations/:id/players", requireAdmin, async (req, res) => {
   }
 
   // Check not already a player
-  const [existing] = await db.select().from(reservationPlayersTable)
-    .where(and(eq(reservationPlayersTable.reservationId, id), eq(reservationPlayersTable.userId, parseInt(userId))));
+  const [existing] = await db
+    .select()
+    .from(reservationPlayersTable)
+    .where(
+      and(
+        eq(reservationPlayersTable.reservationId, id),
+        eq(reservationPlayersTable.userId, parseInt(userId)),
+      ),
+    );
   if (existing) {
     res.status(409).json({ error: "Player already in this session" });
     return;
   }
 
-  const [player] = await db.insert(reservationPlayersTable).values({
-    reservationId: id,
-    userId: parseInt(userId),
-    paymentType: paymentType as any,
-    paymentStatus: paymentStatus as any,
-    tokensCharged: 0,
-  }).returning();
+  const [player] = await db
+    .insert(reservationPlayersTable)
+    .values({
+      reservationId: id,
+      userId: parseInt(userId),
+      paymentType: paymentType as any,
+      paymentStatus: paymentStatus as any,
+      tokensCharged: 0,
+    })
+    .returning();
 
   res.status(201).json(player);
 });
@@ -587,7 +728,10 @@ router.post("/admin/slots/block", requireAdmin, async (req, res) => {
     return;
   }
 
-  const [terrain] = await db.select().from(terrainsTable).where(eq(terrainsTable.id, parseInt(terrainId)));
+  const [terrain] = await db
+    .select()
+    .from(terrainsTable)
+    .where(eq(terrainsTable.id, parseInt(terrainId)));
   if (!terrain) {
     res.status(404).json({ error: "Terrain not found" });
     return;
@@ -597,35 +741,40 @@ router.post("/admin/slots/block", requireAdmin, async (req, res) => {
   const end = new Date(start.getTime() + 90 * 60 * 1000);
 
   // Check for existing confirmed reservation at this slot
-  const [conflict] = await db.select().from(reservationsTable).where(
-    and(
-      eq(reservationsTable.terrainId, terrain.id),
-      eq(reservationsTable.status, "confirmed" as any),
-      eq(reservationsTable.startTime, start),
-    )
-  );
+  const [conflict] = await db
+    .select()
+    .from(reservationsTable)
+    .where(
+      and(
+        eq(reservationsTable.terrainId, terrain.id),
+        eq(reservationsTable.status, "confirmed" as any),
+        eq(reservationsTable.startTime, start),
+      ),
+    );
   if (conflict) {
     res.status(409).json({ error: "Slot already has a confirmed reservation" });
     return;
   }
 
-  const [blocked] = await db.insert(reservationsTable).values({
-    terrainId: terrain.id,
-    userId: null,
-    guestName: `[${reason}]`,
-    startTime: start,
-    endTime: end,
-    status: "confirmed",
-    tokensCharged: 0,
-    bookingType: "manual",
-    bookingMode: "full_court",
-    totalSpots: 4,
-    isPublic: false,
-    notes: reason,
-  }).returning();
+  const [blocked] = await db
+    .insert(reservationsTable)
+    .values({
+      terrainId: terrain.id,
+      userId: null,
+      guestName: `[${reason}]`,
+      startTime: start,
+      endTime: end,
+      status: "confirmed",
+      tokensCharged: 0,
+      bookingType: "manual",
+      bookingMode: "full_court",
+      totalSpots: 4,
+      isPublic: false,
+      notes: reason,
+    })
+    .returning();
 
   res.status(201).json(blocked);
 });
 
 export default router;
-

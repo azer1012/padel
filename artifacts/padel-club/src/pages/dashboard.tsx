@@ -21,6 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CourtLines, EmptyState, LiveDot, Page } from "@/components/smash/primitives";
 import { MatchCard } from "@/components/smash/match-card";
 import { useJoinMatch } from "@/hooks/use-join-match";
+import { InstallBanner } from "@/components/smash/install-banner";
 import { useTx, useDateLocale } from "@/lib/i18n";
 import { CLUB } from "@/config/club";
 
@@ -188,6 +189,8 @@ export default function Dashboard() {
           ) : null}
         </Link>
       </div>
+
+      <InstallBanner />
 
       <nav
         aria-label={tx({ fr: "Raccourcis", en: "Shortcuts", ar: "اختصارات" })}

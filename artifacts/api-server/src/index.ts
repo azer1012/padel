@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { env } from "./config/env";
+import { startScheduler } from "./jobs";
 
 const rawPort = env.port ?? "3001";
 
@@ -35,6 +36,11 @@ async function runStartupMigrations() {
   }
 }
 
+// Safety net: log instead of crashing on a stray rejected promise
+process.on("unhandledRejection", (reason) => {
+  logger.error({ err: reason }, "unhandled promise rejection");
+});
+
 runStartupMigrations().then(() => {
   app.listen(port, (err) => {
     if (err) {
@@ -42,5 +48,6 @@ runStartupMigrations().then(() => {
       process.exit(1);
     }
     logger.info({ port }, "Server listening");
+    if (env.jobsEnabled) startScheduler();
   });
 });

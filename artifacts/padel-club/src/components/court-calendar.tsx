@@ -19,6 +19,8 @@ import {
 } from "@workspace/api-client-react";
 import type { CalendarSlot, CalendarTerrain } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import type { EquipmentLine, SlotPricing } from "@workspace/api-client-react";
+import { EquipmentPicker } from "@/components/smash/equipment-picker";
 import { useLocation } from "wouter";
 import {
   Users,
@@ -38,6 +40,7 @@ import {
   Sun,
   Warehouse,
   MessageCircle,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -68,6 +71,9 @@ type BookingModalState =
 type SlotState = "available" | "partial" | "full" | "mine" | "past";
 
 const dayKey = (d: Date) => format(d, "yyyy-MM-dd");
+/** Slot price from the API (peak / off-peak), falling back to the flat token model. */
+const priced = (slot: CalendarSlot) => slot as CalendarSlot & Partial<SlotPricing>;
+const spotCost = (slot: CalendarSlot) => priced(slot).tokensPerSpot ?? CLUB.tokensOwnSpot;
 const hhmm = (iso: string) => format(new Date(iso), "HH:mm");
 
 function slotState(slot: CalendarSlot, currentUserId: number | null): SlotState {
@@ -100,6 +106,7 @@ function BookingModal({
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [assignUserId, setAssignUserId] = useState("");
   const [isAssigning, setIsAssigning] = useState(false);
+  const [equipment, setEquipment] = useState<EquipmentLine[]>([]);
 
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -117,6 +124,7 @@ function BookingModal({
 
   useEffect(() => {
     setBookingMode("full_court");
+    setEquipment([]);
     setIsPublic(false);
     setPublicDescription("");
     setInviteUrl(null);
@@ -134,6 +142,7 @@ function BookingModal({
     });
 
   const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: ["/api/equipment"] }); // rental stock changed
     const dateStr = dayKey(new Date(slot.startTime));
     qc.invalidateQueries({ queryKey: getCalendarQueryKey({ date: dateStr }) });
     qc.invalidateQueries({ queryKey: getListReservationsQueryKey() });
@@ -143,7 +152,9 @@ function BookingModal({
   };
 
   const userIsInSession = slot.players.some((p) => p.userId === currentUserId);
-  const cost = bookingMode === "own_spot" ? CLUB.tokensOwnSpot : CLUB.tokensFullCourt;
+  const perSpot = spotCost(slot);
+  const isPeak = !!priced(slot).isPeak;
+  const cost = bookingMode === "own_spot" ? perSpot : perSpot * 4;
   const bal = balance?.balance ?? null;
   const short = bal !== null && bal < cost;
 
@@ -156,6 +167,7 @@ function BookingModal({
           bookingMode,
           isPublic: bookingMode === "own_spot" ? isPublic : false,
           publicDescription: bookingMode === "own_spot" && isPublic ? publicDescription : undefined,
+          equipment: equipment.length ? equipment : undefined,
         } as any,
       },
       {
@@ -387,6 +399,13 @@ function BookingModal({
           {terrain.type === "outdoor" ? "Outdoor" : "Indoor"}
         </span>
         <DialogTitle className="text-[32px] leading-none text-white">{terrain.name}</DialogTitle>
+        {isPeak && (
+          <span className="flex w-fit items-center gap-1.5 rounded-full bg-coral px-3 py-1 text-xs font-extrabold text-night">
+            <Zap className="size-3.5" />
+            {priced(slot).priceLabel ||
+              tx({ fr: "Heures pleines", en: "Peak hours", ar: "ساعات الذروة" })}
+          </span>
+        )}
         <DialogDescription className="text-base capitalize text-soft-d">
           {when} ·{" "}
           <span className="font-bold text-white" dir="ltr">
@@ -407,7 +426,7 @@ function BookingModal({
           en: "All 4 spots for you and friends",
           ar: "الأماكن الأربعة لك ولأصدقائك",
         }),
-        cost: CLUB.tokensFullCourt,
+        cost: perSpot * 4,
       },
       {
         id: "own_spot" as const,
@@ -417,7 +436,7 @@ function BookingModal({
           en: "1 spot, 3 open to others",
           ar: "مكان واحد و3 مفتوحة",
         }),
-        cost: CLUB.tokensOwnSpot,
+        cost: perSpot,
       },
     ];
     return (
@@ -498,6 +517,8 @@ function BookingModal({
               </div>
             )}
 
+            <EquipmentPicker startTime={slot.startTime} value={equipment} onChange={setEquipment} />
+
             <dl className="m-0 flex flex-col gap-2.5 rounded-[22px] border border-[#E4E8F7] p-4 text-[15px]">
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">
@@ -505,16 +526,20 @@ function BookingModal({
                 </dt>
                 <dd className="m-0 font-bold">{CLUB.slotMinutes} min</dd>
               </div>
-              {terrain.pricePerPerson ? (
-                <div className="flex justify-between">
-                  <dt className="text-muted-foreground">
-                    {tx({ fr: "Prix par joueur", en: "Price per player", ar: "السعر للاعب" })}
-                  </dt>
-                  <dd className="m-0 font-bold">
-                    {terrain.pricePerPerson} {CLUB.currency}
-                  </dd>
-                </div>
-              ) : null}
+              <div className="flex justify-between">
+                <dt className="text-muted-foreground">
+                  {tx({ fr: "Par joueur", en: "Per player", ar: "لكل لاعب" })}
+                </dt>
+                <dd className="m-0 font-bold">
+                  {perSpot} token{perSpot > 1 ? "s" : ""}
+                  {(priced(slot).pricePerPerson ?? terrain.pricePerPerson) ? (
+                    <span className="font-semibold text-muted-foreground">
+                      {" "}
+                      · {priced(slot).pricePerPerson ?? terrain.pricePerPerson} {CLUB.currency}
+                    </span>
+                  ) : null}
+                </dd>
+              </div>
               {bal !== null && (
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">
@@ -696,7 +721,11 @@ function BookingModal({
             {canJoin && (
               <Button className="flex-1" onClick={handleJoin} disabled={isLoading}>
                 <Coins />
-                {tx({ fr: "Rejoindre · 1 token", en: "Join · 1 token", ar: "انضم · رصيد واحد" })}
+                {tx({
+                  fr: `Rejoindre · ${perSpot} token${perSpot > 1 ? "s" : ""}`,
+                  en: `Join · ${perSpot} token${perSpot > 1 ? "s" : ""}`,
+                  ar: `انضم · ${perSpot} رصيد`,
+                })}
               </Button>
             )}
             {userIsInSession && (
@@ -983,6 +1012,10 @@ export default function CourtCalendar({
             <Globe className="size-4 text-[#7B5CF0]" />
             Open match
           </li>
+          <li className="flex items-center gap-2">
+            <Zap className="size-4 text-[#B1452A]" />
+            {tx({ fr: "Heures pleines", en: "Peak hours", ar: "ساعات الذروة" })}
+          </li>
         </ul>
       </div>
 
@@ -1085,16 +1118,29 @@ export default function CourtCalendar({
                               data-public={slot.isPublic || undefined}
                               disabled={st === "past"}
                               onClick={() => open(slot, ct.terrain)}
-                              aria-label={`${ct.terrain.name} ${time}: ${st === "past" ? tx({ fr: "passé", en: "past", ar: "انتهى" }) : slotLabel(st, slot, tx)}`}
+                              aria-label={`${ct.terrain.name} ${time}: ${st === "past" ? tx({ fr: "passé", en: "past", ar: "انتهى" }) : slotLabel(st, slot, tx)}${st === "available" ? `, ${spotCost(slot) * 4} tokens${priced(slot).isPeak ? ` (${tx({ fr: "heures pleines", en: "peak", ar: "ذروة" })})` : ""}` : ""}`}
                             >
                               {st !== "past" && (
                                 <>
                                   <span className="flex items-center justify-between text-[13px] font-extrabold">
                                     {slotLabel(st, slot, tx)}
-                                    {slot.isPublic && st !== "mine" && (
+                                    {slot.isPublic && st !== "mine" ? (
                                       <Globe className="size-3.5 text-[#7B5CF0]" />
-                                    )}
+                                    ) : priced(slot).isPeak && st === "available" ? (
+                                      <span
+                                        className="flex items-center gap-0.5 text-[11px] font-extrabold text-[#B1452A]"
+                                        title={priced(slot).priceLabel ?? undefined}
+                                      >
+                                        <Zap className="size-3" />
+                                        {spotCost(slot)}
+                                      </span>
+                                    ) : null}
                                   </span>
+                                  {st === "available" && (
+                                    <span className="mt-0.5 text-[11px] font-semibold opacity-75">
+                                      {spotCost(slot) * 4} tokens
+                                    </span>
+                                  )}
                                   {st !== "available" && (
                                     <span className="mt-1 flex gap-0.5" aria-hidden="true">
                                       {Array.from({ length: slot.totalSpots }, (_, k) => (
@@ -1208,11 +1254,15 @@ export default function CourtCalendar({
                           </span>
                           <span className="flex min-w-0 flex-1 flex-col">
                             <span className="text-[17px] font-extrabold">{ct.terrain.name}</span>
-                            <span className="text-[13px] text-muted-foreground">
+                            <span className="flex items-center gap-1 text-[13px] text-muted-foreground">
                               {ct.terrain.type === "outdoor" ? "Outdoor" : "Indoor"}
-                              {ct.terrain.pricePerPerson
-                                ? ` · ${ct.terrain.pricePerPerson} ${CLUB.currency}`
-                                : ""}
+                              {st === "available" && <> · {spotCost(slot) * 4} tokens</>}
+                              {priced(slot).isPeak && st === "available" && (
+                                <Zap
+                                  className="size-3.5 text-[#B1452A]"
+                                  aria-label={tx({ fr: "heures pleines", en: "peak", ar: "ذروة" })}
+                                />
+                              )}
                             </span>
                           </span>
                           <span

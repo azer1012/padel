@@ -34,6 +34,8 @@ import {
   Mail,
   Clock,
   Repeat,
+  Tags,
+  Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -478,6 +480,16 @@ function AppShell({ children }: { children: ReactNode }) {
       icon: Users,
     },
     { href: "/admin/tokens", label: "Tokens", icon: Coins },
+    {
+      href: "/admin/pricing",
+      label: tx({ fr: "Tarifs", en: "Pricing", ar: "الأسعار" }),
+      icon: Tags,
+    },
+    {
+      href: "/admin/equipment",
+      label: tx({ fr: "Matériel", en: "Equipment", ar: "المعدات" }),
+      icon: Package,
+    },
     { href: "/admin/news", label: t("news"), icon: Newspaper },
     { href: "/admin/tournaments", label: t("tournaments"), icon: Trophy },
   ];

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, Page, PageHeader } from "@/components/smash/primitives";
 import { useToast } from "@/hooks/use-toast";
+import { NotificationSettings } from "@/components/smash/notification-settings";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { useI18n, useTx, type Lang } from "@/lib/i18n";
@@ -227,6 +228,7 @@ export default function Profile() {
           </form>
         </div>
       )}
+      {!isLoading && <NotificationSettings me={user as any} />}
     </Page>
   );
 }
