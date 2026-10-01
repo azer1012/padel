@@ -75,3 +75,9 @@ yarn-error.log*
 tmp/
 temp/
 *.tmp
+
+# Local AI/editor tooling (machine-specific, never commit)
+.agents/
+.kilo/
+.qodo/
+.config/
