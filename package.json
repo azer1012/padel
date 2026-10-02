@@ -5,12 +5,12 @@
   "scripts": {
     "preinstall": "node -e \"const fs=require('node:fs'); for (const file of ['package-lock.json','yarn.lock']) fs.rmSync(file,{force:true}); const ua=process.env.npm_config_user_agent||''; if (ua && !ua.includes('pnpm')) console.warn('This workspace is intended for pnpm.');\"",
     "dev": "node scripts/dev.mjs",
-    "dev:demo": "node scripts/dev.mjs --demo",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "lint": "eslint .",
-    "test": "pnpm --filter @workspace/api-server test && pnpm --filter @workspace/scripts run db:test"
+    "test": "pnpm --filter @workspace/api-server test && pnpm --filter @workspace/scripts run db:test",
+    "test:e2e": "node scripts/e2e/run.mjs"
   },
   "private": true,
   "devDependencies": {

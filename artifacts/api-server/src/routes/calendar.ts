@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { db, terrainsTable, reservationsTable } from "@workspace/db";
 import { and, asc, eq, gt, inArray, isNull, lt } from "drizzle-orm";
-import { loadUser } from "../lib/auth";
+import { loadUser, optionalUser } from "../lib/auth";
+import { isBlockedSlot } from "../lib/bookings";
+import { fullName, publicName } from "../lib/members";
 import { loadActiveRules, priceFor, type SlotPrice } from "../lib/pricing";
 import { scheduleContext, type ClubSettings } from "../lib/settings";
 import { dayHours, gridStarts } from "../lib/slots";
@@ -10,18 +12,11 @@ import { HttpError } from "../lib/http";
 
 const router = Router();
 
-/** Admins see full names; everyone else sees "Yasmine B." and never an email address. */
-function displayName(
-  u: { firstName?: string | null; lastName?: string | null; email?: string } | null | undefined,
+/** Admins (and the member themselves) see full names; everyone else sees "Yasmine B.". */
+const displayName = (
+  u: { firstName: string | null; lastName: string | null; email: string } | null,
   full: boolean,
-  fallback: string,
-) {
-  if (!u) return fallback;
-  if (full) return `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email || fallback;
-  const first = (u.firstName ?? "").trim(),
-    initial = (u.lastName ?? "").trim().charAt(0);
-  return first ? `${first}${initial ? ` ${initial}.` : ""}` : fallback;
-}
+) => (u ? (full ? fullName(u) : publicName(u)) : "Player");
 
 type CalendarReservation = Awaited<ReturnType<typeof loadReservations>>[number];
 
@@ -74,7 +69,7 @@ function reservationSlot(reservation: CalendarReservation, v: Viewer, price: Slo
     const isOwn = p.userId === userId;
     return {
       id: p.id,
-      name: displayName(p.user, isAdmin || isOwn, "Player"),
+      name: displayName(p.user, isAdmin || isOwn),
       userId: isAdmin || isOwn ? p.userId : null,
       paymentType: isAdmin || isMine ? p.paymentType : null,
       paymentStatus: isAdmin || isMine ? p.paymentStatus : null,
@@ -95,12 +90,12 @@ function reservationSlot(reservation: CalendarReservation, v: Viewer, price: Slo
     invitedSeats,
     isMine,
     isOrganizer: userId != null && reservation.userId === userId,
-    isBlocked: !reservation.userId && (reservation.guestName ?? "").startsWith("["),
+    isBlocked: isBlockedSlot(reservation),
     isPublic: reservation.isPublic,
     publicDescription: reservation.publicDescription,
     players,
     creatorName: reservation.user
-      ? displayName(reservation.user, isAdmin || reservation.userId === userId, "Player")
+      ? displayName(reservation.user, isAdmin || reservation.userId === userId)
       : isAdmin
         ? (reservation.guestName ?? "Guest")
         : "Guest",
@@ -157,8 +152,8 @@ router.get("/calendar", loadUser, async (req, res) => {
     last = endDate <= cap ? endDate : cap;
   }
 
-  const dbUser = (req as any).dbUser as { id: number; role: string } | undefined;
-  const isAdmin = dbUser?.role === "admin";
+  const viewer = optionalUser(req);
+  const isAdmin = viewer?.role === "admin";
 
   let terrains = await db
     .select()
@@ -182,7 +177,7 @@ router.get("/calendar", loadUser, async (req, res) => {
     clubInstant(addDays(last, 1), 0),
   );
   const v: Viewer = {
-    userId: dbUser?.id ?? null,
+    userId: viewer?.id ?? null,
     isAdmin,
     now: new Date(),
     settings: ctx.settings,

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { format } from "date-fns";
 import {
   useListNews,
   useCreateNews,
@@ -26,7 +25,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
 import { Field, Pill, Segmented, useConfirm } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
-import { useTx, useDateLocale } from "@/lib/i18n";
+import { useTx, useI18n } from "@/lib/i18n";
+import { clubDate } from "@/lib/club-time";
+import { apiErrorText } from "@/lib/api-errors";
 
 type Form = {
   title: string;
@@ -48,7 +49,7 @@ const params = { page: 1, limit: 50 };
 
 export default function AdminNews() {
   const tx = useTx();
-  const locale = useDateLocale();
+  const { lang } = useI18n();
   const { toast } = useToast();
   const qc = useQueryClient();
   const { confirm, dialog } = useConfirm();
@@ -110,10 +111,10 @@ export default function AdminNews() {
       setEditing(null);
       refresh();
     };
-    const fail = (e: any) =>
+    const fail = (e: unknown) =>
       toast({
         title: tx({ fr: "Enregistrement impossible", en: "Couldn't save", ar: "تعذر الحفظ" }),
-        description: e?.data?.error,
+        description: apiErrorText(e, tx),
         variant: "destructive",
       });
     if (editing && editing !== "new")
@@ -261,7 +262,7 @@ export default function AdminNews() {
                   </Pill>
                   {a.category && <Pill tone="info">{a.category}</Pill>}
                   <span className="text-xs text-muted-foreground">
-                    {format(new Date(a.publishedAt ?? a.createdAt), "d MMM yyyy", { locale })}
+                    {clubDate(a.publishedAt ?? a.createdAt, lang, "date")}
                   </span>
                 </span>
                 <span className="truncate text-lg font-extrabold">{a.title}</span>

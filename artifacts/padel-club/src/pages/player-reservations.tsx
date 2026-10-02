@@ -1,13 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "wouter";
-import { format, isPast } from "date-fns";
 import {
   useListReservations,
   useListUpcomingReservations,
   useCancelReservation,
   useLeaveSession,
   useGetMe,
-  apiErrorMessage,
   getListReservationsQueryKey,
   getListUpcomingReservationsQueryKey,
   getGetTokenBalanceQueryKey,
@@ -19,7 +17,6 @@ import {
   CalendarDotsIcon,
   CalendarPlusIcon,
   DownloadSimpleIcon,
-  MapPinIcon,
   SignOutIcon,
   SpinnerIcon,
   UserCircleIcon,
@@ -44,47 +41,19 @@ import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
 import { PaymentBadge } from "@/components/smash/payment-badge";
 import { InvitePanel } from "@/components/smash/invite-panel";
 import { useToast } from "@/hooks/use-toast";
-import { useI18n, useTx, useDateLocale } from "@/lib/i18n";
-import { CLUB } from "@/config/club";
+import { useI18n, useTx } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { clubTime } from "@/lib/club-time";
+import { clubTime, clubDate, clubDateTime } from "@/lib/club-time";
+import { inviteShareText, playersLabel, plural, tokensLabel } from "@/lib/labels";
+import { downloadIcs } from "@/lib/ics";
+import { useClubRules } from "@/hooks/use-club-rules";
+import { Avatar } from "@/components/smash/primitives";
+import { apiErrorText } from "@/lib/api-errors";
 
-/** Build a tiny .ics so players can add the match to their calendar. */
-function downloadIcs(r: Reservation) {
-  const f = (d: string) =>
-    new Date(d)
-      .toISOString()
-      .replace(/[-:]/g, "")
-      .replace(/\.\d{3}/, "");
-  const ics = [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    `PRODID:-//${CLUB.name}//FR`,
-    "BEGIN:VEVENT",
-    `UID:reservation-${r.id}@${window.location.hostname}`,
-    `DTSTAMP:${f(new Date().toISOString())}`,
-    `DTSTART:${f(r.startTime)}`,
-    `DTEND:${f(r.endTime)}`,
-    `SUMMARY:Padel · ${r.terrain?.name ?? ""}`,
-    `LOCATION:${[CLUB.name, CLUB.fullAddress].filter(Boolean).join(", ")}`,
-    "BEGIN:VALARM",
-    "TRIGGER:-PT2H",
-    "ACTION:DISPLAY",
-    "DESCRIPTION:Padel",
-    "END:VALARM",
-    "END:VEVENT",
-    "END:VCALENDAR",
-  ].join("\r\n");
-  const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `padel-${r.id}.ics`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, played }: { status: string; played?: boolean }) {
   const tx = useTx();
+  if (status === "confirmed" && played)
+    return <Badge variant="muted">{tx({ fr: "Joué", en: "Played", ar: "لُعبت" })}</Badge>;
   if (status === "confirmed")
     return <Badge variant="success">{tx({ fr: "Confirmé", en: "Confirmed", ar: "مؤكد" })}</Badge>;
   if (status === "cancelled")
@@ -95,7 +64,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function DateBlock({ date, dark }: { date: string; dark?: boolean }) {
-  const locale = useDateLocale();
+  const { lang } = useI18n();
   return (
     <span
       className={cn(
@@ -109,17 +78,19 @@ function DateBlock({ date, dark }: { date: string; dark?: boolean }) {
           dark ? "text-ball" : "text-muted-foreground",
         )}
       >
-        {format(new Date(date), "MMM", { locale })}
+        {clubDate(date, lang, "month")}
       </span>
-      <span className="disp text-[28px] leading-none">{format(new Date(date), "d")}</span>
+      <span className="disp text-[28px] leading-none">{clubDate(date, lang, "day")}</span>
     </span>
   );
 }
 
+const hasStarted = (startTime: string) => new Date(startTime).getTime() <= Date.now();
+
 export default function PlayerReservations() {
   const tx = useTx();
   const { t } = useI18n();
-  const locale = useDateLocale();
+  const { lang } = useI18n();
   const { toast } = useToast();
   const qc = useQueryClient();
   const { data: upcoming, isLoading: loadingUp } = useListUpcomingReservations();
@@ -130,6 +101,13 @@ export default function PlayerReservations() {
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
   const [toCancel, setToCancel] = useState<Reservation | null>(null);
   const [inviteFor, setInviteFor] = useState<number | null>(null);
+  const rules = useClubRules();
+  // Inside the club's notice period a cancellation is refused or refund-less: say so before, not after
+  const isLate = (r: Reservation) =>
+    rules.cancellationNoticeHours > 0 &&
+    new Date(r.startTime).getTime() - Date.now() < rules.cancellationNoticeHours * 3600_000;
+  const cancelBlocked = !!toCancel && isLate(toCancel) && rules.lateCancellation === "forbid";
+  const cancelForfeits = !!toCancel && isLate(toCancel) && rules.lateCancellation === "no_refund";
   const refresh = () => {
     qc.invalidateQueries({ queryKey: getListUpcomingReservationsQueryKey() });
     qc.invalidateQueries({ queryKey: getListReservationsQueryKey() });
@@ -140,17 +118,17 @@ export default function PlayerReservations() {
     leaveSession.mutate(
       { id: r.id },
       {
-        onSuccess: (res: any) => {
+        onSuccess: (res) => {
           toast({
             title: tx({
               fr: "Vous avez quitté le match",
               en: "You left the match",
               ar: "غادرت المباراة",
             }),
-            description: res?.refunded
+            description: res.refunded
               ? tx({
-                  fr: `${res.refunded} token(s) remboursé(s).`,
-                  en: `${res.refunded} token(s) refunded.`,
+                  fr: `${tokensLabel(res.refunded)} ${plural(res.refunded, "remboursé", "remboursés")}.`,
+                  en: `${tokensLabel(res.refunded)} refunded.`,
                   ar: "تمت إعادة الرصيد.",
                 })
               : undefined,
@@ -160,41 +138,54 @@ export default function PlayerReservations() {
         onError: (e) =>
           toast({
             title: tx({ fr: "Impossible de quitter", en: "Couldn't leave", ar: "تعذر المغادرة" }),
-            description: apiErrorMessage(e, ""),
+            description: apiErrorText(e, tx),
             variant: "destructive",
           }),
       },
     );
 
   const history = (historyResponse?.data ?? []).filter(
-    (r) => r.status !== "confirmed" || isPast(new Date(r.startTime)),
+    (r) => r.status !== "confirmed" || hasStarted(r.startTime),
   );
   const list = (upcoming ?? [])
     .slice()
     .sort((a, b) => +new Date(a.startTime) - +new Date(b.startTime));
 
+  // One cancellation per press: a second click would be answered "already cancelled"
+  const cancelling = useRef(false);
   const confirmCancel = () => {
-    if (!toCancel) return;
+    if (!toCancel || cancelling.current) return;
+    cancelling.current = true;
     const id = toCancel.id;
     cancelReservation.mutate(
       { id },
       {
-        onSuccess: () => {
+        onSettled: () => {
+          cancelling.current = false;
+        },
+        onSuccess: (cancelled) => {
           toast({
             title: tx({ fr: "Réservation annulée", en: "Booking cancelled", ar: "تم إلغاء الحجز" }),
-            description: tx({
-              fr: "Vos tokens ont été remboursés.",
-              en: "Your tokens were refunded.",
-              ar: "تمت إعادة رصيدك.",
-            }),
+            // Late cancellation under the club's "no refund" policy keeps the tokens
+            description: cancelled.refundForfeited
+              ? tx({
+                  fr: "Annulation tardive : vos tokens ne sont pas remboursés.",
+                  en: "Late cancellation: your tokens are not refunded.",
+                  ar: "إلغاء متأخر: لا يُعاد رصيدك.",
+                })
+              : tx({
+                  fr: "Vos tokens ont été remboursés.",
+                  en: "Your tokens were refunded.",
+                  ar: "تمت إعادة رصيدك.",
+                }),
           });
           refresh();
           setToCancel(null);
         },
-        onError: (e: any) => {
+        onError: (e) => {
           toast({
             title: tx({ fr: "Annulation impossible", en: "Couldn't cancel", ar: "تعذر الإلغاء" }),
-            description: apiErrorMessage(e, ""),
+            description: apiErrorText(e, tx),
             variant: "destructive",
           });
           setToCancel(null);
@@ -223,29 +214,25 @@ export default function PlayerReservations() {
         }
       />
 
-      <div
-        role="tablist"
-        aria-label={t("reservations")}
-        className="enter flex self-start rounded-full bg-card p-1 shadow-sm"
-      >
+      <div role="tablist" aria-label={t("reservations")} className="enter pill-group">
         <button
           type="button"
           role="tab"
           aria-selected={tab === "upcoming"}
-          className="pill-tab h-10"
+          className="pill-tab"
           onClick={() => setTab("upcoming")}
         >
-          {t("upcomingBookings")}
+          {tx({ fr: "À venir", en: "Upcoming", ar: "القادمة" })}
           {list.length ? ` · ${list.length}` : ""}
         </button>
         <button
           type="button"
           role="tab"
           aria-selected={tab === "past"}
-          className="pill-tab h-10"
+          className="pill-tab"
           onClick={() => setTab("past")}
         >
-          {t("pastBookings")}
+          {tx({ fr: "Historique", en: "History", ar: "السجل" })}
         </button>
       </div>
 
@@ -278,8 +265,10 @@ export default function PlayerReservations() {
               const organiser = r.userId === me?.id;
               const full = r.bookingMode === "full_court";
               const seats = r.players?.length ?? 0;
-              const started = isPast(new Date(r.startTime));
-              const canInvite = !started && (organiser || !full) && seats < r.totalSpots;
+              const total = r.totalSpots ?? rules.maxPlayers;
+              const started = hasStarted(r.startTime);
+              const canInvite =
+                rules.invitationsEnabled && !started && (organiser || !full) && seats < total;
               return (
                 <li
                   key={r.id}
@@ -295,9 +284,9 @@ export default function PlayerReservations() {
                           </span>
                           <StatusBadge status={r.status} />
                         </span>
-                        <span className="text-[15px] capitalize text-muted-foreground">
-                          {format(new Date(r.startTime), "EEEE", { locale })} ·{" "}
-                          <span dir="ltr">
+                        <span className="text-[15px] text-muted-foreground">
+                          {clubDate(r.startTime, lang)} ·{" "}
+                          <span dir="ltr" className="font-bold text-ink">
                             {clubTime(r.startTime)} – {clubTime(r.endTime)}
                           </span>
                         </span>
@@ -312,11 +301,7 @@ export default function PlayerReservations() {
                               ? tx({ fr: "Terrain complet", en: "Full court", ar: "ملعب كامل" })
                               : tx({ fr: "Place individuelle", en: "Own spot", ar: "مكان فردي" })}
                             {" · "}
-                            {tx({
-                              fr: `${seats}/${r.totalSpots} joueurs`,
-                              en: `${seats}/${r.totalSpots} players`,
-                              ar: `${seats}/${r.totalSpots} لاعبين`,
-                            })}
+                            {playersLabel(tx, seats, total)}
                           </span>
                           {mine && (
                             <PaymentBadge type={mine.paymentType} status={mine.paymentStatus} />
@@ -325,7 +310,18 @@ export default function PlayerReservations() {
                       </span>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Button variant="secondary" size="sm" onClick={() => downloadIcs(r)}>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() =>
+                          downloadIcs({
+                            id: r.id,
+                            startTime: r.startTime,
+                            endTime: r.endTime,
+                            terrainName: r.terrain?.name,
+                          })
+                        }
+                      >
                         <DownloadSimpleIcon />
                         {tx({ fr: "Calendrier", en: "Calendar", ar: "التقويم" })}
                       </Button>
@@ -364,15 +360,49 @@ export default function PlayerReservations() {
                       )}
                     </div>
                   </div>
+                  {(r.players?.length ?? 0) > 0 && (
+                    <ul
+                      aria-label={tx({ fr: "Joueurs", en: "Players", ar: "اللاعبون" })}
+                      className="m-0 flex list-none flex-wrap gap-2 border-t border-[#EEF1FA] p-0 pt-3"
+                    >
+                      {r.players!.map((pl, k) => {
+                        const name =
+                          pl.userId === me?.id
+                            ? tx({ fr: "Vous", en: "You", ar: "أنت" })
+                            : `${pl.user?.firstName ?? ""} ${pl.user?.lastName ?? ""}`.trim() ||
+                              tx({ fr: "Joueur", en: "Player", ar: "لاعب" });
+                        return (
+                          <li
+                            key={pl.id}
+                            className="flex items-center gap-2 rounded-full bg-mist py-1 pe-3 ps-1 text-sm font-bold"
+                          >
+                            <Avatar name={name} index={k} size={26} />
+                            {name}
+                          </li>
+                        );
+                      })}
+                      {total - seats > 0 && (
+                        <li className="flex items-center rounded-full border border-dashed border-[#C6CEF6] px-3 py-1 text-sm font-semibold text-muted-foreground">
+                          {full
+                            ? tx({
+                                fr: `${total - seats} ${plural(total - seats, "place à offrir", "places à offrir")}`,
+                                en: `${total - seats} ${plural(total - seats, "spot to give", "spots to give")}`,
+                                ar: `${total - seats} أماكن للإهداء`,
+                              })
+                            : tx({
+                                fr: `${total - seats} ${plural(total - seats, "place libre", "places libres")}`,
+                                en: `${total - seats} ${plural(total - seats, "open spot", "open spots")}`,
+                                ar: `${total - seats} أماكن شاغرة`,
+                              })}
+                        </li>
+                      )}
+                    </ul>
+                  )}
                   {inviteFor === r.id && (
                     <InvitePanel
                       reservationId={r.id}
                       free={full}
-                      shareText={tx({
-                        fr: `Padel ${r.terrain?.name ?? ""}, ${format(new Date(r.startTime), "dd/MM")} à ${clubTime(r.startTime)}. Rejoins-moi :`,
-                        en: `Padel ${r.terrain?.name ?? ""}, ${format(new Date(r.startTime), "dd/MM")} at ${clubTime(r.startTime)}. Join me:`,
-                        ar: `بادل ${r.terrain?.name ?? ""}، ${format(new Date(r.startTime), "dd/MM")} على ${clubTime(r.startTime)}. انضم إليّ:`,
-                      })}
+                      shareText={inviteShareText(tx, r.terrain?.name ?? "", r.startTime)}
                     />
                   )}
                 </li>
@@ -387,20 +417,30 @@ export default function PlayerReservations() {
           ))}
         </div>
       ) : history.length === 0 ? (
-        <EmptyState title={t("noPast")} />
+        <EmptyState
+          icon={<CalendarDotsIcon className="size-7" />}
+          title={t("noPast")}
+          text={tx({
+            fr: "Vos matchs joués et annulés apparaîtront ici.",
+            en: "Your played and cancelled matches will show up here.",
+            ar: "ستظهر هنا مبارياتك السابقة والملغاة.",
+          })}
+        />
       ) : (
         <ul className="stagger m-0 flex list-none flex-col gap-2 p-0">
           {history.map((r) => (
             <li key={r.id} className="flex items-center gap-4 rounded-[22px] bg-card/70 p-3 pe-5">
               <DateBlock date={r.startTime} />
-              <span className="flex flex-1 flex-col">
-                <span className="font-extrabold">{r.terrain?.name ?? "Court"}</span>
-                <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                  <MapPinIcon className="size-3.5" />
-                  <span dir="ltr">{clubTime(r.startTime)}</span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate font-extrabold">{r.terrain?.name ?? "Court"}</span>
+                <span className="text-sm text-muted-foreground">
+                  {clubDate(r.startTime, lang, "weekday")} ·{" "}
+                  <span dir="ltr">
+                    {clubTime(r.startTime)} – {clubTime(r.endTime)}
+                  </span>
                 </span>
               </span>
-              <StatusBadge status={r.status} />
+              <StatusBadge status={r.status} played />
             </li>
           ))}
         </ul>
@@ -418,29 +458,49 @@ export default function PlayerReservations() {
             </AlertDialogTitle>
             <AlertDialogDescription className="text-base">
               {toCancel &&
-                `${toCancel.terrain?.name ?? ""}, ${format(new Date(toCancel.startTime), "EEEE d MMMM HH:mm", { locale })}. `}
-              {tx({
-                fr: "Tous les tokens payés pour ce match seront remboursés, et les joueurs prévenus.",
-                en: "Every token paid for this match is refunded and the players are notified.",
-                ar: "سيتم إرجاع كل الرصيد المدفوع وإبلاغ اللاعبين.",
-              })}
+                `${toCancel.terrain?.name ?? ""}, ${clubDateTime(toCancel.startTime, lang, "long")}. `}
+              {cancelBlocked
+                ? tx({
+                    fr: `Les annulations en ligne s'arrêtent ${rules.cancellationNoticeHours} h avant le match. Appelez le club pour annuler.`,
+                    en: `Online cancellations stop ${rules.cancellationNoticeHours} h before the match. Call the club to cancel.`,
+                    ar: `يتوقف الإلغاء عبر التطبيق قبل المباراة بـ ${rules.cancellationNoticeHours} ساعة. اتصل بالنادي.`,
+                  })
+                : cancelForfeits
+                  ? tx({
+                      fr: `Annulation tardive (moins de ${rules.cancellationNoticeHours} h avant le match) : vos tokens ne seront pas remboursés. Les joueurs seront prévenus.`,
+                      en: `Late cancellation (less than ${rules.cancellationNoticeHours} h before the match): your tokens will not be refunded. Players are notified.`,
+                      ar: "إلغاء متأخر: لن يُعاد رصيدك. سيتم إبلاغ اللاعبين.",
+                    })
+                  : tx({
+                      fr: "Tous les tokens payés pour ce match seront remboursés, et les joueurs prévenus.",
+                      en: "Every token paid for this match is refunded and the players are notified.",
+                      ar: "سيتم إرجاع كل الرصيد المدفوع وإبلاغ اللاعبين.",
+                    })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2">
             <AlertDialogCancel className="h-12 rounded-full">
-              {tx({ fr: "Garder", en: "Keep it", ar: "الإبقاء" })}
+              {cancelBlocked
+                ? tx({ fr: "Fermer", en: "Close", ar: "إغلاق" })
+                : tx({
+                    fr: "Garder ma réservation",
+                    en: "Keep my booking",
+                    ar: "الإبقاء على الحجز",
+                  })}
             </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                confirmCancel();
-              }}
-              disabled={cancelReservation.isPending}
-              className="h-12 rounded-full bg-destructive"
-            >
-              {cancelReservation.isPending && <SpinnerIcon className="spin size-4" />}
-              {tx({ fr: "Oui, annuler", en: "Yes, cancel", ar: "نعم، ألغِ" })}
-            </AlertDialogAction>
+            {!cancelBlocked && (
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  confirmCancel();
+                }}
+                disabled={cancelReservation.isPending}
+                className="h-12 rounded-full bg-destructive"
+              >
+                {cancelReservation.isPending && <SpinnerIcon className="spin size-4" />}
+                {tx({ fr: "Annuler le match", en: "Cancel the match", ar: "إلغاء المباراة" })}
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

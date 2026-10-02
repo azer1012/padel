@@ -1,6 +1,4 @@
 import { pgTable, serial, integer, text, boolean, timestamp, pgEnum } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod/v4";
 import { usersTable } from "./users";
 import { relations } from "drizzle-orm";
 
@@ -34,9 +32,4 @@ export const notificationsRelations = relations(notificationsTable, ({ one }) =>
   }),
 }));
 
-export const insertNotificationSchema = createInsertSchema(notificationsTable).omit({
-  id: true,
-  createdAt: true,
-});
-export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notificationsTable.$inferSelect;

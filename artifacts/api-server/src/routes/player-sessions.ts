@@ -7,32 +7,26 @@ import {
   usersTable,
   terrainsTable,
   activityTable,
-  reservationEquipmentTable,
+  type Tx,
 } from "@workspace/db";
-import { eq, and, asc, desc, gt, ilike, ne, or, sql } from "drizzle-orm";
+import { eq, and, asc, desc, gt, ilike, isNull, ne, or, sql } from "drizzle-orm";
 import crypto from "node:crypto";
-import { requireUser, requireAdmin } from "../lib/auth";
+import { currentUser, requireUser, requireAdmin } from "../lib/auth";
 import { loadActiveRules, priceFor, quote } from "../lib/pricing";
 import { notifyLater } from "../lib/notify";
-import { clubParts, formatClubDate, formatClubTime, type Lang } from "../lib/club-time";
+import { clubParts, formatClubDate, formatClubTime } from "../lib/club-time";
 import { normalizeRequest, reserveEquipment } from "../lib/equipment";
-import { moveTokens, type Tx } from "../lib/ledger";
+import { moveTokens } from "../lib/ledger";
 import { assertBookable } from "../lib/slots";
 import { getSettings, scheduleContext, type ClubSettings } from "../lib/settings";
 import { HttpError, cleanText, oneOf, pgCode, pgHint, requireId } from "../lib/http";
-import { bookingConflict, lateCancellation } from "./reservations";
+import { blockedGuestName, bookingConflict, lateCancellation, removePlayer } from "../lib/bookings";
+import { fullName, publicName } from "../lib/members";
+import { logActivity } from "../lib/activity";
+import { readRateLimit } from "../middleware/rate-limit";
 import { env } from "../config/env";
 
 const router = Router();
-type DbUser = typeof usersTable.$inferSelect;
-const me = (req: Request) => (req as any).dbUser as DbUser;
-
-/** Public-safe name: "Yasmine B.", never an email address. */
-const publicName = (u?: { firstName?: string | null; lastName?: string | null } | null) => {
-  const first = (u?.firstName ?? "").trim(),
-    initial = (u?.lastName ?? "").trim().charAt(0);
-  return first ? `${first}${initial ? ` ${initial}.` : ""}` : "Player";
-};
 
 type PayMethod = "token" | "cash_club";
 
@@ -125,7 +119,7 @@ function assertJoinable(r: Awaited<ReturnType<typeof loadMatch>>) {
 // ─── Join an open spot (own_spot matches) ────────────────────────────────────
 router.post("/reservations/:id/join", requireUser, async (req, res) => {
   const id = requireId(req.params.id);
-  const user = me(req);
+  const user = currentUser(req);
   const settings = await getSettings();
   if (!settings.openMatchesEnabled) throw featureOff("Open matches");
   const method = playerMethod(req.body?.paymentMethod, settings);
@@ -175,7 +169,7 @@ router.post("/reservations/:id/join", requireUser, async (req, res) => {
     {
       kind: "booking_confirmed",
       terrain: r.terrain?.name ?? "",
-      date: formatClubDate(r.startTime, (user.language ?? "fr") as Lang),
+      date: formatClubDate(r.startTime, user.language),
       time: formatClubTime(r.startTime),
       tokens,
       mode: "joined",
@@ -190,7 +184,7 @@ router.post("/reservations/:id/join", requireUser, async (req, res) => {
 // ─── Leave a match ───────────────────────────────────────────────────────────
 router.delete("/reservations/:id/leave", requireUser, async (req, res) => {
   const id = requireId(req.params.id);
-  const user = me(req);
+  const user = currentUser(req);
   const r = await loadMatch(id);
   const mine = r.players.find((p) => p.userId === user.id);
   if (!mine) throw new HttpError(404, "You are not in this match", "NOT_IN_MATCH");
@@ -207,85 +201,33 @@ router.delete("/reservations/:id/leave", requireUser, async (req, res) => {
   // Same deadline as a cancellation; a late 'no_refund' leave keeps the spot's tokens
   const forfeit = lateCancellation(await getSettings(), r.startTime);
 
-  const result = await db.transaction(async (tx: Tx) => {
-    await tx
-      .select({ id: reservationsTable.id })
-      .from(reservationsTable)
-      .where(eq(reservationsTable.id, id))
-      .for("update");
-    const [row] = await tx
-      .delete(reservationPlayersTable)
-      .where(
-        and(
-          eq(reservationPlayersTable.reservationId, id),
-          eq(reservationPlayersTable.userId, user.id),
-        ),
-      )
-      .returning();
-    if (!row) throw new HttpError(404, "You are not in this match", "NOT_IN_MATCH");
-
-    let refunded = 0;
-    if (
-      !forfeit &&
-      row.paymentType === "token" &&
-      row.paymentStatus === "paid" &&
-      row.tokensCharged > 0
-    ) {
-      await moveTokens(tx, {
-        userId: user.id,
-        delta: row.tokensCharged,
-        type: "credit",
-        reservationId: id,
-        description: `Refund · left match · ${r.terrain?.name ?? "court"}`,
-      });
-      refunded = row.tokensCharged;
-    }
-    await tx
-      .update(reservationEquipmentTable)
-      .set({ status: "cancelled" })
-      .where(
-        and(
-          eq(reservationEquipmentTable.reservationId, id),
-          eq(reservationEquipmentTable.userId, user.id),
-          eq(reservationEquipmentTable.status, "reserved"),
-        ),
-      );
-
-    // An own-spot match left empty frees the court; otherwise the next player
-    // becomes the organiser so somebody can still invite or cancel.
-    const remaining = await tx
-      .select()
-      .from(reservationPlayersTable)
-      .where(eq(reservationPlayersTable.reservationId, id))
-      .orderBy(asc(reservationPlayersTable.joinedAt));
-    let freed = false;
-    if (remaining.length === 0) {
-      await tx
-        .update(reservationsTable)
-        .set({ status: "cancelled" })
-        .where(eq(reservationsTable.id, id));
-      freed = true;
-    } else if (r.userId === user.id) {
-      await tx
-        .update(reservationsTable)
-        .set({ userId: remaining[0].userId })
-        .where(eq(reservationsTable.id, id));
-    }
-    return { refunded, freed, refundForfeited: forfeit && row.tokensCharged > 0 };
-  });
+  const result = await db.transaction((tx: Tx) =>
+    removePlayer(
+      tx,
+      r,
+      { userId: user.id },
+      { forfeit, refundDescription: `Refund · left match · ${r.terrain?.name ?? "court"}` },
+    ),
+  );
+  if (!result) throw new HttpError(404, "You are not in this match", "NOT_IN_MATCH");
 
   notifyLater(
     user,
     {
       kind: "booking_cancelled",
       terrain: r.terrain?.name ?? "",
-      date: formatClubDate(r.startTime, (user.language ?? "fr") as Lang),
+      date: formatClubDate(r.startTime, user.language),
       time: formatClubTime(r.startTime),
       refunded: result.refunded,
     },
     `leave:${id}:${Date.now()}`,
   );
-  res.json({ message: "Left the match", ...result });
+  res.json({
+    message: "Left the match",
+    refunded: result.refunded,
+    freed: result.freed,
+    refundForfeited: result.refundForfeited,
+  });
 });
 
 // ─── Invitations ─────────────────────────────────────────────────────────────
@@ -294,7 +236,7 @@ router.delete("/reservations/:id/leave", requireUser, async (req, res) => {
 // this member accepts or declines (and is notified about).
 router.post("/reservations/:id/invite", requireUser, async (req, res) => {
   const id = requireId(req.params.id);
-  const user = me(req);
+  const user = currentUser(req);
   const settings = await getSettings();
   if (!settings.invitationsEnabled) throw featureOff("Invitations");
   const r = await loadMatch(id);
@@ -339,14 +281,13 @@ router.post("/reservations/:id/invite", requireUser, async (req, res) => {
         throw new HttpError(409, "This member already has a pending invitation", "ALREADY_INVITED");
       throw err;
     }
-    const lang = (guest.language ?? "fr") as Lang;
     notifyLater(
       guest,
       {
         kind: "invitation",
         from: publicName(user),
         terrain: r.terrain?.name ?? "",
-        date: formatClubDate(r.startTime, lang),
+        date: formatClubDate(r.startTime, guest.language),
         time: formatClubTime(r.startTime),
         free,
         token: invite.inviteToken,
@@ -372,7 +313,7 @@ router.post("/reservations/:id/invite", requireUser, async (req, res) => {
         eq(playerInvitesTable.invitedByUserId, user.id),
         eq(playerInvitesTable.status, "pending"),
         gt(playerInvitesTable.expiresAt, new Date()),
-        sql`${playerInvitesTable.invitedUserId} is null`,
+        isNull(playerInvitesTable.invitedUserId),
       ),
     )
     .limit(1);
@@ -461,7 +402,7 @@ router.get("/invites/:token", async (req, res) => {
 
 // ─── Accept invite ───────────────────────────────────────────────────────────
 router.post("/invites/:token/accept", requireUser, async (req, res) => {
-  const user = me(req);
+  const user = currentUser(req);
   const settings = await getSettings();
   if (!settings.invitationsEnabled) throw featureOff("Invitations");
   const invite = await loadInvite(String(req.params.token));
@@ -510,7 +451,7 @@ router.post("/invites/:token/accept", requireUser, async (req, res) => {
     {
       kind: "booking_confirmed",
       terrain: r.terrain?.name ?? "",
-      date: formatClubDate(r.startTime, (user.language ?? "fr") as Lang),
+      date: formatClubDate(r.startTime, user.language),
       time: formatClubTime(r.startTime),
       tokens,
       mode: "joined",
@@ -528,7 +469,7 @@ router.post("/invites/:token/accept", requireUser, async (req, res) => {
 
 // ─── Personal invitations: list mine, decline ────────────────────────────────
 router.get("/invites", requireUser, async (req, res) => {
-  const user = me(req);
+  const user = currentUser(req);
   const rows = await db.query.playerInvitesTable.findMany({
     where: and(
       eq(playerInvitesTable.invitedUserId, user.id),
@@ -562,7 +503,7 @@ router.get("/invites", requireUser, async (req, res) => {
 });
 
 router.post("/invites/:token/decline", requireUser, async (req, res) => {
-  const user = me(req);
+  const user = currentUser(req);
   const invite = await loadInvite(String(req.params.token));
   if (invite.invitedUserId !== user.id)
     throw new HttpError(403, "Only the invited member can decline", "FORBIDDEN");
@@ -574,8 +515,8 @@ router.post("/invites/:token/decline", requireUser, async (req, res) => {
 });
 
 // ─── Find a member to invite: public names only, never e-mails or phones ────
-router.get("/members/search", requireUser, async (req, res) => {
-  const user = me(req);
+router.get("/members/search", requireUser, readRateLimit(40), async (req, res) => {
+  const user = currentUser(req);
   const q = cleanText(req.query.q, 60);
   if (!q || q.length < 2) {
     res.json([]);
@@ -625,17 +566,39 @@ router.patch("/reservations/:id/players/:playerId", requireAdmin, async (req, re
   if (row.paymentType !== "cash_club")
     throw new HttpError(400, "Only cash payments can be marked by hand", "NOT_CASH");
 
-  const [updated] = await db
+  if (row.paymentStatus === "refunded")
+    throw new HttpError(400, "This spot was refunded: it can't be changed", "NOT_CASH");
+
+  // Only a real change is written (and audited): the same click sent twice changes one row once
+  const [changed] = await db
     .update(reservationPlayersTable)
     .set({ paymentStatus })
-    .where(eq(reservationPlayersTable.id, row.id))
+    .where(
+      and(
+        eq(reservationPlayersTable.id, row.id),
+        eq(reservationPlayersTable.paymentType, "cash_club"),
+        ne(reservationPlayersTable.paymentStatus, paymentStatus),
+        ne(reservationPlayersTable.paymentStatus, "refunded"),
+      ),
+    )
     .returning();
+  const updated = changed ?? { ...row, paymentStatus };
+  // Cash never touches the token ledger, so the desk action itself is the audit trail
+  if (changed) {
+    const [member] = await db.select().from(usersTable).where(eq(usersTable.id, row.userId));
+    await logActivity(
+      req,
+      "payment_updated",
+      `Cash payment marked ${paymentStatus === "paid" ? "received" : "not received"} · booking #${reservationId}`,
+      member,
+    );
+  }
   res.json(updated);
 });
 
 // ─── Admin: add a member to a match ──────────────────────────────────────────
 router.post("/reservations/:id/players", requireAdmin, async (req, res) => {
-  const admin = me(req);
+  const admin = currentUser(req);
   const id = requireId(req.params.id);
   const userId = requireId(req.body?.userId, "member");
   const method: PayMethod =
@@ -676,57 +639,31 @@ router.post("/reservations/:id/players", requireAdmin, async (req, res) => {
   res.status(201).json(player);
 });
 
-// ─── Admin: remove a member from a match (token spots refunded) ──────────────
+// ─── Admin: remove a member from a match (token spot refunded, gear released) ─
 router.delete("/reservations/:id/players/:playerId", requireAdmin, async (req, res) => {
-  const admin = me(req);
+  const admin = currentUser(req);
   const id = requireId(req.params.id);
   const playerId = requireId(req.params.playerId, "player");
   const r = await loadMatch(id);
 
-  const out = await db.transaction(async (tx: Tx) => {
-    await tx
-      .select({ id: reservationsTable.id })
-      .from(reservationsTable)
-      .where(eq(reservationsTable.id, id))
-      .for("update");
-    const [row] = await tx
-      .delete(reservationPlayersTable)
-      .where(
-        and(
-          eq(reservationPlayersTable.id, playerId),
-          eq(reservationPlayersTable.reservationId, id),
-        ),
-      )
-      .returning();
-    if (!row) throw new HttpError(404, "Player not found in this booking", "NOT_FOUND");
-    let refunded = 0;
-    if (row.paymentType === "token" && row.paymentStatus === "paid" && row.tokensCharged > 0) {
-      await moveTokens(tx, {
-        userId: row.userId,
-        delta: row.tokensCharged,
-        type: "credit",
-        reservationId: id,
+  const removed = await db.transaction((tx: Tx) =>
+    removePlayer(
+      tx,
+      r,
+      { playerId },
+      {
         adminId: admin.id,
-        description: `Refund · removed from match · ${r.terrain?.name ?? "court"}`,
-      });
-      refunded = row.tokensCharged;
-    }
-    if (r.userId === row.userId) {
-      const [next] = await tx
-        .select()
-        .from(reservationPlayersTable)
-        .where(eq(reservationPlayersTable.reservationId, id))
-        .orderBy(asc(reservationPlayersTable.joinedAt))
-        .limit(1);
-      if (next)
-        await tx
-          .update(reservationsTable)
-          .set({ userId: next.userId })
-          .where(eq(reservationsTable.id, id));
-    }
-    return { refunded, userId: row.userId };
+        refundDescription: `Refund · removed from match · ${r.terrain?.name ?? "court"}`,
+      },
+    ),
+  );
+  if (!removed) throw new HttpError(404, "Player not found in this booking", "NOT_FOUND");
+  res.json({
+    message: "Player removed",
+    refunded: removed.refunded,
+    userId: removed.userId,
+    freed: removed.freed,
   });
-  res.json({ message: "Player removed", ...out });
 });
 
 // ─── Open matches (public matches with open spots) ───────────────────────────
@@ -775,7 +712,7 @@ router.get("/open-matches", async (_req, res) => {
 // ─── Make a match public / private (organiser or admin) ──────────────────────
 async function setPublic(req: Request, isPublic: boolean) {
   const id = requireId(req.params.id);
-  const user = me(req);
+  const user = currentUser(req);
   const r = await loadMatch(id);
   if (user.role !== "admin" && r.userId !== user.id)
     throw new HttpError(403, "Only the organiser can change this", "FORBIDDEN");
@@ -802,7 +739,7 @@ router.delete("/reservations/:id/open-match", requireUser, async (req, res) => {
 
 // ─── Admin: block a slot (maintenance, private event) ────────────────────────
 router.post("/admin/slots/block", requireAdmin, async (req, res) => {
-  const admin = me(req);
+  const admin = currentUser(req);
   const terrainId = requireId(req.body?.terrainId, "court");
   const reason = cleanText(req.body?.reason, 80) ?? "Maintenance";
   const [terrain] = await db.select().from(terrainsTable).where(eq(terrainsTable.id, terrainId));
@@ -819,7 +756,7 @@ router.post("/admin/slots/block", requireAdmin, async (req, res) => {
       .values({
         terrainId: terrain.id,
         userId: null,
-        guestName: `[${reason}]`,
+        guestName: blockedGuestName(reason),
         startTime: start,
         endTime: end,
         status: "confirmed",
@@ -835,7 +772,7 @@ router.post("/admin/slots/block", requireAdmin, async (req, res) => {
       type: "reservation_created",
       message: `${terrain.name} blocked: ${reason}`,
       userId: admin.id,
-      userName: `${admin.firstName ?? ""} ${admin.lastName ?? ""}`.trim() || admin.email,
+      userName: fullName(admin),
     });
     res.status(201).json(blocked);
   } catch (err) {

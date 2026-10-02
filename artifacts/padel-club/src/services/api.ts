@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 
+/** Access token of the signed-in member, attached by the API client to every request. */
 export async function getAccessToken(): Promise<string | null> {
   const { data } = await supabase.auth.getSession();
   return data.session?.access_token ?? null;
@@ -10,15 +11,3 @@ export const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) ??
   /\/+$/,
   "",
 );
-
-export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
-  if (API_BASE && typeof input === "string" && input.startsWith("/")) input = API_BASE + input;
-  const headers = new Headers(init.headers);
-  const token = await getAccessToken();
-
-  if (token && !headers.has("authorization")) {
-    headers.set("authorization", `Bearer ${token}`);
-  }
-
-  return fetch(input, { ...init, headers });
-}

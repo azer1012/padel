@@ -7,6 +7,26 @@ import type { NextFunction, Request, Response } from "express";
  * shared limiter (Cloudflare, Nginx) in front for strict global limits.
  */
 export function writeRateLimit(perMinute: number) {
+  const limited = limiter(perMinute);
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return next();
+    limited(req.ip ?? "unknown", res, next);
+  };
+}
+
+/**
+ * Same limiter for one sensitive read (e.g. the member search, which would otherwise
+ * let a script walk through the member list): per signed-in member, else per IP.
+ */
+export function readRateLimit(perMinute: number) {
+  const limited = limiter(perMinute);
+  return (req: Request, res: Response, next: NextFunction) => {
+    const userId = (req as { dbUser?: { id: number } }).dbUser?.id;
+    limited(userId ? `u${userId}` : (req.ip ?? "unknown"), res, next);
+  };
+}
+
+function limiter(perMinute: number) {
   const hits = new Map<string, { count: number; resetAt: number }>();
   const sweep = setInterval(() => {
     const now = Date.now();
@@ -14,10 +34,8 @@ export function writeRateLimit(perMinute: number) {
   }, 60_000);
   sweep.unref();
 
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (!perMinute || req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS")
-      return next();
-    const key = req.ip ?? "unknown";
+  return (key: string, res: Response, next: NextFunction) => {
+    if (!perMinute) return next();
     const now = Date.now();
     const entry = hits.get(key);
     if (!entry || entry.resetAt <= now) {

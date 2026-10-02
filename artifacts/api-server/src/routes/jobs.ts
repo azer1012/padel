@@ -2,6 +2,7 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import { env } from "../config/env";
 import { runJobs } from "../jobs";
+import { HttpError } from "../lib/http";
 
 const router = Router();
 
@@ -12,10 +13,7 @@ router.post("/internal/jobs/run", async (req, res) => {
     !!env.cronSecret &&
     given.length === env.cronSecret.length &&
     crypto.timingSafeEqual(Buffer.from(given), Buffer.from(env.cronSecret));
-  if (!ok) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
+  if (!ok) throw new HttpError(401, "Unauthorized", "UNAUTHORIZED");
   res.json(await runJobs());
 });
 

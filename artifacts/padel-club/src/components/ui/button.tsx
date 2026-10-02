@@ -54,6 +54,9 @@ export interface ButtonProps
   loading?: boolean;
 }
 
+/** Two clicks closer than this are one press (a double-click, a bouncing touch). */
+const DOUBLE_CLICK_MS = 500;
+
 const reduceMotion = () =>
   typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
@@ -80,19 +83,39 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       variant,
       size,
       asChild = false,
-      loading = false,
+      loading: loadingProp,
       disabled,
       children,
       onPointerDown,
+      onClick,
       ...props
     },
     ref,
   ) => {
     const Comp = asChild ? Slot : "button";
+    const loading = loadingProp ?? false;
     const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
       onPointerDown?.(e);
       if (variant !== "link") spawnRipple(e);
     };
+    // A button with a loading state starts one action per press: the second click of
+    // a double-click arrives before "loading" has been rendered, and would send the
+    // request twice (also stops the form submit when the button is type="submit").
+    const lastClick = React.useRef(0);
+    const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+      if (loadingProp !== undefined) {
+        const now = Date.now();
+        if (now - lastClick.current < DOUBLE_CLICK_MS) {
+          e.preventDefault();
+          return;
+        }
+        lastClick.current = now;
+      }
+      onClick?.(e);
+    };
+
+    // An icon alone is ambiguous: its accessible name is also shown on hover
+    const iconOnly = size === "icon" || size === "icon-sm";
 
     let content = children;
     if (loading && !asChild) {
@@ -115,6 +138,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={asChild ? undefined : disabled || loading}
         aria-busy={loading || undefined}
         onPointerDown={handlePointerDown}
+        onClick={handleClick}
+        title={iconOnly ? props["aria-label"] : undefined}
         {...props}
       >
         {content}

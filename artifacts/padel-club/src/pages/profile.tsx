@@ -230,7 +230,7 @@ export default function Profile() {
           </form>
         </div>
       )}
-      {!isLoading && <NotificationSettings me={user as any} />}
+      {!isLoading && <NotificationSettings me={user} />}
     </Page>
   );
 }

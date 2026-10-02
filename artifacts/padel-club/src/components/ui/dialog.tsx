@@ -3,6 +3,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { XIcon } from "@/components/icons";
 
 import { cn } from "@/lib/utils";
+import { useTx } from "@/lib/i18n";
 
 const Dialog = DialogPrimitive.Root;
 
@@ -30,25 +31,32 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
-  <DialogPortal>
-    <DialogOverlay />
-    <DialogPrimitive.Content
-      ref={ref}
-      className={cn(
-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] max-h-[calc(100dvh-24px)] w-[calc(100%-24px)] gap-5 overflow-y-auto rounded-[32px] border-0 bg-card p-6 shadow-2xl sm:p-8 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-90 data-[state=open]:slide-in-from-bottom-6 data-[state=open]:duration-500 data-[state=open]:ease-[cubic-bezier(.3,1.3,.5,1)] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:duration-200",
-        className,
-      )}
-      {...props}
-    >
-      {children}
-      <DialogPrimitive.Close className="absolute end-4 top-4 flex size-10 items-center justify-center rounded-full bg-secondary text-muted-foreground transition-[color,background-color,transform] duration-300 ease-[cubic-bezier(.3,1.4,.5,1)] hover:rotate-90 hover:bg-ink hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none">
-        <XIcon className="size-[18px]" />
-        <span className="sr-only">Close</span>
-      </DialogPrimitive.Close>
-    </DialogPrimitive.Content>
-  </DialogPortal>
-));
+>(({ className, children, ...props }, ref) => {
+  const tx = useTx();
+  return (
+    <DialogPortal>
+      <DialogOverlay />
+      {/* Phones: a bottom sheet (actions under the thumb). From sm: a centred dialog. */}
+      <DialogPrimitive.Content
+        ref={ref}
+        className={cn(
+          "fixed left-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] gap-5 overflow-y-auto overscroll-contain border-0 bg-card p-6 shadow-2xl sm:p-8",
+          "max-sm:bottom-0 max-sm:max-h-[92dvh] max-sm:max-w-none max-sm:rounded-t-[28px] max-sm:data-[state=open]:slide-in-from-bottom-24 max-sm:data-[state=open]:duration-300 max-sm:data-[state=closed]:slide-out-to-bottom-24",
+          "sm:top-[50%] sm:max-h-[calc(100dvh-24px)] sm:w-[calc(100%-24px)] sm:translate-y-[-50%] sm:rounded-[32px] sm:data-[state=open]:zoom-in-90 sm:data-[state=open]:slide-in-from-bottom-6 sm:data-[state=open]:duration-500 sm:data-[state=open]:ease-[cubic-bezier(.3,1.3,.5,1)] sm:data-[state=closed]:zoom-out-95",
+          "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:duration-200",
+          className,
+        )}
+        {...props}
+      >
+        {children}
+        <DialogPrimitive.Close className="absolute end-4 top-4 z-10 flex size-10 items-center justify-center rounded-full bg-secondary text-muted-foreground transition-[color,background-color,transform] duration-300 ease-[cubic-bezier(.3,1.4,.5,1)] hover:rotate-90 hover:bg-ink hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none">
+          <XIcon className="size-[18px]" />
+          <span className="sr-only">{tx({ fr: "Fermer", en: "Close", ar: "إغلاق" })}</span>
+        </DialogPrimitive.Close>
+      </DialogPrimitive.Content>
+    </DialogPortal>
+  );
+});
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

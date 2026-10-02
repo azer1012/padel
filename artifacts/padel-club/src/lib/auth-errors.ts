@@ -32,17 +32,24 @@ export function authErrorMessage(
       en: "An account already uses this email.",
       ar: "يوجد حساب بهذا البريد.",
     });
+  // Before the weak-password test: Supabase words this one "New password should be different…"
+  if (code === "same_password" || msg.includes("different from the old password"))
+    return tx({
+      fr: "Choisissez un mot de passe différent de l'ancien.",
+      en: "Choose a different password.",
+      ar: "اختر كلمة مرور مختلفة.",
+    });
   if (code === "weak_password" || msg.includes("password should"))
     return tx({
       fr: "Mot de passe trop faible : 8 caractères minimum, avec lettres et chiffres.",
       en: "Password too weak: at least 8 characters with letters and numbers.",
       ar: "كلمة المرور ضعيفة: 8 أحرف على الأقل مع حروف وأرقام.",
     });
-  if (code === "same_password")
+  if (code === "user_banned" || msg.includes("user is banned"))
     return tx({
-      fr: "Choisissez un mot de passe différent de l'ancien.",
-      en: "Choose a different password.",
-      ar: "اختر كلمة مرور مختلفة.",
+      fr: "Ce compte est suspendu. Contactez le club.",
+      en: "This account is suspended. Please contact the club.",
+      ar: "هذا الحساب موقوف. تواصل مع النادي.",
     });
   if (code.startsWith("over_") || error.status === 429 || msg.includes("rate limit"))
     return tx({

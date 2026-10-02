@@ -1,17 +1,23 @@
-import { Router, type Request } from "express";
+import { Router } from "express";
 import { notifyLater } from "../lib/notify";
-import { db, usersTable, activityTable } from "@workspace/db";
+import { db, usersTable } from "@workspace/db";
+import { logActivity } from "../lib/activity";
 import { and, count, desc, eq, ilike, ne, or } from "drizzle-orm";
-import { requireAuth, requireUser, requireAdmin } from "../lib/auth";
+import {
+  authIdentity,
+  currentUser,
+  requireAuth,
+  requireUser,
+  requireAdmin,
+  type DbUser,
+} from "../lib/auth";
 import { HttpError, cleanText, oneOf, paging, requireId } from "../lib/http";
 
 const router = Router();
-type DbUser = typeof usersTable.$inferSelect;
-const me = (req: Request) => (req as any).dbUser as DbUser;
 const LANGS = ["fr", "ar", "en"] as const;
 
 /** Profile fields a user may edit on themselves (never role or balance). */
-function profilePatch(body: any) {
+function profilePatch(body: Record<string, unknown> | undefined) {
   const patch: Partial<DbUser> = {};
   if (body?.firstName !== undefined) patch.firstName = cleanText(body.firstName, 80);
   if (body?.lastName !== undefined) patch.lastName = cleanText(body.lastName, 80);
@@ -34,14 +40,14 @@ function profilePatch(body: any) {
 }
 
 router.get("/users/me", requireUser, async (req, res) => {
-  res.json(me(req));
+  res.json(currentUser(req));
 });
 
 router.patch("/users/me", requireUser, async (req, res) => {
   const [updated] = await db
     .update(usersTable)
     .set({ ...profilePatch(req.body), updatedAt: new Date() })
-    .where(eq(usersTable.id, me(req).id))
+    .where(eq(usersTable.id, currentUser(req).id))
     .returning();
   res.json(updated);
 });
@@ -52,9 +58,8 @@ router.patch("/users/me", requireUser, async (req, res) => {
  * overwrites what the player edited in their profile.
  */
 router.post("/users/sync", requireAuth, async (req, res) => {
-  const authUserId = (req as any).authUserId as string;
   // Never trust an email sent by the browser: use the one Supabase verified for this token.
-  const email = (req as any).authEmail as string | undefined;
+  const { id: authUserId, email } = authIdentity(req);
   const firstName = cleanText(req.body?.firstName, 80);
   const lastName = cleanText(req.body?.lastName, 80);
   const avatar = cleanText(req.body?.imageUrl, 500);
@@ -141,7 +146,7 @@ router.get("/users/:id", requireAdmin, async (req, res) => {
 
 /** Admin: edit a member's details or role. Token balances only change through /tokens/admin/adjust. */
 router.patch("/users/:id", requireAdmin, async (req, res) => {
-  const admin = me(req);
+  const admin = currentUser(req);
   const id = requireId(req.params.id);
   const patch = profilePatch(req.body);
   const role =
@@ -163,14 +168,7 @@ router.patch("/users/:id", requireAdmin, async (req, res) => {
     .where(eq(usersTable.id, id))
     .returning();
   if (!updated) throw new HttpError(404, "User not found", "NOT_FOUND");
-  if (role) {
-    await db.insert(activityTable).values({
-      type: "user_registered",
-      message: `${updated.email} is now ${role} (by ${admin.email})`,
-      userId: updated.id,
-      userName: `${updated.firstName ?? ""} ${updated.lastName ?? ""}`.trim() || updated.email,
-    });
-  }
+  if (role) await logActivity(req, "role_changed", `${updated.email} is now ${role}`, updated);
   res.json(updated);
 });
 

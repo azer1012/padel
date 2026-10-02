@@ -8,12 +8,15 @@ import {
   terrainsTable,
   usersTable,
   activityTable,
+  type Queryable,
 } from "@workspace/db";
 import { and, desc, eq, gt, gte, inArray, lt } from "drizzle-orm";
-import { requireAdmin } from "../lib/auth";
-import { assertBookable } from "../lib/slots";
+import { currentUser, requireAdmin } from "../lib/auth";
+import { fullName } from "../lib/members";
+import { assertBookable, toMinutes, type ScheduleContext } from "../lib/slots";
 import { scheduleContext } from "../lib/settings";
-import { clubParts } from "../lib/club-time";
+import { addDays, clubInstant, clubParts } from "../lib/club-time";
+import { HttpError, cleanText, pgCode, requireId, toId, type Body } from "../lib/http";
 
 const router = Router();
 
@@ -24,15 +27,14 @@ type SeriesInput = {
   intervalWeeks: number;
 };
 
-function parse(body: any): SeriesInput {
-  const firstStart = new Date(body.firstStart);
-  const occurrences = Number(body.occurrences),
-    intervalWeeks = Number(body.intervalWeeks ?? 1),
-    terrainId = Number(body.terrainId);
-  const bad = (m: string) => {
-    throw Object.assign(new Error(m), { status: 400 });
+function parse(body: Body): SeriesInput {
+  const firstStart = new Date(String(body?.firstStart ?? ""));
+  const occurrences = Number(body?.occurrences),
+    intervalWeeks = Number(body?.intervalWeeks ?? 1),
+    terrainId = requireId(body?.terrainId, "court");
+  const bad = (message: string): never => {
+    throw new HttpError(400, message, "VALIDATION_ERROR");
   };
-  if (!terrainId) bad("Court is required");
   if (Number.isNaN(firstStart.getTime())) bad("Invalid first date");
   if (firstStart.getTime() < Date.now()) bad("First date must be in the future");
   if (!Number.isInteger(occurrences) || occurrences < 2 || occurrences > 52)
@@ -42,19 +44,47 @@ function parse(body: any): SeriesInput {
   return { terrainId, firstStart, occurrences, intervalWeeks };
 }
 
-/** Same local wall-clock time each week (setDate keeps the hour even across DST changes). */
-function dates(s: SeriesInput) {
-  return Array.from({ length: s.occurrences }, (_, i) => {
-    const d = new Date(s.firstStart);
-    d.setDate(d.getDate() + i * 7 * s.intervalWeeks);
-    return d;
-  });
+/** Same club wall-clock time each week, whatever timezone the server runs in (and across DST changes). */
+function sessionStarts(s: SeriesInput) {
+  const { date, time } = clubParts(s.firstStart);
+  return Array.from({ length: s.occurrences }, (_, i) =>
+    clubInstant(addDays(date, i * 7 * s.intervalWeeks), toMinutes(time)),
+  );
 }
 
-async function conflicts(q: any, terrainId: number, starts: Date[], SLOT_MS: number) {
-  if (!starts.length) return new Map<number, string>();
+async function loadCourt(terrainId: number) {
+  const [terrain] = await db.select().from(terrainsTable).where(eq(terrainsTable.id, terrainId));
+  if (!terrain) throw new HttpError(400, "Court not available", "COURT_UNAVAILABLE");
+  return terrain;
+}
+
+const contextFor = (starts: Date[]) =>
+  scheduleContext(clubParts(starts[0]).date, clubParts(starts[starts.length - 1]).date);
+
+/** Sessions that are not real slots (closed day, outside hours, maintenance): index → reason. */
+function unbookableSessions(
+  ctx: ScheduleContext,
+  terrain: Awaited<ReturnType<typeof loadCourt>>,
+  starts: Date[],
+) {
+  const out = new Map<number, string>();
+  starts.forEach((start, i) => {
+    try {
+      assertBookable(ctx, terrain, start, { isAdmin: true });
+    } catch (err) {
+      if (!(err instanceof HttpError)) throw err;
+      out.set(i, err.message);
+    }
+  });
+  return out;
+}
+
+/** Sessions that overlap an existing confirmed booking: index → who holds the slot. */
+async function bookedSessions(q: Queryable, terrainId: number, starts: Date[], slotMs: number) {
+  const out = new Map<number, string>();
+  if (!starts.length) return out;
   const first = starts[0],
-    last = new Date(starts[starts.length - 1].getTime() + SLOT_MS);
+    last = new Date(starts[starts.length - 1].getTime() + slotMs);
   const existing = await q
     .select({
       startTime: reservationsTable.startTime,
@@ -66,16 +96,15 @@ async function conflicts(q: any, terrainId: number, starts: Date[], SLOT_MS: num
     .where(
       and(
         eq(reservationsTable.terrainId, terrainId),
-        eq(reservationsTable.status, "confirmed" as any),
+        eq(reservationsTable.status, "confirmed"),
         lt(reservationsTable.startTime, last),
         gt(reservationsTable.endTime, first),
       ),
     );
-  const out = new Map<number, string>();
-  starts.forEach((d, i) => {
-    const end = d.getTime() + SLOT_MS;
+  starts.forEach((start, i) => {
+    const end = start.getTime() + slotMs;
     const hit = existing.find(
-      (r: any) => r.startTime.getTime() < end && r.endTime.getTime() > d.getTime(),
+      (r) => r.startTime.getTime() < end && r.endTime.getTime() > start.getTime(),
     );
     if (hit) out.set(i, hit.guestName ?? (hit.userId ? `member #${hit.userId}` : "booked"));
   });
@@ -83,132 +112,99 @@ async function conflicts(q: any, terrainId: number, starts: Date[], SLOT_MS: num
 }
 
 router.post("/admin/series/preview", requireAdmin, async (req, res) => {
-  try {
-    const s = parse(req.body);
-    const list = dates(s);
-    const ctx = await scheduleContext(
-      clubParts(list[0]).date,
-      clubParts(list[list.length - 1]).date,
-    );
-    const clash = await conflicts(
-      db,
-      s.terrainId,
-      list,
-      ctx.settings.bookingDurationMinutes * 60_000,
-    );
-    const [terrain] = await db
-      .select()
-      .from(terrainsTable)
-      .where(eq(terrainsTable.id, s.terrainId));
-    if (!terrain) throw Object.assign(new Error("Court not available"), { status: 400 });
-    list.forEach((d, i) => {
-      try {
-        assertBookable(ctx, terrain, d, { isAdmin: true });
-      } catch (e: any) {
-        if (!clash.has(i)) clash.set(i, e.message);
-      }
-    });
-    res.json({
-      dates: list.map((d, i) => ({
-        startTime: d.toISOString(),
-        conflict: clash.has(i),
-        conflictWith: clash.get(i) ?? null,
-      })),
-    });
-  } catch (e: any) {
-    if (e.status) res.status(400).json({ error: e.message });
-    else throw e;
-  }
+  const s = parse(req.body);
+  const starts = sessionStarts(s);
+  const terrain = await loadCourt(s.terrainId);
+  const ctx = await contextFor(starts);
+  const slotMs = ctx.settings.bookingDurationMinutes * 60_000;
+  // A booked date reports who holds it; otherwise the reason the slot is not bookable
+  const problems = new Map([
+    ...unbookableSessions(ctx, terrain, starts),
+    ...(await bookedSessions(db, s.terrainId, starts, slotMs)),
+  ]);
+  res.json({
+    dates: starts.map((start, i) => ({
+      startTime: start.toISOString(),
+      conflict: problems.has(i),
+      conflictWith: problems.get(i) ?? null,
+    })),
+  });
 });
 
 router.post("/admin/series", requireAdmin, async (req, res) => {
-  const admin = (req as any).dbUser;
-  let s: SeriesInput;
-  try {
-    s = parse(req.body);
-  } catch (e: any) {
-    res.status(400).json({ error: e.message });
-    return;
-  }
-  const { userId, guestName, guestPhone, label, notes, skipConflicts = true } = req.body;
-  const [terrain] = await db.select().from(terrainsTable).where(eq(terrainsTable.id, s.terrainId));
-  if (!terrain) {
-    res.status(400).json({ error: "Court not available", code: "COURT_UNAVAILABLE" });
-    return;
-  }
-  const list = dates(s);
-  const ctx = await scheduleContext(clubParts(list[0]).date, clubParts(list[list.length - 1]).date);
-  const SLOT_MS = ctx.settings.bookingDurationMinutes * 60_000;
-  // Every session must be a real slot (hours, holidays, maintenance), not just the first
-  const unbookable = new Map<number, string>();
-  list.forEach((d, i) => {
-    try {
-      assertBookable(ctx, terrain, d, { isAdmin: true });
-    } catch (e: any) {
-      if (i === 0) throw e;
-      unbookable.set(i, e.message);
-    }
-  });
-  const member = userId
-    ? (
-        await db
-          .select()
-          .from(usersTable)
-          .where(eq(usersTable.id, Number(userId)))
-      )[0]
-    : null;
-  if (userId && !member) {
-    res.status(400).json({ error: "Member not found" });
-    return;
-  }
-  if (!member && !guestName?.trim()) {
-    res.status(400).json({ error: "Pick a member or enter a name" });
-    return;
-  }
+  const admin = currentUser(req);
+  const s = parse(req.body);
+  const userId = toId(req.body?.userId);
+  const guestName = cleanText(req.body?.guestName, 80);
+  const guestPhone = cleanText(req.body?.guestPhone, 30);
+  const label = cleanText(req.body?.label, 80);
+  const notes = cleanText(req.body?.notes, 500);
+  const skipConflicts = req.body?.skipConflicts !== false;
 
+  const terrain = await loadCourt(s.terrainId);
+  const starts = sessionStarts(s);
+  const ctx = await contextFor(starts);
+  const slotMs = ctx.settings.bookingDurationMinutes * 60_000;
+  // The first session must be bookable; later ones that are not (closed day, holiday,
+  // maintenance) are skipped like the dates already taken
+  assertBookable(ctx, terrain, starts[0], { isAdmin: true });
+  const unbookable = unbookableSessions(ctx, terrain, starts);
+
+  const [member] = userId
+    ? await db.select().from(usersTable).where(eq(usersTable.id, userId))
+    : [];
+  if (userId && !member) throw new HttpError(404, "Member not found", "USER_NOT_FOUND");
+  if (!member && !guestName)
+    throw new HttpError(400, "Pick a member or enter a name", "VALIDATION_ERROR");
+
+  let out;
   try {
-    const out = await db.transaction(async (tx) => {
+    out = await db.transaction(async (tx) => {
       // Serialize series creation per court
       await tx
         .select({ id: terrainsTable.id })
         .from(terrainsTable)
         .where(eq(terrainsTable.id, terrain.id))
         .for("update");
-      const clash = await conflicts(tx, terrain.id, list, SLOT_MS);
-      for (const [i, why] of unbookable) clash.set(i, why);
-      if (clash.size && !skipConflicts)
-        throw Object.assign(new Error("CONFLICTS"), { count: clash.size });
+      const skip = new Map([
+        ...(await bookedSessions(tx, terrain.id, starts, slotMs)),
+        ...unbookable,
+      ]);
+      if (skip.size && !skipConflicts)
+        throw new HttpError(409, `${skip.size} date(s) are already booked`, "SERIES_CONFLICTS", {
+          conflicts: skip.size,
+        });
       const [series] = await tx
         .insert(reservationSeriesTable)
         .values({
           terrainId: terrain.id,
           userId: member?.id ?? null,
-          guestName: member ? null : guestName.trim(),
-          guestPhone: guestPhone || null,
-          label: label || null,
+          guestName: member ? null : guestName,
+          guestPhone,
+          label,
           firstStart: s.firstStart,
           occurrences: s.occurrences,
           intervalWeeks: s.intervalWeeks,
-          notes: notes || null,
+          notes,
           createdBy: admin.id,
         })
         .returning();
       const created: string[] = [],
         skipped: string[] = [];
-      for (const [i, start] of list.entries()) {
-        if (clash.has(i)) {
+      for (const [i, start] of starts.entries()) {
+        if (skip.has(i)) {
           skipped.push(start.toISOString());
           continue;
         }
-        const [r] = await tx
+        const [reservation] = await tx
           .insert(reservationsTable)
           .values({
             terrainId: terrain.id,
             userId: member?.id ?? null,
-            guestName: member ? null : guestName.trim(),
-            guestPhone: guestPhone || null,
+            guestName: member ? null : guestName,
+            guestPhone,
             startTime: start,
-            endTime: new Date(start.getTime() + SLOT_MS),
+            endTime: new Date(start.getTime() + slotMs),
             status: "confirmed",
             tokensCharged: 0,
             bookingType: "manual",
@@ -222,7 +218,7 @@ router.post("/admin/series", requireAdmin, async (req, res) => {
         // Paid at the desk each week: one pending cash row so staff can tick it off per session
         if (member)
           await tx.insert(reservationPlayersTable).values({
-            reservationId: r.id,
+            reservationId: reservation.id,
             userId: member.id,
             paymentType: "cash_club",
             paymentStatus: "pending",
@@ -232,27 +228,24 @@ router.post("/admin/series", requireAdmin, async (req, res) => {
       }
       await tx.insert(activityTable).values({
         type: "reservation_created",
-        message: `Recurring booking: ${terrain.name}, ${created.length} sessions${label ? ` (${label})` : ""}`,
+        message: `Recurring booking: ${terrain.name}, ${created.length} sessions${label ? ` (${label})` : ""} (by ${admin.email})`,
         userId: member?.id ?? null,
-        userName: member
-          ? `${member.firstName ?? ""} ${member.lastName ?? ""}`.trim() || member.email
-          : guestName,
+        userName: member ? fullName(member) : guestName,
       });
       return { series, created, skipped };
     });
-    res.status(201).json(out);
-  } catch (err: any) {
-    if (err.message === "CONFLICTS")
-      res.status(409).json({ error: `${err.count} date(s) are already booked` });
-    else if (["23505", "23P01"].includes(err.code ?? err.cause?.code))
-      res.status(409).json({ error: "A date was booked meanwhile, please preview again" });
-    else throw err;
+  } catch (err) {
+    // A date taken between the check above and the insert: the database refuses the overlap
+    if (["23505", "23P01"].includes(pgCode(err) ?? ""))
+      throw new HttpError(409, "A date was booked meanwhile, please preview again", "SLOT_TAKEN");
+    throw err;
   }
+  res.status(201).json(out);
 });
 
 router.get("/admin/series", requireAdmin, async (_req, res) => {
   const list = await db.query.reservationSeriesTable.findMany({
-    where: eq(reservationSeriesTable.status, "active" as any),
+    where: eq(reservationSeriesTable.status, "active"),
     with: { terrain: true, user: true },
     orderBy: [desc(reservationSeriesTable.createdAt)],
   });
@@ -269,13 +262,13 @@ router.get("/admin/series", requireAdmin, async (_req, res) => {
           reservationsTable.seriesId,
           list.map((s) => s.id),
         ),
-        eq(reservationsTable.status, "confirmed" as any),
+        eq(reservationsTable.status, "confirmed"),
         gte(reservationsTable.startTime, new Date()),
       ),
     );
   res.json(
     list.map((s) => {
-      const mine = upcoming
+      const sessions = upcoming
         .filter((u) => u.seriesId === s.id)
         .map((u) => u.startTime)
         .sort((a, b) => +a - +b);
@@ -283,15 +276,13 @@ router.get("/admin/series", requireAdmin, async (_req, res) => {
         id: s.id,
         label: s.label,
         terrain: s.terrain ? { id: s.terrain.id, name: s.terrain.name } : null,
-        who: s.user
-          ? `${s.user.firstName ?? ""} ${s.user.lastName ?? ""}`.trim() || s.user.email
-          : s.guestName,
+        who: s.user ? fullName(s.user) : s.guestName,
         guestPhone: s.guestPhone,
         firstStart: s.firstStart,
         occurrences: s.occurrences,
         intervalWeeks: s.intervalWeeks,
-        remaining: mine.length,
-        nextStart: mine[0] ?? null,
+        remaining: sessions.length,
+        nextStart: sessions[0] ?? null,
       };
     }),
   );
@@ -299,15 +290,20 @@ router.get("/admin/series", requireAdmin, async (_req, res) => {
 
 /** Cancels the remaining (future) sessions. Past sessions stay in history. */
 router.post("/admin/series/:id/cancel", requireAdmin, async (req, res) => {
-  const id = Number(req.params.id);
-  const result = await db.transaction(async (tx) => {
+  const id = requireId(req.params.id);
+  const [series] = await db
+    .select({ id: reservationSeriesTable.id })
+    .from(reservationSeriesTable)
+    .where(eq(reservationSeriesTable.id, id));
+  if (!series) throw new HttpError(404, "Recurring booking not found", "NOT_FOUND");
+  const cancelled = await db.transaction(async (tx) => {
     const future = await tx
       .update(reservationsTable)
       .set({ status: "cancelled" })
       .where(
         and(
           eq(reservationsTable.seriesId, id),
-          eq(reservationsTable.status, "confirmed" as any),
+          eq(reservationsTable.status, "confirmed"),
           gt(reservationsTable.startTime, new Date()),
         ),
       )
@@ -322,7 +318,7 @@ router.post("/admin/series/:id/cancel", requireAdmin, async (req, res) => {
               reservationEquipmentTable.reservationId,
               future.map((f) => f.id),
             ),
-            eq(reservationEquipmentTable.status, "reserved" as any),
+            eq(reservationEquipmentTable.status, "reserved"),
           ),
         );
     }
@@ -332,7 +328,7 @@ router.post("/admin/series/:id/cancel", requireAdmin, async (req, res) => {
       .where(eq(reservationSeriesTable.id, id));
     return future.length;
   });
-  res.json({ cancelled: result });
+  res.json({ cancelled });
 });
 
 export default router;

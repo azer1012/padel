@@ -1,12 +1,6 @@
 import { useState } from "react";
-import { format } from "date-fns";
-import {
-  useListAllTokenTransactions,
-  useListUsers,
-  getListAllTokenTransactionsQueryKey,
-  getListUsersQueryKey,
-} from "@workspace/api-client-react";
-import type { TokenTransaction } from "@workspace/api-client-react";
+import { useListAllTokenTransactions, useListUsers } from "@workspace/api-client-react";
+import type { TokenTransaction, ListAllTokenTransactionsParams } from "@workspace/api-client-react";
 import {
   ArrowDownLeftIcon,
   ArrowUpRightIcon,
@@ -28,37 +22,37 @@ import {
   Pagination,
   Pill,
   Toolbar,
-  displayName,
   type Column,
   type Tone,
 } from "@/components/smash/admin";
 import { TokenAdjustDialog } from "@/components/smash/token-adjust";
-import { useTx, useDateLocale } from "@/lib/i18n";
+import { useTx, useI18n } from "@/lib/i18n";
+import { clubDateTime } from "@/lib/club-time";
+import { memberName } from "@/lib/labels";
 
 const PAGE = 25;
 
 export default function AdminTokens() {
   const tx = useTx();
-  const locale = useDateLocale();
+  const { lang } = useI18n();
   const [page, setPage] = useState(1);
   const [userFilter, setUserFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [open, setOpen] = useState(false);
 
-  const params: Record<string, any> = { page, limit: PAGE };
-  if (userFilter !== "all") params.userId = parseInt(userFilter);
-  if (typeFilter !== "all") params.type = typeFilter;
-  const { data, isLoading } = useListAllTokenTransactions(params, {
-    query: { queryKey: getListAllTokenTransactionsQueryKey(params) },
+  const { data, isLoading } = useListAllTokenTransactions({
+    page,
+    limit: PAGE,
+    userId: userFilter === "all" ? undefined : parseInt(userFilter),
+    type: typeFilter === "all" ? undefined : (typeFilter as ListAllTokenTransactionsParams["type"]),
   });
-  const { data: users } = useListUsers({ limit: 200 } as any, {
-    query: { queryKey: getListUsersQueryKey({ limit: 200 } as any) },
-  });
+  const { data: users } = useListUsers({ limit: 200 });
 
   const rows = data?.data ?? [];
   const credited = rows.filter((r) => r.type === "credit").reduce((s, r) => s + r.amount, 0);
   const debited = rows.filter((r) => r.type === "debit").reduce((s, r) => s + r.amount, 0);
-  const circulating = (users?.data ?? []).reduce((s, u) => s + (u.tokenBalance ?? 0), 0);
+  // Summed by the API over every member (the list below is only the filter's first page)
+  const circulating = data?.circulating ?? 0;
 
   const meta: Record<string, { tone: Tone; icon: typeof CoinsIcon; label: string; sign: string }> =
     {
@@ -88,9 +82,9 @@ export default function AdminTokens() {
       header: tx({ fr: "Membre", en: "Member", ar: "العضو" }),
       cell: (t) => (
         <span className="flex items-center gap-3">
-          <Avatar name={displayName(t.user)} index={t.userId} size={38} />
+          <Avatar name={memberName(t.user)} index={t.userId} size={38} />
           <span className="flex min-w-0 flex-col">
-            <span className="truncate font-bold">{displayName(t.user) || `#${t.userId}`}</span>
+            <span className="truncate font-bold">{memberName(t.user) || `#${t.userId}`}</span>
             <span className="truncate text-xs text-muted-foreground">{t.user?.email}</span>
           </span>
         </span>
@@ -125,9 +119,7 @@ export default function AdminTokens() {
       header: "Date",
       hideBelow: "lg",
       cell: (t) => (
-        <span className="text-sm text-muted-foreground">
-          {format(new Date(t.createdAt), "d MMM yyyy · HH:mm", { locale })}
-        </span>
+        <span className="text-sm text-muted-foreground">{clubDateTime(t.createdAt, lang)}</span>
       ),
     },
     {
@@ -172,7 +164,7 @@ export default function AdminTokens() {
     <Page wide>
       <PageHeader
         eyebrow="Admin"
-        title="Tokens"
+        title={tx({ fr: "Tokens", en: "Tokens", ar: "الرصيد" })}
         subtitle={tx({
           fr: "Chaque crédit, débit et correction de solde, avec son motif.",
           en: "Every credit, debit and balance correction, with its reason.",
@@ -211,7 +203,14 @@ export default function AdminTokens() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-[230px]">
+          <SelectTrigger
+            className="w-full sm:w-[230px]"
+            aria-label={tx({
+              fr: "Filtrer par membre",
+              en: "Filter by member",
+              ar: "تصفية حسب العضو",
+            })}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -220,7 +219,7 @@ export default function AdminTokens() {
             </SelectItem>
             {users?.data?.map((u) => (
               <SelectItem key={u.id} value={String(u.id)}>
-                {displayName(u)}
+                {memberName(u)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -232,7 +231,10 @@ export default function AdminTokens() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger
+            className="w-full sm:w-[180px]"
+            aria-label={tx({ fr: "Filtrer par type", en: "Filter by type", ar: "تصفية حسب النوع" })}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

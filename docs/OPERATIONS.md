@@ -85,7 +85,7 @@ received. Every credit stores who did it, the pack and the cash amount.
 - Android/Chrome/Edge: players see an "Installer" card on their dashboard. iPhone: the card explains
   Share → "Sur l'écran d'accueil". Dismissing hides it for 3 weeks.
 - The service worker caches the app shell for offline start but **never caches `/api/` responses**,
-  so availability is always live. It is disabled in demo mode and inside iframes.
+  so availability is always live. It is disabled inside iframes.
 - Home-screen shortcuts: Réserver, Mes réservations.
 
 ## Privacy

@@ -14,19 +14,6 @@ const json = (body: unknown): RequestInit => ({
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-/** Extra fields the calendar API now returns on every slot. */
-export type SlotPricing = {
-  tokensPerSpot: number;
-  tokensFullCourt: number;
-  pricePerPerson: number;
-  fullCourtPrice: number;
-  /** This viewer may book it now (inside the club's booking window, court open). */
-  bookable?: boolean;
-  isPeak: boolean;
-  priceLabel: string | null;
-  seriesId?: number | null;
-};
-
 export type PricingRule = {
   id: number;
   name: string;
@@ -123,6 +110,8 @@ export const extrasKeys = {
   adminPricingRules: ["/api/admin/pricing/rules"] as const,
   quote: (terrainId: number, startTime: string) =>
     ["/api/pricing/quote", terrainId, startTime] as const,
+  /** Every equipment availability query, whatever the slot */
+  equipmentAll: ["/api/equipment"] as const,
   equipment: (startTime?: string) => ["/api/equipment", startTime ?? null] as const,
   adminEquipment: ["/api/admin/equipment"] as const,
   rentals: (date: string) => ["/api/admin/equipment/rentals", date] as const,
@@ -283,9 +272,6 @@ export const useUpdateNotificationPrefs = () =>
       customFetch<unknown>("/api/users/me", { method: "PATCH", ...json(data) }),
   });
 
-/** Body extension for booking / joining with rental equipment. */
-export type WithEquipment = { equipment?: EquipmentLine[] };
-
 // ─── Match management (admin desk) ───────────────────────────────────────────
 
 export type AddPlayerInput = {
@@ -306,9 +292,10 @@ export const useAddPlayer = () =>
 export const useRemovePlayer = () =>
   useMutation({
     mutationFn: ({ reservationId, playerId }: { reservationId: number; playerId: number }) =>
-      customFetch<{ refunded: number }>(`/api/reservations/${reservationId}/players/${playerId}`, {
-        method: "DELETE",
-      }),
+      customFetch<{ refunded: number; freed: boolean }>(
+        `/api/reservations/${reservationId}/players/${playerId}`,
+        { method: "DELETE" },
+      ),
   });
 export const useBlockSlot = () =>
   useMutation({
@@ -316,21 +303,14 @@ export const useBlockSlot = () =>
       customFetch<unknown>("/api/admin/slots/block", { method: "POST", ...json(data) }),
   });
 
-/** Admin booking on behalf of a member (token or cash at the desk) or a phone/walk-in guest. */
-export type AdminBookingInput = {
-  terrainId: number;
-  startTime: string;
-  bookingMode: "full_court" | "own_spot";
-  userId?: number;
-  paymentMethod?: "token" | "cash_club";
-  guestName?: string;
-  guestPhone?: string;
-  bookingType?: "phone" | "manual" | "online";
-  notes?: string;
-  isPublic?: boolean;
-  publicDescription?: string;
-  equipment?: EquipmentLine[];
-};
+// ─── Profile sync after sign-in ──────────────────────────────────────────────
+
+/** Fills an empty profile from the sign-in provider (name, avatar). Idempotent. */
+export const syncProfile = (profile: {
+  firstName?: string | null;
+  lastName?: string | null;
+  imageUrl?: string | null;
+}) => customFetch<unknown>("/api/users/sync", { method: "POST", ...json(profile) });
 
 // ─── Members (admin) ─────────────────────────────────────────────────────────
 

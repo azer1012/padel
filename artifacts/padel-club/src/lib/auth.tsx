@@ -51,16 +51,3 @@ export function useAuth() {
   if (!value) throw new Error("useAuth must be used within AuthProvider");
   return value;
 }
-
-export function useRequireAuth(redirectTo = "/sign-in") {
-  const auth = useAuth();
-
-  useEffect(() => {
-    if (auth.isLoaded && !auth.isSignedIn) {
-      window.location.href = redirectTo;
-    }
-  }, [auth.isLoaded, auth.isSignedIn, redirectTo]);
-
-  return auth;
-}
-

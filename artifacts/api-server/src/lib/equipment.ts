@@ -3,14 +3,15 @@ import {
   equipmentItemsTable,
   reservationEquipmentTable,
   reservationsTable,
+  type Queryable,
+  type Tx,
 } from "@workspace/db";
 import { and, eq, gt, inArray, lt, sql } from "drizzle-orm";
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type EquipmentRequest = { itemId: number; quantity: number }[];
 
 /** Units of each item already out during [start, end) (reserved or handed out, on confirmed bookings). */
-export async function rentedDuring(q: Tx | typeof db, start: Date, end: Date, itemIds?: number[]) {
+export async function rentedDuring(q: Queryable, start: Date, end: Date, itemIds?: number[]) {
   const rows = await q
     .select({
       itemId: reservationEquipmentTable.itemId,
@@ -20,8 +21,8 @@ export async function rentedDuring(q: Tx | typeof db, start: Date, end: Date, it
     .innerJoin(reservationsTable, eq(reservationsTable.id, reservationEquipmentTable.reservationId))
     .where(
       and(
-        eq(reservationsTable.status, "confirmed" as any),
-        inArray(reservationEquipmentTable.status, ["reserved", "handed_out"] as any),
+        eq(reservationsTable.status, "confirmed"),
+        inArray(reservationEquipmentTable.status, ["reserved", "handed_out"]),
         lt(reservationsTable.startTime, end),
         gt(reservationsTable.endTime, start),
         ...(itemIds?.length ? [inArray(reservationEquipmentTable.itemId, itemIds)] : []),
@@ -34,9 +35,9 @@ export async function rentedDuring(q: Tx | typeof db, start: Date, end: Date, it
 export function normalizeRequest(raw: unknown): EquipmentRequest {
   if (!Array.isArray(raw)) return [];
   const merged = new Map<number, number>();
-  for (const r of raw) {
-    const itemId = Number((r as any)?.itemId),
-      quantity = Math.floor(Number((r as any)?.quantity));
+  for (const r of raw as { itemId?: unknown; quantity?: unknown }[]) {
+    const itemId = Number(r?.itemId),
+      quantity = Math.floor(Number(r?.quantity));
     if (Number.isInteger(itemId) && itemId > 0 && quantity > 0)
       merged.set(itemId, Math.min(8, (merged.get(itemId) ?? 0) + quantity));
   }
@@ -105,7 +106,7 @@ export async function equipmentFor(reservationId: number, userId?: number) {
     .where(
       and(
         eq(reservationEquipmentTable.reservationId, reservationId),
-        eq(reservationEquipmentTable.status, "reserved" as any),
+        eq(reservationEquipmentTable.status, "reserved"),
         ...(userId ? [eq(reservationEquipmentTable.userId, userId)] : []),
       ),
     );

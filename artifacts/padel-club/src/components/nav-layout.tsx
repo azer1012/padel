@@ -13,8 +13,10 @@ import {
   ArrowRightIcon,
   ArrowsLeftRightIcon,
   BellIcon,
+  CalendarCheckIcon,
   CalendarDotsIcon,
   CalendarPlusIcon,
+  CalendarXIcon,
   ClockIcon,
   CoinsIcon,
   CourtIcon,
@@ -50,6 +52,7 @@ import { useAuth } from "@/lib/auth";
 import { useRevealFallback } from "@/hooks/use-reveal";
 import { CLUB } from "@/config/club";
 import { useClubRules } from "@/hooks/use-club-rules";
+import { tokenWord } from "@/lib/labels";
 
 const LANGS: { value: Lang; label: string; short: string }[] = [
   { value: "fr", label: "Français", short: "FR" },
@@ -152,13 +155,14 @@ function PublicShell({ children }: { children: ReactNode }) {
         )}
       >
         <Logo />
-        <nav aria-label="Main" className="hidden items-center gap-8 lg:flex">
+        {/* The full menu needs 1180px: narrower laptops and tablets get the menu button */}
+        <nav aria-label="Main" className="hidden items-center gap-8 min-[1180px]:flex">
           {links.map((l) => (
             <Link
               key={l.href}
               href={l.href}
               aria-current={location.startsWith(l.href) ? "page" : undefined}
-              className="ulink text-[15px] font-semibold text-white/80 transition-colors hover:text-white aria-[current=page]:text-white"
+              className="ulink whitespace-nowrap text-[15px] font-semibold text-white/80 transition-colors hover:text-white aria-[current=page]:text-white"
             >
               {l.label}
             </Link>
@@ -166,7 +170,12 @@ function PublicShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="flex items-center gap-2">
           <LangSwitch className="hidden md:flex" />
-          <Button asChild variant="outline-dark" size="sm" className="hidden lg:inline-flex">
+          <Button
+            asChild
+            variant="outline-dark"
+            size="sm"
+            className="hidden min-[1180px]:inline-flex"
+          >
             <Link href="/sign-in">{t("signIn")}</Link>
           </Button>
           <Button asChild variant="lime" size="sm" className="hidden sm:inline-flex">
@@ -183,7 +192,7 @@ function PublicShell({ children }: { children: ReactNode }) {
                 ? tx({ fr: "Fermer le menu", en: "Close menu", ar: "إغلاق القائمة" })
                 : tx({ fr: "Ouvrir le menu", en: "Open menu", ar: "فتح القائمة" })
             }
-            className="flex size-11 items-center justify-center rounded-full bg-white/10 lg:hidden"
+            className="flex size-11 items-center justify-center rounded-full bg-white/10 min-[1180px]:hidden"
           >
             {open ? (
               <XIcon key="x" className="icon-pop size-5" />
@@ -196,7 +205,7 @@ function PublicShell({ children }: { children: ReactNode }) {
           <nav
             id="public-menu"
             aria-label="Mobile"
-            className="fade-in fixed inset-x-0 bottom-0 top-16 z-50 flex flex-col overflow-y-auto bg-night px-5 pb-[max(24px,env(safe-area-inset-bottom))] pt-4 lg:hidden"
+            className="fade-in fixed inset-x-0 bottom-0 top-16 z-50 flex flex-col overflow-y-auto bg-night px-5 pb-[max(24px,env(safe-area-inset-bottom))] pt-4 lg:top-[76px] lg:px-12 min-[1180px]:hidden"
           >
             <div className="stagger flex flex-col">
               {links.map((l) => (
@@ -380,25 +389,40 @@ export function SiteFooter() {
 
 /* ───────────────────────── Signed-in app shell ───────────────────────── */
 
-type NavItem = { href: string; label: string; icon: AppIcon; exact?: boolean };
+type NavItem = {
+  href: string;
+  label: string;
+  /** Shorter wording for the phone tab bar, where a label has ~70 px. */
+  short?: string;
+  icon: AppIcon;
+  exact?: boolean;
+};
+
+/** Where a notification leads, and the icon that says what it is about. */
+const NOTIFICATION: Record<string, { href: string; icon: AppIcon }> = {
+  booking_confirmed: { href: "/reservations", icon: CalendarCheckIcon },
+  booking_cancelled: { href: "/reservations", icon: CalendarXIcon },
+  reservation_reminder: { href: "/reservations", icon: ClockIcon },
+  tokens_added: { href: "/wallet", icon: CoinsIcon },
+  announcement: { href: "/news", icon: NewspaperIcon },
+};
 
 function NotificationsBell({ dark = true }: { dark?: boolean }) {
   const tx = useTx();
   const locale = useDateLocale();
   const qc = useQueryClient();
-  const { data } = useListNotifications(undefined, {
-    query: { queryKey: getListNotificationsQueryKey(), refetchInterval: 60_000 } as any,
-  });
+  const { data } = useListNotifications(undefined, { query: { refetchInterval: 60_000 } });
   const markAll = useMarkAllNotificationsRead({
     mutation: {
       onSuccess: () => qc.invalidateQueries({ queryKey: getListNotificationsQueryKey() }),
     },
   });
+  const [open, setOpen] = useState(false);
   const list = Array.isArray(data) ? data : [];
   const unread = list.filter((n) => !n.isRead).length;
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -450,35 +474,50 @@ function NotificationsBell({ dark = true }: { dark?: boolean }) {
                 <BellIcon className="size-6" weight="duotone" />
               </span>
               {tx({
-                fr: "Rien de nouveau pour l'instant.",
-                en: "Nothing new yet.",
-                ar: "لا جديد حاليًا.",
+                fr: "Vous êtes à jour.",
+                en: "You're all caught up.",
+                ar: "لا جديد لديك.",
               })}
             </li>
           )}
-          {list.slice(0, 20).map((n) => (
-            <li
-              key={n.id}
-              className={cn(
-                "flex gap-3 rounded-2xl px-3 py-3 transition-colors hover:bg-secondary",
-                !n.isRead && "bg-accent",
-              )}
-            >
-              <span
-                className={cn(
-                  "mt-1.5 size-2 shrink-0 rounded-full",
-                  n.isRead ? "bg-transparent" : "bg-court",
-                )}
-              />
-              <span className="flex flex-col gap-0.5">
-                <span className="text-sm font-bold">{n.title}</span>
-                <span className="text-sm text-muted-foreground">{n.message}</span>
-                <span className="text-xs text-muted-foreground/80">
-                  {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true, locale })}
-                </span>
-              </span>
-            </li>
-          ))}
+          {list.slice(0, 20).map((n) => {
+            const kind = NOTIFICATION[n.type] ?? { href: "/dashboard", icon: BellIcon };
+            return (
+              <li key={n.id}>
+                <Link
+                  href={kind.href}
+                  onClick={() => setOpen(false)}
+                  className={cn(
+                    "flex gap-3 rounded-2xl px-3 py-3 transition-colors hover:bg-secondary",
+                    !n.isRead && "bg-accent",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex size-9 shrink-0 items-center justify-center rounded-full",
+                      n.isRead ? "bg-secondary text-muted-foreground" : "bg-court text-white",
+                    )}
+                  >
+                    <kind.icon className="size-4" />
+                  </span>
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-sm font-bold">
+                      {n.title}
+                      {!n.isRead && (
+                        <span className="sr-only">
+                          {tx({ fr: " (non lue)", en: " (unread)", ar: " (غير مقروء)" })}
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-sm text-muted-foreground">{n.message}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true, locale })}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       </PopoverContent>
     </Popover>
@@ -507,7 +546,7 @@ function TokenChip({ compact = false }: { compact?: boolean }) {
         weight="fill"
       />
       <CountUp value={balance} />
-      <span className="font-semibold opacity-70">{compact ? "" : " tokens"}</span>
+      <span className="font-semibold opacity-70">{compact ? "" : ` ${tokenWord(balance)}`}</span>
     </Link>
   );
 }
@@ -557,13 +596,33 @@ function AppShell({ children }: { children: ReactNode }) {
   const rules = useClubRules();
   const [location] = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
+  const moreBtn = useRef<HTMLButtonElement>(null);
+  const moreSheet = useRef<HTMLDivElement>(null);
   useEffect(() => setMoreOpen(false), [location]);
+  // The "more" sheet behaves like a dialog: focus moves in, Escape closes, the page stays put
+  useEffect(() => {
+    if (!moreOpen) return;
+    const opener = moreBtn.current;
+    moreSheet.current?.querySelector<HTMLElement>("a, button")?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMoreOpen(false);
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+      opener?.focus();
+    };
+  }, [moreOpen]);
 
   const isAdmin = user?.role === "admin";
   const isAdminRoute = location.startsWith("/admin");
 
   const player: NavItem[] = [
-    { href: "/dashboard", label: t("dashboard"), icon: SquaresFourIcon },
+    {
+      href: "/dashboard",
+      label: tx({ fr: "Accueil", en: "Home", ar: "الرئيسية" }),
+      icon: SquaresFourIcon,
+    },
     {
       href: "/terrains",
       label: tx({ fr: "Réserver", en: "Book", ar: "احجز" }),
@@ -574,26 +633,51 @@ function AppShell({ children }: { children: ReactNode }) {
           {
             href: "/open-matches",
             label: tx({ fr: "Open matches", en: "Open matches", ar: "مباريات مفتوحة" }),
+            short: tx({ fr: "Matchs", en: "Matches", ar: "مباريات" }),
             icon: TennisBallIcon,
           },
         ]
       : []),
-    { href: "/reservations", label: t("reservations"), icon: CalendarDotsIcon },
-    { href: "/wallet", label: t("wallet"), icon: WalletIcon },
+    {
+      href: "/reservations",
+      label: tx({ fr: "Mes réservations", en: "My bookings", ar: "حجوزاتي" }),
+      short: tx({ fr: "Mes résas", en: "Bookings", ar: "حجوزاتي" }),
+      icon: CalendarDotsIcon,
+    },
+    {
+      href: "/wallet",
+      label: tx({ fr: "Mes tokens", en: "My tokens", ar: "رصيدي" }),
+      icon: WalletIcon,
+    },
     { href: "/tournaments", label: t("tournaments"), icon: TrophyIcon },
     { href: "/news", label: t("news"), icon: NewspaperIcon },
     { href: "/profile", label: t("profile"), icon: UserIcon },
   ];
   const admin: NavItem[] = [
-    { href: "/admin", label: t("dashboard"), icon: SquaresFourIcon, exact: true },
-    { href: "/admin/reservations", label: t("reservations"), icon: CalendarDotsIcon },
+    {
+      href: "/admin",
+      label: t("dashboard"),
+      short: tx({ fr: "Aujourd'hui", en: "Today", ar: "اليوم" }),
+      icon: SquaresFourIcon,
+      exact: true,
+    },
+    {
+      href: "/admin/reservations",
+      label: t("reservations"),
+      short: tx({ fr: "Planning", en: "Schedule", ar: "الجدول" }),
+      icon: CalendarDotsIcon,
+    },
     { href: "/admin/terrains", label: t("courts"), icon: CourtIcon },
     {
       href: "/admin/users",
       label: tx({ fr: "Membres", en: "Members", ar: "الأعضاء" }),
       icon: UsersIcon,
     },
-    { href: "/admin/tokens", label: "Tokens", icon: CoinsIcon },
+    {
+      href: "/admin/tokens",
+      label: tx({ fr: "Tokens", en: "Tokens", ar: "الرصيد" }),
+      icon: CoinsIcon,
+    },
     {
       href: "/admin/pricing",
       label: tx({ fr: "Tarifs", en: "Pricing", ar: "الأسعار" }),
@@ -617,6 +701,7 @@ function AppShell({ children }: { children: ReactNode }) {
     (i.exact ? location === i.href : location === i.href || location.startsWith(i.href + "/")) ||
     (i.href === "/dashboard" && location === "/");
   const tabs = items.slice(0, 4);
+  const inMore = items.slice(4).some(isActive);
   const name = user?.firstName
     ? `${user.firstName} ${user.lastName ?? ""}`.trim()
     : (user?.email ?? "");
@@ -641,7 +726,7 @@ function AppShell({ children }: { children: ReactNode }) {
       </a>
 
       {/* Desktop sidebar */}
-      <aside className="on-dark sticky top-0 hidden h-[100dvh] w-[272px] shrink-0 flex-col gap-6 overflow-y-auto bg-night px-4 py-6 text-white lg:flex">
+      <aside className="on-dark sticky top-0 hidden h-[100dvh] w-[264px] shrink-0 flex-col gap-6 overflow-y-auto bg-night px-4 py-6 text-white lg:flex">
         <div className="flex items-center justify-between px-2">
           <Logo href={isAdminRoute ? "/admin" : "/dashboard"} />
           <NotificationsBell />
@@ -687,7 +772,7 @@ function AppShell({ children }: { children: ReactNode }) {
                       active && "icon-pop text-court",
                     )}
                   />
-                  {i.label}
+                  <span className="truncate">{i.label}</span>
                 </Link>
               );
             })}
@@ -708,6 +793,7 @@ function AppShell({ children }: { children: ReactNode }) {
               type="button"
               onClick={signOut}
               aria-label={t("signOut")}
+              title={t("signOut")}
               data-testid="btn-sign-out"
               className="flex size-9 items-center justify-center rounded-full text-muted-d transition-[color,background-color,transform] hover:bg-white/10 hover:text-coral active:scale-90"
             >
@@ -735,7 +821,11 @@ function AppShell({ children }: { children: ReactNode }) {
 
       {/* Mobile bottom tabs */}
       <nav
-        aria-label="Tabs"
+        aria-label={tx({
+          fr: "Navigation principale",
+          en: "Main navigation",
+          ar: "التنقل الرئيسي",
+        })}
         className="fixed inset-x-0 bottom-0 z-40 border-t border-[hsl(var(--border))] bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden"
       >
         <div className="grid grid-cols-5">
@@ -763,18 +853,28 @@ function AppShell({ children }: { children: ReactNode }) {
                     className={cn("size-[22px]", active && "icon-pop")}
                   />
                 </span>
-                <span className="max-w-full truncate px-1">{i.label}</span>
+                <span className="max-w-full truncate px-1">{i.short ?? i.label}</span>
               </Link>
             );
           })}
           <button
+            ref={moreBtn}
             type="button"
             onClick={() => setMoreOpen(true)}
+            aria-haspopup="dialog"
             aria-expanded={moreOpen}
             aria-controls="more-menu"
-            className="flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-bold text-muted-foreground transition-transform active:scale-95"
+            className={cn(
+              "flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-bold transition-transform active:scale-95",
+              inMore ? "text-court" : "text-muted-foreground",
+            )}
           >
-            <span className="flex h-8 w-12 items-center justify-center rounded-full">
+            <span
+              className={cn(
+                "flex h-8 w-12 items-center justify-center rounded-full",
+                inMore && "bg-court/12",
+              )}
+            >
               <MenuIcon className="size-[22px]" />
             </span>
             {tx({ fr: "Plus", en: "More", ar: "المزيد" })}
@@ -797,6 +897,7 @@ function AppShell({ children }: { children: ReactNode }) {
           />
           <div
             id="more-menu"
+            ref={moreSheet}
             className="on-dark sheet-up absolute inset-x-0 bottom-0 flex max-h-[85dvh] flex-col gap-4 overflow-y-auto rounded-t-[32px] bg-night px-5 pb-[max(20px,env(safe-area-inset-bottom))] pt-5 text-white"
           >
             <div className="mx-auto h-1.5 w-12 rounded-full bg-white/20" />
@@ -843,6 +944,7 @@ export function NavLayout({ children }: { children: ReactNode }) {
     location.startsWith("/sign-in") ||
     location.startsWith("/sign-up") ||
     location.startsWith("/reset-password") ||
+    location.startsWith("/auth/") ||
     location.startsWith("/join/");
   if (isAuthRoute) return <>{children}</>;
   if (!isLoaded) {

@@ -48,7 +48,7 @@ Set by the developer for each club; not editable by the admin (by design).
 | Address, map, contact, social               | `VITE_CLUB_ADDRESS`, `_POSTAL`, `_CITY`, `_COUNTRY`, `_MAPS_QUERY`, `_PHONE`, `_WHATSAPP`, `_EMAIL`, `_INSTAGRAM`, `_FACEBOOK` (empty = hidden)                          |
 | Logo and favicon                            | `artifacts/padel-club/public/logo.svg`, `favicon.svg`, `src/components/smash/brand.tsx` (logo mark)                                                                      |
 | App icons                                   | `public/icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `apple-touch-icon.png`                                                                                   |
-| Photos                                      | `public/hero-padel.webp`, `terrain-indoor.webp`, `terrain-outdoor.webp`, `tournament.webp`, `opengraph.jpg` (1200×630)                                                   |
+| Photos                                      | `public/hero-padel.webp`, `terrain-indoor.webp`, `terrain-outdoor.webp`, `opengraph.jpg` (1200×630)                                                                      |
 | Colours and fonts                           | design tokens in `src/index.css` (`--color-*`), fonts in `index.html` (`docs/DESIGN_SYSTEM.md`)                                                                          |
 | Homepage texts                              | `src/pages/home.tsx`                                                                                                                                                     |
 

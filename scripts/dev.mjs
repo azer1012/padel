@@ -2,10 +2,9 @@
 /**
  * Local development runner: `npm run dev` (or `pnpm dev`).
  *
- * - With a configured .env: builds and starts the API server (rebuilt and
- *   restarted on every change) and the Vite site, which proxies /api to it.
- * - Without one (or with `--demo`): starts the site in demo mode, on an
- *   in-memory club, so the UI always runs.
+ * Builds and starts the API server (rebuilt and restarted on every change) and
+ * the Vite site, which proxies /api to it. Needs a configured .env: without the
+ * Supabase keys and DATABASE_URL it stops and lists what is missing.
  *
  * Plain Node, no dependencies, works the same on macOS, Linux and Windows.
  */
@@ -72,11 +71,20 @@ const required = {
 const missing = Object.entries(required)
   .filter(([, v]) => !v)
   .map(([k]) => k);
-const demo = process.argv.includes("--demo") || missing.length > 0;
+if (missing.length) {
+  console.error(
+    `\n${yellow("The backend is not configured.")} Set in ${bold(".env")}:\n` +
+      missing.map((k) => `     ${dim("·")} ${k}`).join("\n") +
+      (existsSync(join(root, ".env"))
+        ? "\n"
+        : `\n\n  ${dim("Start from .env.example:")} cp .env.example .env\n`),
+  );
+  process.exit(1);
+}
 
 const webPort = process.env.WEB_PORT || "5173";
 const apiPort = process.env.API_PORT || get("PORT") || "3000";
-if (!demo && webPort === apiPort) {
+if (webPort === apiPort) {
   console.error(yellow(`The site and the API cannot share port ${webPort}. Change PORT in .env.`));
   process.exit(1);
 }
@@ -122,7 +130,6 @@ const web = run("web", cyan, [viteBin, "--config", "vite.config.ts"], {
     ...process.env,
     PORT: webPort,
     API_PORT: apiPort,
-    ...(demo ? { VITE_DEMO: "true" } : {}),
   },
 });
 web.on("exit", (code) => {
@@ -133,7 +140,7 @@ web.on("exit", (code) => {
 });
 
 // ─── API server (build, start, rebuild on change) ───────────────────────────
-if (!demo) {
+{
   let api = null;
   let restarting = false;
 
@@ -191,31 +198,15 @@ if (!demo) {
     for (const entry of readdirSync(dir, { withFileTypes: true }))
       if (entry.isDirectory()) watchTree(join(dir, entry.name));
   };
-  for (const dir of ["artifacts/api-server/src", "lib/db/src", "lib/api-zod/src"])
-    watchTree(join(root, dir));
+  for (const dir of ["artifacts/api-server/src", "lib/db/src"]) watchTree(join(root, dir));
   startApi();
 }
 
 // ─── Banner ─────────────────────────────────────────────────────────────────
 console.log("");
-if (demo) {
-  console.log(
-    `  ${bold("Padel club platform")} ${yellow("· demo mode")} ${dim("(in-memory club, no backend)")}`,
-  );
-  console.log(`  ${green("➜")}  Website   ${bold(`http://localhost:${webPort}`)}`);
-  if (missing.length && !process.argv.includes("--demo")) {
-    console.log(
-      `\n  ${yellow("No backend configured.")} To run against Supabase, set in ${bold(".env")}:`,
-    );
-    for (const k of missing) console.log(`     ${dim("·")} ${k}`);
-    if (!existsSync(join(root, ".env")))
-      console.log(`  ${dim("Start from .env.example:")} cp .env.example .env`);
-  }
-} else {
-  console.log(`  ${bold("Padel club platform")} ${green("· development")}`);
-  console.log(`  ${green("➜")}  Website   ${bold(`http://localhost:${webPort}`)}`);
-  console.log(
-    `  ${green("➜")}  API       http://localhost:${apiPort}/api ${dim("(proxied by the website)")}`,
-  );
-}
+console.log(`  ${bold("Padel club platform")} ${green("· development")}`);
+console.log(`  ${green("➜")}  Website   ${bold(`http://localhost:${webPort}`)}`);
+console.log(
+  `  ${green("➜")}  API       http://localhost:${apiPort}/api ${dim("(proxied by the website)")}`,
+);
 console.log(`  ${dim("Ctrl+C to stop")}\n`);

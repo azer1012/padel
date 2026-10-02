@@ -11,6 +11,9 @@ import type { AddressInfo } from "node:net";
 import { resolve } from "node:path";
 import pg from "pg";
 
+// Tests build slots with Date#setHours: pin the process to the club timezone on every OS
+process.env.TZ = "Africa/Tunis";
+
 const ROOT = resolve(import.meta.dirname, "..", "..", "..");
 const ADMIN_URL = process.env.TEST_PG_URL ?? "postgres://postgres@127.0.0.1:54329/postgres";
 const JWT_SECRET = "test-jwt-secret-at-least-32-characters-long";
@@ -61,6 +64,10 @@ export async function startApi() {
     FRONTEND_URL: "https://club.test",
     CLUB_TIMEZONE: "Africa/Tunis",
     LOG_LEVEL: "silent",
+    // Never deliver anything for real, even if the developer's .env has provider keys
+    RESEND_API_KEY: "",
+    VAPID_PUBLIC_KEY: "",
+    VAPID_PRIVATE_KEY: "",
   });
   const { default: app } = await import("../src/app");
   const { pool } = await import("@workspace/db");

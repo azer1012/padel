@@ -5,8 +5,8 @@ import { logger } from "../logger";
 import { render, type NotificationEvent } from "./templates";
 import { sendEmail } from "./mailer";
 import { sendPush } from "./push";
-import type { Lang } from "../club-time";
 import { getSettings, type ClubSettings } from "../settings";
+import type { DbUser } from "../auth";
 
 /** Which club setting switches each kind of notification on or off. */
 const SWITCH: Partial<Record<NotificationEvent["kind"], keyof ClubSettings>> = {
@@ -18,8 +18,6 @@ const SWITCH: Partial<Record<NotificationEvent["kind"], keyof ClubSettings>> = {
   match_finished: "matchFinishedNotificationsEnabled",
 };
 
-type UserLike = typeof usersTable.$inferSelect;
-
 /**
  * Sends one event to one user on every channel they allow: in-app always,
  * email if emailNotifications, push if pushNotifications.
@@ -27,7 +25,7 @@ type UserLike = typeof usersTable.$inferSelect;
  * Never throws: a failed email must not break a booking.
  */
 export async function notify(
-  user: UserLike | number,
+  user: DbUser | number,
   event: NotificationEvent,
   ref = "",
 ): Promise<boolean> {
@@ -47,8 +45,7 @@ export async function notify(
       .returning({ id: notificationLogTable.id });
     if (!claimed) return false; // already sent
 
-    const lang = (u.language ?? "fr") as Lang;
-    const msg = render(event, lang, env.frontendUrl ?? "http://localhost:5173", {
+    const msg = render(event, u.language, env.frontendUrl ?? "http://localhost:5173", {
       currency: settings.currency,
       durationMinutes: settings.bookingDurationMinutes,
       tokenCostPlayer: settings.tokenCostPlayer,
@@ -58,7 +55,7 @@ export async function notify(
 
     await db.insert(notificationsTable).values({
       userId: u.id,
-      type: msg.inApp.type as any,
+      type: event.kind,
       title: msg.inApp.title,
       message: msg.inApp.message,
     });
@@ -100,7 +97,7 @@ export async function notify(
 }
 
 /** Fire-and-forget helper for request handlers (keeps the response fast). */
-export function notifyLater(user: UserLike | number, event: NotificationEvent, ref = "") {
+export function notifyLater(user: DbUser | number, event: NotificationEvent, ref = "") {
   setImmediate(() => {
     void notify(user, event, ref);
   });

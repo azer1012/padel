@@ -66,9 +66,17 @@ doesn't match its last ledger entry. It should always be empty.
 - Invite tokens are 144-bit random and stop working at kickoff or cancellation.
 - Public endpoints return first names and an initial only, never e-mails, phones
   or payment states.
+- Members of the same match see each other's name ("First L.") only. E-mail,
+  phone, token balance and auth id of another member are sent to admins alone;
+  the booker's notes and a guest's phone stay with the booker and the staff.
+- A member can only remove their own push subscription.
+- Staff actions are written to the audit trail with the admin's name: token
+  moves, cash payments marked, role changes, court and pricing changes, settings.
 - Inputs validated and size-limited, JSON body ≤ 100 kB, uniform JSON errors
   without stack traces, `X-Content-Type-Options`/`X-Frame-Options`/`no-store`
-  headers, per-IP write rate limit.
+  headers, per-IP write rate limit, per-member limit on the member search.
+- In production the API refuses to start without `CORS_ORIGIN`: it never answers
+  browsers of unknown websites.
 
 ## Secrets
 
@@ -88,6 +96,18 @@ Per club: separate database password, service role key, JWT secret, VAPID keys,
 cron secret and Google client — never reuse them across clubs.
 
 ## Remaining risks and recommendations
+
+- **Confirm e-mail must be on** (Supabase → Authentication → Sign In / Providers →
+  Email). With it off, anyone can create an account with an address they don't own.
+  It needs working SMTP first (`docs/EMAIL_CONFIGURATION.md`).
+- **Leaked-password protection** (Authentication → Attack Protection) is off by
+  default: turn it on.
+- **The public planning shows "First L." of the players of every match** to
+  visitors who are not signed in. It's a product choice (members find each other);
+  tell the club, and hide names for visitors if the club prefers.
+- **No account deletion in the app**: a member who wants their account removed
+  asks the club; staff delete the auth user in the Supabase dashboard. The profile
+  and its ledger stay for the accounting.
 
 - **No CAPTCHA on sign-up**: bots can create accounts and burn the SMTP quota.
   Enable Supabase Attack Protection (Turnstile/hCaptcha) and wire the site key.

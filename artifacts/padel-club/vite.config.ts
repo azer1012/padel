@@ -164,7 +164,7 @@ function seo(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(() => ({
   base: basePath,
   // Only VITE_* variables reach the browser bundle. Never prefix a secret with VITE_.
   envPrefix: ["VITE_"],
@@ -200,7 +200,6 @@ export default defineConfig({
             )
           )
             return "react-vendor";
-          if (id.includes("framer-motion")) return "motion";
           return "vendor";
         },
       },
@@ -223,4 +222,4 @@ export default defineConfig({
     host: "0.0.0.0",
     allowedHosts: true,
   },
-});
+}));

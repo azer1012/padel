@@ -139,7 +139,8 @@ export function DataTable<T>({
 }) {
   return (
     <div className="enter overflow-hidden rounded-[28px] bg-card shadow-sm">
-      <div className="overflow-x-auto">
+      {/* Scrolls sideways on small screens: reachable from the keyboard too */}
+      <div className="relative overflow-x-auto" role="region" tabIndex={0} aria-label={caption}>
         <table className="w-full border-collapse text-[15px]">
           <caption className="sr-only">{caption}</caption>
           <thead>
@@ -149,7 +150,7 @@ export function DataTable<T>({
                   key={c.key}
                   scope="col"
                   className={cn(
-                    "px-5 py-4 text-xs font-extrabold uppercase tracking-[.12em] text-muted-foreground rtl:tracking-normal",
+                    "px-4 py-4 text-xs font-extrabold uppercase sm:px-5 tracking-[.12em] text-muted-foreground rtl:tracking-normal",
                     c.align === "end" ? "text-end" : "text-start",
                     c.hideBelow && HIDE[c.hideBelow],
                     c.className,
@@ -181,7 +182,7 @@ export function DataTable<T>({
                       <td
                         key={c.key}
                         className={cn(
-                          "px-5 py-3.5 align-middle",
+                          "px-4 py-3.5 align-middle sm:px-5",
                           c.align === "end" && "text-end",
                           c.hideBelow && HIDE[c.hideBelow],
                           c.className,
@@ -380,18 +381,3 @@ export function useConfirm() {
 }
 
 /* ─────────── Small helpers ─────────── */
-
-/** Value for <input type="datetime-local"> in the user's local time (not UTC). */
-export function toLocalInput(iso?: string | null) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-export function displayName(
-  u?: { firstName?: string | null; lastName?: string | null; email?: string } | null,
-) {
-  if (!u) return "";
-  return `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email || "";
-}

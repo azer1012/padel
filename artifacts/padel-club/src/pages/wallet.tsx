@@ -1,4 +1,3 @@
-import { format } from "date-fns";
 import { useGetTokenBalance, useListTokenTransactions } from "@workspace/api-client-react";
 import {
   AlarmIcon,
@@ -12,22 +11,27 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CountUp, EmptyState, Page, PageHeader } from "@/components/smash/primitives";
-import { useI18n, useTx, useDateLocale } from "@/lib/i18n";
+import { useI18n, useTx } from "@/lib/i18n";
 import { CLUB } from "@/config/club";
 import { cn } from "@/lib/utils";
 import { useClubRules } from "@/hooks/use-club-rules";
+import { clubDate, clubDateTime } from "@/lib/club-time";
+import { plural, tokenWord, tokensLabel } from "@/lib/labels";
 
 export default function Wallet() {
   const rules = useClubRules();
   const tx = useTx();
   const { t } = useI18n();
-  const locale = useDateLocale();
+  const { lang } = useI18n();
   const { data: balance, isLoading: loadingBalance } = useGetTokenBalance();
   const { data: transactions, isLoading: loadingTx } = useListTokenTransactions({ limit: 30 });
   const list = transactions?.data ?? [];
   const credits = list.filter((x) => x.type === "credit").reduce((s, x) => s + x.amount, 0);
   const debits = list.filter((x) => x.type === "debit").reduce((s, x) => s + x.amount, 0);
   const bal = balance?.balance ?? 0;
+  const fullCourts = Math.floor(bal / Math.max(1, rules.tokenCostFullCourt));
+  const spots = Math.floor(bal / Math.max(1, rules.tokenCostPlayer));
+  const expiring = balance?.pendingExpiry ?? 0;
 
   return (
     <Page>
@@ -35,9 +39,9 @@ export default function Wallet() {
         eyebrow={t("wallet")}
         title={t("myWallet")}
         subtitle={tx({
-          fr: "1 token = 1 place de joueur pour un match.",
-          en: "1 token = 1 player spot for one match.",
-          ar: "رصيد واحد = مكان لاعب لمباراة واحدة.",
+          fr: `${tokensLabel(rules.tokenCostPlayer)} = 1 place de joueur pour un match.`,
+          en: `${tokensLabel(rules.tokenCostPlayer)} = 1 player spot for one match.`,
+          ar: `${rules.tokenCostPlayer} رصيد = مكان لاعب لمباراة واحدة.`,
         })}
       />
 
@@ -47,37 +51,47 @@ export default function Wallet() {
             aria-hidden="true"
             className="spin-slow absolute -end-16 -top-16 size-[260px] rounded-full border-[18px] border-dashed border-ball/15"
           />
-          <span className="label relative text-ball">{t("tokenBalance")}</span>
+          <span className="label relative text-ball">
+            {tx({ fr: "Votre solde", en: "Your balance", ar: "رصيدك" })}
+          </span>
           {loadingBalance ? (
             <Skeleton className="h-24 w-40 bg-white/10" />
           ) : (
             <p className="relative m-0 flex items-baseline gap-3">
               <CountUp value={bal} className="disp text-[120px] leading-[0.8] tracking-[-0.05em]" />
-              <span className="disp text-3xl">tokens</span>
+              <span className="disp text-3xl">{tokenWord(bal)}</span>
             </p>
           )}
           <div className="relative flex flex-wrap gap-2">
             <span className="rounded-full bg-white/10 px-4 py-2 text-sm font-bold">
               {tx({
-                fr: `${Math.floor(bal / rules.tokenCostFullCourt)} terrain(s) complet(s)`,
-                en: `${Math.floor(bal / rules.tokenCostFullCourt)} full court(s)`,
-                ar: `${Math.floor(bal / rules.tokenCostFullCourt)} ملعب كامل`,
+                fr: `${fullCourts} ${plural(fullCourts, "terrain complet", "terrains complets")}`,
+                en: `${fullCourts} ${plural(fullCourts, "full court", "full courts")}`,
+                ar: `${fullCourts} ملعب كامل`,
               })}
             </span>
             <span className="rounded-full bg-white/10 px-4 py-2 text-sm font-bold">
-              {tx({ fr: `ou ${bal} place(s)`, en: `or ${bal} spot(s)`, ar: `أو ${bal} مكان` })}
+              {tx({
+                fr: `ou ${spots} ${plural(spots, "place de joueur", "places de joueur")}`,
+                en: `or ${spots} ${plural(spots, "player spot", "player spots")}`,
+                ar: `أو ${spots} مكان`,
+              })}
             </span>
           </div>
-          {balance?.pendingExpiry ? (
+          {expiring ? (
             <span className="relative flex items-center gap-2 rounded-2xl bg-coral px-4 py-3 text-sm font-bold text-night">
               <AlarmIcon className="size-4" />
               {tx({
-                fr: `${balance.pendingExpiry} token(s) expirent`,
-                en: `${balance.pendingExpiry} token(s) expire`,
-                ar: `${balance.pendingExpiry} رصيد ينتهي`,
+                fr: `${tokensLabel(expiring)} ${plural(expiring, "expire", "expirent")}`,
+                en: `${tokensLabel(expiring)} ${plural(expiring, "expires", "expire")}`,
+                ar: `${expiring} رصيد ينتهي`,
               })}
-              {balance.nextExpiryDate
-                ? ` · ${format(new Date(balance.nextExpiryDate), "d MMMM", { locale })}`
+              {balance?.nextExpiryDate
+                ? tx({
+                    fr: ` le ${clubDate(balance.nextExpiryDate, lang, "dayMonthLong")}`,
+                    en: ` on ${clubDate(balance.nextExpiryDate, lang, "dayMonthLong")}`,
+                    ar: ` في ${clubDate(balance.nextExpiryDate, lang, "dayMonthLong")}`,
+                  })
                 : ""}
             </span>
           ) : null}
@@ -123,7 +137,7 @@ export default function Wallet() {
       <div className="stagger grid grid-cols-2 gap-3">
         <div className="rounded-[24px] bg-card p-5 shadow-sm">
           <span className="text-sm font-semibold text-muted-foreground">
-            {tx({ fr: "Crédités", en: "Credited", ar: "مضاف" })}
+            {tx({ fr: "Tokens reçus", en: "Tokens received", ar: "رصيد مُضاف" })}
           </span>
           <p className="disp m-0 mt-1 text-[40px] text-success">
             +<CountUp value={credits} />
@@ -131,7 +145,7 @@ export default function Wallet() {
         </div>
         <div className="rounded-[24px] bg-card p-5 shadow-sm">
           <span className="text-sm font-semibold text-muted-foreground">
-            {tx({ fr: "Utilisés", en: "Used", ar: "مستخدم" })}
+            {tx({ fr: "Tokens utilisés", en: "Tokens used", ar: "رصيد مُستخدم" })}
           </span>
           <p className="disp m-0 mt-1 text-[40px]">
             −<CountUp value={debits} />
@@ -148,7 +162,15 @@ export default function Wallet() {
             ))}
           </div>
         ) : list.length === 0 ? (
-          <EmptyState icon={<CoinsIcon className="size-7" />} title={t("noTransactions")} />
+          <EmptyState
+            icon={<CoinsIcon className="size-7" />}
+            title={t("noTransactions")}
+            text={tx({
+              fr: "Vos recharges et vos réservations apparaîtront ici.",
+              en: "Your top-ups and bookings will show up here.",
+              ar: "ستظهر هنا عمليات الشحن والحجوزات.",
+            })}
+          />
         ) : (
           <ul className="stagger m-0 flex list-none flex-col gap-2 p-0">
             {list.map((x) => {
@@ -178,18 +200,29 @@ export default function Wallet() {
                     )}
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate font-bold">{x.description}</span>
+                    <span className="line-clamp-2 font-bold leading-snug">{x.description}</span>
                     <span className="text-sm text-muted-foreground">
-                      {format(new Date(x.createdAt), "d MMM yyyy · HH:mm", { locale })}
+                      {credit
+                        ? tx({ fr: "Crédit", en: "Credit", ar: "إضافة" })
+                        : adj
+                          ? tx({ fr: "Correction", en: "Adjustment", ar: "تعديل" })
+                          : tx({ fr: "Débit", en: "Debit", ar: "خصم" })}
+                      {" · "}
+                      {clubDateTime(x.createdAt, lang)}
                     </span>
                   </span>
                   <span className="flex flex-col items-end">
-                    <span className={cn("disp text-2xl", credit ? "text-success" : "text-ink")}>
+                    <span
+                      className={cn(
+                        "whitespace-nowrap text-lg font-extrabold",
+                        credit ? "text-[#0F6B3C]" : "text-ink",
+                      )}
+                    >
                       {credit ? "+" : x.type === "debit" ? "−" : "±"}
-                      {x.amount}
+                      {tokensLabel(x.amount)}
                     </span>
                     {x.balanceAfter != null && (
-                      <span className="text-xs text-muted-foreground">
+                      <span className="whitespace-nowrap text-xs text-muted-foreground">
                         {tx({ fr: "solde", en: "balance", ar: "الرصيد" })} {x.balanceAfter}
                       </span>
                     )}

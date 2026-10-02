@@ -1,10 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  useCreateInvite,
-  useInviteMember,
-  useMemberSearch,
-  apiErrorMessage,
-} from "@workspace/api-client-react";
+import { useCreateInvite, useInviteMember, useMemberSearch } from "@workspace/api-client-react";
 import {
   CheckIcon,
   CoinsIcon,
@@ -20,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTx } from "@/lib/i18n";
+import { useDebounced } from "@/hooks/use-debounced";
+import { apiErrorText } from "@/lib/api-errors";
 
 /** SVG QR code, rendered locally (no third-party QR service sees the invite link). */
 function QrSvg({ text }: { text: string }) {
@@ -52,12 +49,8 @@ function QrSvg({ text }: { text: string }) {
 function InviteMember({ reservationId }: { reservationId: number }) {
   const tx = useTx();
   const [term, setTerm] = useState("");
-  const [debounced, setDebounced] = useState("");
+  const debounced = useDebounced(term.trim());
   const [sent, setSent] = useState<Record<number, string>>({});
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(term.trim()), 250);
-    return () => clearTimeout(t);
-  }, [term]);
   const { data: hits, isFetching } = useMemberSearch(debounced);
   const invite = useInviteMember();
   return (
@@ -107,6 +100,7 @@ function InviteMember({ reservationId }: { reservationId: number }) {
                   size="sm"
                   variant="dark"
                   disabled={invite.isPending}
+                  loading={invite.isPending && invite.variables?.userId === m.id}
                   onClick={() =>
                     invite.mutate(
                       { reservationId, userId: m.id },
@@ -119,10 +113,7 @@ function InviteMember({ reservationId }: { reservationId: number }) {
                         onError: (e) =>
                           setSent((s) => ({
                             ...s,
-                            [m.id]: apiErrorMessage(
-                              e,
-                              tx({ fr: "Échec", en: "Failed", ar: "فشل" }),
-                            ),
+                            [m.id]: apiErrorText(e, tx),
                           })),
                       },
                     )
@@ -173,13 +164,7 @@ export function InvitePanel({
               ? d.inviteUrl
               : `${window.location.origin}/join/${d.token}`,
           ),
-        onError: (e) =>
-          setError(
-            apiErrorMessage(
-              e,
-              tx({ fr: "Lien indisponible", en: "Link unavailable", ar: "الرابط غير متاح" }),
-            ),
-          ),
+        onError: (e) => setError(apiErrorText(e, tx)),
       },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps

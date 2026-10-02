@@ -8,9 +8,12 @@ import {
 import { and, asc, eq, gte, inArray, lt } from "drizzle-orm";
 import { requireAdmin } from "../lib/auth";
 import { rentedDuring } from "../lib/equipment";
+import { getSettings } from "../lib/settings";
+import { addDays, clubInstant, clubParts, isClubDate } from "../lib/club-time";
+import { fullName } from "../lib/members";
+import { HttpError, cleanText, oneOf, requireId, toMoney, type Body } from "../lib/http";
 
 const router = Router();
-const SLOT_MS = 90 * 60 * 1000;
 
 /** Public catalogue. With ?startTime, each item includes how many are still free for that slot. */
 router.get("/equipment", async (req, res) => {
@@ -24,21 +27,37 @@ router.get("/equipment", async (req, res) => {
     res.json(items.map((i) => ({ ...i, available: i.stock })));
     return;
   }
-  const out = await rentedDuring(db, start, new Date(start.getTime() + SLOT_MS));
+  // Same match length as the bookings (club setting), so availability matches what is bookable
+  const { bookingDurationMinutes } = await getSettings();
+  const out = await rentedDuring(
+    db,
+    start,
+    new Date(start.getTime() + bookingDurationMinutes * 60_000),
+  );
   res.json(items.map((i) => ({ ...i, available: Math.max(0, i.stock - (out.get(i.id) ?? 0)) })));
 });
 
-function parseItem(body: any, partial = false) {
-  const out: Record<string, unknown> = {};
-  if (!partial || body.name !== undefined) {
-    if (!body.name?.trim()) throw Object.assign(new Error("Name is required"), { status: 400 });
-    out.name = String(body.name).trim();
+function parseItem(body: Body, partial = false) {
+  const out: Partial<typeof equipmentItemsTable.$inferInsert> = {};
+  if (!partial || body?.name !== undefined) {
+    const name = cleanText(body?.name, 80);
+    if (!name) throw new HttpError(400, "Name is required", "VALIDATION_ERROR");
+    out.name = name;
   }
-  if (body.description !== undefined) out.description = body.description || null;
-  if (body.category !== undefined) out.category = String(body.category || "other");
-  if (body.price !== undefined) out.price = Math.max(0, Number(body.price) || 0);
-  if (body.stock !== undefined) out.stock = Math.max(0, Math.floor(Number(body.stock) || 0));
-  if (typeof body.isActive === "boolean") out.isActive = body.isActive;
+  if (body?.description !== undefined) out.description = cleanText(body.description, 500);
+  if (body?.category !== undefined) out.category = cleanText(body.category, 40) ?? "other";
+  if (body?.price !== undefined) {
+    const price = toMoney(body.price, 100_000);
+    if (price === null) throw new HttpError(400, "Invalid price", "VALIDATION_ERROR");
+    out.price = price;
+  }
+  if (body?.stock !== undefined) {
+    const stock = Number(body.stock);
+    if (!Number.isInteger(stock) || stock < 0 || stock > 10_000)
+      throw new HttpError(400, "Stock must be a whole number", "VALIDATION_ERROR");
+    out.stock = stock;
+  }
+  if (typeof body?.isActive === "boolean") out.isActive = body.isActive;
   return out;
 }
 
@@ -52,39 +71,29 @@ router.get("/admin/equipment", requireAdmin, async (_req, res) => {
 });
 
 router.post("/admin/equipment", requireAdmin, async (req, res) => {
-  try {
-    const [row] = await db
-      .insert(equipmentItemsTable)
-      .values(parseItem(req.body) as any)
-      .returning();
-    res.status(201).json(row);
-  } catch (e: any) {
-    if (e.status) res.status(400).json({ error: e.message });
-    else throw e;
-  }
+  const [row] = await db
+    .insert(equipmentItemsTable)
+    .values(parseItem(req.body) as typeof equipmentItemsTable.$inferInsert)
+    .returning();
+  res.status(201).json(row);
 });
 
 router.patch("/admin/equipment/:id", requireAdmin, async (req, res) => {
-  try {
-    const [row] = await db
-      .update(equipmentItemsTable)
-      .set(parseItem(req.body, true) as any)
-      .where(eq(equipmentItemsTable.id, Number(req.params.id)))
-      .returning();
-    if (!row) {
-      res.status(404).json({ error: "Not found" });
-      return;
-    }
-    res.json(row);
-  } catch (e: any) {
-    if (e.status) res.status(400).json({ error: e.message });
-    else throw e;
-  }
+  const id = requireId(req.params.id);
+  const patch = parseItem(req.body, true);
+  if (!Object.keys(patch).length) throw new HttpError(400, "Nothing to update", "VALIDATION_ERROR");
+  const [row] = await db
+    .update(equipmentItemsTable)
+    .set(patch)
+    .where(eq(equipmentItemsTable.id, id))
+    .returning();
+  if (!row) throw new HttpError(404, "Not found", "NOT_FOUND");
+  res.json(row);
 });
 
 /** Items with rental history are archived instead of deleted, so past bookings stay readable. */
 router.delete("/admin/equipment/:id", requireAdmin, async (req, res) => {
-  const id = Number(req.params.id);
+  const id = requireId(req.params.id);
   const [used] = await db
     .select({ id: reservationEquipmentTable.id })
     .from(reservationEquipmentTable)
@@ -102,13 +111,12 @@ router.delete("/admin/equipment/:id", requireAdmin, async (req, res) => {
   res.status(204).end();
 });
 
-/** Front-desk prep list: every rental for a day (YYYY-MM-DD), in start-time order. */
+/** Front-desk prep list: every rental for a club day (YYYY-MM-DD), in start-time order. */
 router.get("/admin/equipment/rentals", requireAdmin, async (req, res) => {
-  const day = String(req.query.date ?? "");
-  const from = /^\d{4}-\d{2}-\d{2}$/.test(day)
-    ? new Date(`${day}T00:00:00`)
-    : new Date(new Date().setHours(0, 0, 0, 0));
-  const to = new Date(from.getTime() + 24 * 60 * 60 * 1000);
+  // A club day, whatever timezone the server runs in
+  const day = isClubDate(req.query.date) ? req.query.date : clubParts(new Date()).date;
+  const from = clubInstant(day, 0);
+  const to = clubInstant(addDays(day, 1), 0);
   const reservations = await db
     .select({ id: reservationsTable.id })
     .from(reservationsTable)
@@ -116,7 +124,7 @@ router.get("/admin/equipment/rentals", requireAdmin, async (req, res) => {
       and(
         gte(reservationsTable.startTime, from),
         lt(reservationsTable.startTime, to),
-        eq(reservationsTable.status, "confirmed" as any),
+        eq(reservationsTable.status, "confirmed"),
       ),
     );
   if (!reservations.length) {
@@ -129,7 +137,7 @@ router.get("/admin/equipment/rentals", requireAdmin, async (req, res) => {
         reservationEquipmentTable.reservationId,
         reservations.map((r) => r.id),
       ),
-      inArray(reservationEquipmentTable.status, ["reserved", "handed_out", "returned"] as any),
+      inArray(reservationEquipmentTable.status, ["reserved", "handed_out", "returned"]),
     ),
     with: { item: true, user: true, reservation: { with: { terrain: true } } },
   });
@@ -141,9 +149,7 @@ router.get("/admin/equipment/rentals", requireAdmin, async (req, res) => {
       unitPrice: r.unitPrice,
       status: r.status,
       item: { id: r.item.id, name: r.item.name, category: r.item.category },
-      player: r.user
-        ? `${r.user.firstName ?? ""} ${r.user.lastName ?? ""}`.trim() || r.user.email
-        : null,
+      player: r.user ? fullName(r.user) : null,
       reservation: {
         id: r.reservation.id,
         startTime: r.reservation.startTime,
@@ -156,20 +162,19 @@ router.get("/admin/equipment/rentals", requireAdmin, async (req, res) => {
 });
 
 router.patch("/admin/equipment/rentals/:id", requireAdmin, async (req, res) => {
-  const status = req.body?.status;
-  if (!["reserved", "handed_out", "returned", "cancelled"].includes(status)) {
-    res.status(400).json({ error: "Invalid status" });
-    return;
-  }
+  const status = oneOf(req.body?.status, [
+    "reserved",
+    "handed_out",
+    "returned",
+    "cancelled",
+  ] as const);
+  if (!status) throw new HttpError(400, "Invalid status", "VALIDATION_ERROR");
   const [row] = await db
     .update(reservationEquipmentTable)
     .set({ status })
-    .where(eq(reservationEquipmentTable.id, Number(req.params.id)))
+    .where(eq(reservationEquipmentTable.id, requireId(req.params.id)))
     .returning();
-  if (!row) {
-    res.status(404).json({ error: "Not found" });
-    return;
-  }
+  if (!row) throw new HttpError(404, "Not found", "NOT_FOUND");
   res.json(row);
 });
 

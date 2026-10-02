@@ -1,6 +1,6 @@
 import { Switch, Route, useLocation, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { setAuthTokenGetter, setBaseUrl, useGetMe } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,11 +11,10 @@ import { Redirect } from "wouter";
 import { syncUser } from "@/lib/user-sync";
 import { API_BASE, getAccessToken } from "@/services/api";
 import { I18nProvider } from "@/lib/i18n";
-import { DEMO } from "@/lib/demo-flag";
-import { useHashLocation } from "wouter/use-hash-location";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth";
 import ResetPassword from "@/pages/reset-password";
+import AuthConfirm from "@/pages/auth-confirm";
 import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
 const AdminDashboard = lazy(() => import("@/pages/admin"));
@@ -47,14 +46,20 @@ setAuthTokenGetter(getAccessToken);
 // API on another origin (e.g. https://api.example.tn). Empty = same origin, /api proxied.
 if (API_BASE) setBaseUrl(API_BASE);
 
+/**
+ * Cached data belongs to one account: drop it when the signed-in member changes
+ * (sign-in, sign-out, another account). Supabase also emits SIGNED_IN each time the
+ * tab regains focus and TOKEN_REFRESHED every hour: same member, nothing to drop.
+ */
 function QueryClientCacheInvalidator() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT" || event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-        queryClient.clear();
-      }
+    let current: string | null | undefined;
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      const next = session?.user?.id ?? null;
+      if (current !== undefined && current !== next) queryClient.clear();
+      current = next;
     });
 
     return () => data.subscription.unsubscribe();
@@ -65,12 +70,16 @@ function QueryClientCacheInvalidator() {
 
 function UserSyncer() {
   const { user, isSignedIn } = useAuth();
+  const userId = user?.id;
+  const synced = useRef<string | null>(null);
 
+  // Once per signed-in member, not on every token refresh (the session object changes each time)
   useEffect(() => {
-    if (isSignedIn && user) {
-      syncUser(user);
-    }
-  }, [isSignedIn, user]);
+    if (!isSignedIn || !user || synced.current === userId) return;
+    synced.current = userId ?? null;
+    void syncUser(user);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSignedIn, userId]);
 
   return null;
 }
@@ -78,6 +87,22 @@ function UserSyncer() {
 function HomeRedirect() {
   const { isSignedIn } = useAuth();
   return isSignedIn ? <Dashboard /> : <Home />;
+}
+
+/**
+ * Sign-in address that remembers the page asked for, and the error an e-mail link
+ * came back with (an expired confirmation link lands on a private page first).
+ */
+function signInPath(location: string) {
+  const came = new URLSearchParams(
+    window.location.search || window.location.hash.replace(/^#/, ""),
+  );
+  const target = new URLSearchParams({ redirect: location });
+  for (const key of ["error_code", "error_description"]) {
+    const value = came.get(key);
+    if (value) target.set(key, value);
+  }
+  return `/sign-in?${target}`;
 }
 
 const RouteLoader = () => (
@@ -90,15 +115,15 @@ const RouteLoader = () => (
  * Admin gate. The role lives on the API user (useGetMe), not on the Supabase
  * session user (whose role is always "authenticated").
  */
-function AdminRoute({ component: Component }: { component: React.ComponentType<any> }) {
+function AdminRoute({ component: Component }: { component: React.ComponentType }) {
   const { isSignedIn, isLoaded } = useAuth();
   const [location] = useLocation();
-  const { data: me, isLoading, isError } = useGetMe({ query: { enabled: isSignedIn } as any });
+  const { data: me, isLoading, isError } = useGetMe({ query: { enabled: isSignedIn } });
 
   if (!isLoaded) return <RouteLoader />;
-  if (!isSignedIn) return <Redirect to={`/sign-in?redirect=${encodeURIComponent(location)}`} />;
+  if (!isSignedIn) return <Redirect to={signInPath(location)} replace />;
   if (isLoading) return <RouteLoader />;
-  if (isError || me?.role !== "admin") return <Redirect to="/dashboard" />;
+  if (isError || me?.role !== "admin") return <Redirect to="/dashboard" replace />;
 
   return (
     <Suspense fallback={<RouteLoader />}>
@@ -107,14 +132,12 @@ function AdminRoute({ component: Component }: { component: React.ComponentType<a
   );
 }
 
-function ProtectedRoute({ component: Component }: { component: React.ComponentType<any> }) {
+function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isSignedIn, isLoaded } = useAuth();
   const [location] = useLocation();
 
-  if (!isLoaded) return null;
-  if (!isSignedIn) {
-    return <Redirect to={`/sign-in?redirect=${encodeURIComponent(location)}`} />;
-  }
+  if (!isLoaded) return <RouteLoader />;
+  if (!isSignedIn) return <Redirect to={signInPath(location)} replace />;
 
   return <Component />;
 }
@@ -131,6 +154,7 @@ function AppRoutes() {
             <Route path="/sign-in/*?" component={() => <AuthPage mode="sign-in" />} />
             <Route path="/sign-up/*?" component={() => <AuthPage mode="sign-up" />} />
             <Route path="/reset-password" component={ResetPassword} />
+            <Route path="/auth/confirm" component={AuthConfirm} />
 
             {/* Protected Player Routes */}
             <Route path="/dashboard">
@@ -198,7 +222,7 @@ function App() {
   return (
     <I18nProvider>
       <AuthProvider>
-        <WouterRouter {...(DEMO ? { hook: useHashLocation } : { base: basePath })}>
+        <WouterRouter base={basePath}>
           <AppRoutes />
         </WouterRouter>
       </AuthProvider>

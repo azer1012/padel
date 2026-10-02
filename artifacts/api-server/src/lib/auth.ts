@@ -4,12 +4,40 @@ import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import { supabaseAdmin } from "../config/supabase";
 import { env } from "../config/env";
+import { HttpError } from "./http";
 
+/** A row of public.users: the member behind a request. */
+export type DbUser = typeof usersTable.$inferSelect;
+
+/** What the middlewares below attach to a request. Read it with the accessors, never by casting. */
 type AuthenticatedRequest = Request & {
   authUserId?: string;
   authEmail?: string;
-  dbUser?: typeof usersTable.$inferSelect;
+  dbUser?: DbUser;
 };
+
+const unauthorized = () => new HttpError(401, "Unauthorized", "UNAUTHORIZED");
+const noProfile = () =>
+  new HttpError(401, "User not found. Please complete registration.", "PROFILE_MISSING");
+
+/** The signed-in member. Use behind requireUser / requireAdmin. */
+export function currentUser(req: Request): DbUser {
+  const user = (req as AuthenticatedRequest).dbUser;
+  if (!user) throw unauthorized();
+  return user;
+}
+
+/** The signed-in member, or null for a visitor. Use behind loadUser (public routes). */
+export function optionalUser(req: Request): DbUser | null {
+  return (req as AuthenticatedRequest).dbUser ?? null;
+}
+
+/** The Supabase identity of the access token (id and verified e-mail). Use behind requireAuth. */
+export function authIdentity(req: Request): { id: string; email?: string } {
+  const { authUserId, authEmail } = req as AuthenticatedRequest;
+  if (!authUserId) throw unauthorized();
+  return { id: authUserId, email: authEmail };
+}
 
 function getBearerToken(req: Request): string | null {
   const header = req.headers.authorization;
@@ -18,6 +46,9 @@ function getBearerToken(req: Request): string | null {
 }
 
 type Claims = { sub: string; email?: string; exp?: number; aud?: string | string[]; role?: string };
+
+const decodeJson = (part: string): Record<string, unknown> =>
+  JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
 
 /**
  * Verifies an HS256 Supabase access token locally with SUPABASE_JWT_SECRET
@@ -29,12 +60,11 @@ function verifyLocally(token: string, secret: string): Claims | null {
   if (parts.length !== 3) return null;
   const [h, p, sig] = parts;
   try {
-    const header = JSON.parse(Buffer.from(h, "base64url").toString("utf8"));
-    if (header.alg !== "HS256") return null;
+    if (decodeJson(h).alg !== "HS256") return null;
     const expected = crypto.createHmac("sha256", secret).update(`${h}.${p}`).digest();
     const given = Buffer.from(sig, "base64url");
     if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
-    const claims = JSON.parse(Buffer.from(p, "base64url").toString("utf8")) as Claims;
+    const claims = decodeJson(p) as Claims;
     const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
     if (!claims.sub || !aud.includes("authenticated")) return null;
     if (!claims.exp || claims.exp * 1000 <= Date.now()) return null;
@@ -44,19 +74,20 @@ function verifyLocally(token: string, secret: string): Claims | null {
   }
 }
 
+function tokenAlgorithm(token: string): unknown {
+  try {
+    return decodeJson(token.split(".")[0] ?? "").alg;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Verifies the Supabase JWT and returns its user id, or null. Throws only on infrastructure errors. */
 async function verify(req: Request) {
   const token = getBearerToken(req);
   if (!token) return null;
   let id: string, email: string | undefined;
-  const header = (() => {
-    try {
-      return JSON.parse(Buffer.from(token.split(".")[0] ?? "", "base64url").toString("utf8"));
-    } catch {
-      return {};
-    }
-  })();
-  if (env.supabaseJwtSecret && header.alg === "HS256") {
+  if (env.supabaseJwtSecret && tokenAlgorithm(token) === "HS256") {
     const claims = verifyLocally(token, env.supabaseJwtSecret);
     if (!claims) return null;
     id = claims.sub;
@@ -84,15 +115,13 @@ async function loadDbUser(req: Request) {
   return user ?? null;
 }
 
-// Every middleware below forwards unexpected errors to Express (→ 500) instead of
-// leaving an unhandled rejection that would crash the whole process.
+// Every middleware below forwards its errors to Express: refusals leave through the
+// error handler as { error, code }, and an unexpected failure never becomes an
+// unhandled rejection that would crash the whole process.
 
-export async function requireAuth(req: Request, res: Response, next: NextFunction) {
+export async function requireAuth(req: Request, _res: Response, next: NextFunction) {
   try {
-    if (!(await verify(req))) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
+    if (!(await verify(req))) throw unauthorized();
     next();
   } catch (err) {
     next(err);
@@ -100,7 +129,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 }
 
 /**
- * Optional auth: attaches dbUser when a valid token is present, otherwise
+ * Optional auth: attaches the member when a valid token is present, otherwise
  * continues as an anonymous visitor (public pages like the booking calendar).
  */
 export async function loadUser(req: Request, _res: Response, next: NextFunction) {
@@ -112,37 +141,24 @@ export async function loadUser(req: Request, _res: Response, next: NextFunction)
   }
 }
 
-export async function requireUser(req: Request, res: Response, next: NextFunction) {
+export async function requireUser(req: Request, _res: Response, next: NextFunction) {
   try {
-    if (!(await verify(req))) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
-    if (!(await loadDbUser(req))) {
-      res.status(401).json({ error: "User not found. Please complete registration." });
-      return;
-    }
+    if (!(await verify(req))) throw unauthorized();
+    if (!(await loadDbUser(req))) throw noProfile();
     next();
   } catch (err) {
     next(err);
   }
 }
 
-export async function requireAdmin(req: Request, res: Response, next: NextFunction) {
+/** The role is read from public.users on every request, never from the token. */
+export async function requireAdmin(req: Request, _res: Response, next: NextFunction) {
   try {
-    if (!(await verify(req))) {
-      res.status(401).json({ error: "Unauthorized" });
-      return;
-    }
+    if (!(await verify(req))) throw unauthorized();
     const user = await loadDbUser(req);
-    if (!user) {
-      res.status(401).json({ error: "User not found. Please complete registration." });
-      return;
-    }
-    if (user.role !== "admin") {
-      res.status(403).json({ error: "Forbidden: admin access required" });
-      return;
-    }
+    if (!user) throw noProfile();
+    if (user.role !== "admin")
+      throw new HttpError(403, "Forbidden: admin access required", "FORBIDDEN");
     next();
   } catch (err) {
     next(err);

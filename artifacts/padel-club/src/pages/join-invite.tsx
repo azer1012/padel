@@ -1,5 +1,4 @@
 import { useParams, useLocation, Link } from "wouter";
-import { format } from "date-fns";
 import {
   useGetInvite,
   useAcceptInvite,
@@ -18,20 +17,22 @@ import {
   MoneyIcon,
   WarningCircleIcon,
 } from "@/components/icons";
-import { apiErrorMessage } from "@workspace/api-client-react";
+import { apiErrorText } from "@/lib/api-errors";
+import { apiErrorCode } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Logo } from "@/components/smash/brand";
 import { CourtLines, Eyebrow } from "@/components/smash/primitives";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
-import { useTx, useDateLocale } from "@/lib/i18n";
-import { clubTime } from "@/lib/club-time";
+import { useTx, useI18n } from "@/lib/i18n";
+import { clubTime, clubDay, clubDate } from "@/lib/club-time";
 import { useClubRules } from "@/hooks/use-club-rules";
+import { openSpotsLabel, playersLabel, plural, tokensLabel } from "@/lib/labels";
 
 export default function JoinInvite() {
   const tx = useTx();
-  const locale = useDateLocale();
+  const { lang } = useI18n();
   const { token } = useParams<{ token: string }>();
   const { isSignedIn } = useAuth();
   const { toast } = useToast();
@@ -41,7 +42,7 @@ export default function JoinInvite() {
     data: inviteData,
     isLoading,
     error,
-  } = useGetInvite(token ?? "", { query: { enabled: !!token } as any });
+  } = useGetInvite(token ?? "", { query: { enabled: !!token } });
   const acceptInvite = useAcceptInvite();
   const declineInvite = useDeclineInvite();
   const rules = useClubRules();
@@ -58,7 +59,7 @@ export default function JoinInvite() {
       onError: (e) =>
         toast({
           title: tx({ fr: "Action impossible", en: "Couldn't decline", ar: "تعذر الرفض" }),
-          description: apiErrorMessage(e, ""),
+          description: apiErrorText(e, tx),
           variant: "destructive",
         }),
     });
@@ -93,25 +94,25 @@ export default function JoinInvite() {
                       ar: "الدفع في استقبال النادي.",
                     })
                   : tx({
-                      fr: `${res.tokensCharged} token(s) débité(s).`,
-                      en: `${res.tokensCharged} token(s) charged.`,
+                      fr: `${tokensLabel(res.tokensCharged)} ${plural(res.tokensCharged, "débité", "débités")}.`,
+                      en: `${tokensLabel(res.tokensCharged)} charged.`,
                       ar: "تم خصم الرصيد.",
                     }),
           });
           if (inviteData)
             qc.invalidateQueries({
               queryKey: getCalendarQueryKey({
-                date: format(new Date(inviteData.reservation.startTime), "yyyy-MM-dd"),
+                date: clubDay(inviteData.reservation.startTime),
               }),
             });
           qc.invalidateQueries({ queryKey: getListUpcomingReservationsQueryKey() });
           qc.invalidateQueries({ queryKey: getGetTokenBalanceQueryKey() });
           setLocation("/reservations");
         },
-        onError: (err: any) =>
+        onError: (err) =>
           toast({
             title: tx({ fr: "Impossible de rejoindre", en: "Couldn't join", ar: "تعذر الانضمام" }),
-            description: apiErrorMessage(err, ""),
+            description: apiErrorText(err, tx),
             variant: "destructive",
           }),
       },
@@ -142,15 +143,20 @@ export default function JoinInvite() {
           <WarningCircleIcon className="size-7" />
         </span>
         <h1 className="disp m-0 text-5xl leading-none">
-          {tx({ fr: "Invitation expirée", en: "Invite expired", ar: "انتهت الدعوة" })}
+          {tx({
+            fr: "Invitation indisponible",
+            en: "Invitation unavailable",
+            ar: "الدعوة غير متاحة",
+          })}
         </h1>
         <p className="m-0 text-lg text-muted-d">
-          {apiErrorMessage(error, "") ||
-            tx({
-              fr: "Ce lien n'est plus valide. Demandez-en un nouveau à votre ami.",
-              en: "This link is no longer valid. Ask your friend for a new one.",
-              ar: "هذا الرابط لم يعد صالحًا.",
-            })}
+          {/^(INVITE_|MATCH_)/.test(apiErrorCode(error) ?? "")
+            ? apiErrorText(error, tx)
+            : tx({
+                fr: "Ce lien n'est plus valide. Demandez-en un nouveau à la personne qui vous a invité.",
+                en: "This link is no longer valid. Ask the person who invited you for a new one.",
+                ar: "هذا الرابط لم يعد صالحًا. اطلب رابطًا جديدًا ممن دعاك.",
+              })}
         </p>
         <Button asChild variant="lime" size="lg">
           <Link href="/open-matches">
@@ -169,6 +175,43 @@ export default function JoinInvite() {
     );
 
   const { invite, reservation } = inviteData;
+  const full = reservation.openSpots === 0;
+  const here = encodeURIComponent(`/join/${token}`);
+  /** Not signed in: what joining costs, then sign in or create an account and come back. */
+  const guestActions = (
+    <div className="flex flex-col gap-2.5">
+      {!reservation.free && (
+        <p className="m-0 flex items-center gap-2 font-semibold text-soft-d">
+          <CoinsIcon className="size-5 text-ball" />
+          {tx({
+            fr: `Votre place : ${tokensLabel(reservation.tokensPerSpot)}`,
+            en: `Your spot: ${tokensLabel(reservation.tokensPerSpot)}`,
+            ar: `مكانك: ${tokensLabel(reservation.tokensPerSpot)}`,
+          })}
+          {rules.cashPaymentEnabled &&
+            tx({
+              fr: ` ou ${reservation.pricePerPerson} ${rules.currency} au club`,
+              en: ` or ${reservation.pricePerPerson} ${rules.currency} at the club`,
+              ar: ` أو ${reservation.pricePerPerson} ${rules.currency} في النادي`,
+            })}
+        </p>
+      )}
+      <Button variant="lime" size="xl" asChild>
+        <Link href={`/sign-in?redirect=${here}`}>
+          {tx({ fr: "Se connecter et rejoindre", en: "Sign in and join", ar: "سجّل الدخول وانضم" })}
+        </Link>
+      </Button>
+      <Button variant="outline-dark" size="lg" asChild>
+        <Link href={`/sign-up?redirect=${here}`}>
+          {tx({
+            fr: "Pas encore de compte ? Créer le mien",
+            en: "No account yet? Create mine",
+            ar: "ليس لديك حساب؟ أنشئ حسابًا",
+          })}
+        </Link>
+      </Button>
+    </div>
+  );
   return shell(
     <div className="enter flex flex-col gap-7">
       <Eyebrow live className="text-ball">
@@ -182,21 +225,18 @@ export default function JoinInvite() {
         })}
       </h1>
       <div className="flex flex-col gap-4 rounded-[32px] bg-white p-6 text-ink">
-        <span className="disp text-[56px] leading-[0.9]" dir="ltr">
+        <span className="disp self-start text-[56px] leading-[0.9]" dir="ltr">
           {clubTime(reservation.startTime)}
         </span>
-        <span className="flex items-center gap-2 font-semibold capitalize text-muted-foreground">
+        <span className="flex items-center gap-2 font-semibold text-muted-foreground">
           <CalendarDotsIcon className="size-4" />
-          {format(new Date(reservation.startTime), "EEEE d MMMM", { locale })}
+          {clubDate(reservation.startTime, lang)}
         </span>
         <span className="flex items-center gap-2 font-bold">
           <MapPinIcon className="size-4 text-court" />
           {reservation.terrainName}
         </span>
-        <div
-          className="flex gap-1.5"
-          aria-label={`${reservation.filledSpots}/${reservation.totalSpots}`}
-        >
+        <div className="flex gap-1.5" aria-hidden="true">
           {Array.from({ length: reservation.totalSpots }, (_, i) => (
             <span
               key={i}
@@ -208,15 +248,45 @@ export default function JoinInvite() {
             />
           ))}
         </div>
-        <span className="text-sm font-semibold text-success">
-          {tx({
-            fr: `${reservation.openSpots} place(s) libre(s)`,
-            en: `${reservation.openSpots} spot(s) left`,
-            ar: `${reservation.openSpots} مكان شاغر`,
-          })}
+        <span className="flex flex-wrap items-center justify-between gap-2 text-sm font-bold">
+          <span>{playersLabel(tx, reservation.filledSpots, reservation.totalSpots)}</span>
+          <span className={full ? "text-destructive" : "text-[#0F6B3C]"}>
+            {full
+              ? tx({ fr: "Match complet", en: "Match full", ar: "المباراة مكتملة" })
+              : openSpotsLabel(tx, reservation.openSpots)}
+          </span>
         </span>
       </div>
-      {reservation.free ? (
+      {full && (
+        <p role="status" className="m-0 rounded-2xl bg-white/10 px-4 py-3 font-semibold">
+          {tx({
+            fr: "Toutes les places ont été prises. Regardez les open matches pour en trouver un autre.",
+            en: "Every spot has been taken. Have a look at open matches to find another one.",
+            ar: "أُخذت كل الأماكن. تصفّح المباريات المفتوحة لإيجاد مباراة أخرى.",
+          })}
+        </p>
+      )}
+      {full ? (
+        <Button asChild variant="lime" size="lg">
+          <Link href="/open-matches">
+            {tx({ fr: "Voir les open matches", en: "See open matches", ar: "المباريات المفتوحة" })}
+          </Link>
+        </Button>
+      ) : !isSignedIn ? (
+        <>
+          {reservation.free && (
+            <p className="m-0 flex items-center gap-2 font-semibold text-ball">
+              <GiftIcon className="size-5" />
+              {tx({
+                fr: `${invite.invitedBy} a réservé le terrain : votre place est offerte.`,
+                en: `${invite.invitedBy} booked the court: your spot is free.`,
+                ar: `${invite.invitedBy} حجز الملعب: مكانك مجاني.`,
+              })}
+            </p>
+          )}
+          {guestActions}
+        </>
+      ) : reservation.free ? (
         <>
           <p className="m-0 flex items-center gap-2 font-semibold text-ball">
             <GiftIcon className="size-5" />
@@ -234,15 +304,9 @@ export default function JoinInvite() {
             loading={acceptInvite.isPending}
           >
             <GiftIcon />
-            {isSignedIn
-              ? tx({ fr: "Rejoindre le match", en: "Join the match", ar: "انضم إلى المباراة" })
-              : tx({
-                  fr: "Se connecter et rejoindre",
-                  en: "Sign in and join",
-                  ar: "سجّل الدخول وانضم",
-                })}
+            {tx({ fr: "Rejoindre le match", en: "Join the match", ar: "انضم إلى المباراة" })}
           </Button>
-          {isSignedIn && inviteData?.invite.personal && (
+          {inviteData?.invite.personal && (
             <Button
               variant="ghost"
               size="lg"
@@ -253,7 +317,7 @@ export default function JoinInvite() {
             </Button>
           )}
         </>
-      ) : isSignedIn ? (
+      ) : (
         <div className="flex flex-col gap-2.5">
           <Button
             variant="lime"
@@ -264,8 +328,8 @@ export default function JoinInvite() {
           >
             <CoinsIcon />
             {tx({
-              fr: `Rejoindre · ${reservation.tokensPerSpot} token${reservation.tokensPerSpot > 1 ? "s" : ""}`,
-              en: `Join · ${reservation.tokensPerSpot} token${reservation.tokensPerSpot > 1 ? "s" : ""}`,
+              fr: `Rejoindre · ${tokensLabel(reservation.tokensPerSpot)}`,
+              en: `Join · ${tokensLabel(reservation.tokensPerSpot)}`,
               ar: `انضم · ${reservation.tokensPerSpot} رصيد`,
             })}
           </Button>
@@ -295,15 +359,6 @@ export default function JoinInvite() {
             </Button>
           )}
         </div>
-      ) : (
-        <Button
-          variant="lime"
-          size="xl"
-          onClick={() => handleAccept()}
-          disabled={reservation.openSpots === 0}
-        >
-          {tx({ fr: "Se connecter et rejoindre", en: "Sign in and join", ar: "سجّل الدخول وانضم" })}
-        </Button>
       )}
     </div>,
   );

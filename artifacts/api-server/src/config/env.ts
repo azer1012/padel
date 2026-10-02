@@ -27,8 +27,9 @@ for (const candidate of [
   }
 }
 
-// The booking grid is built in the server's local time (Date#setHours). Force the
-// club's timezone so a UTC host doesn't shift every slot by an hour.
+// Club times are always computed with CLUB_TIMEZONE explicitly (lib/club-time.ts), so the
+// API does not depend on the host's clock zone. The process zone is still set to the
+// club's so log timestamps and any plain Date formatting read as club time.
 process.env.TZ ||= process.env.CLUB_TIMEZONE || "Africa/Tunis";
 
 const envSchema = z.object({

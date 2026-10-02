@@ -47,7 +47,29 @@ Weights carry meaning:
 - Add `shine` to the one main call-to-action of a screen (a light glint every few seconds). Never more than one per view (the sidebar button has none for that reason).
 - `.lift` for cards, `.tile` + `.tile-ic` + `.tile-arrow` for shortcut tiles (icon springs, arrow slides),
   `.pill-tab` for segmented filters (`aria-pressed` / `aria-selected` drive the state).
-- Court tiles: `.court[data-state=free|partial|busy|selected]`. Booking cells: `.slot[data-state=available|partial|full|mine|past]`.
+- Court tiles: `.court[data-state=free|partial|busy|selected]`. Booking cells: `.slot[data-state=available|partial|full|mine|past|blocked]`.
+  A state is always carried by a word or an icon as well as by its colour.
+
+## Layout patterns
+
+- Segmented filters: `.pill-group` around `.pill-tab` buttons. It scrolls sideways when the labels do not fit,
+  so a long label can never widen the page.
+- Dialogs: `DialogContent` is a bottom sheet below `sm` and a centred dialog above. Put the main action in a
+  `.dialog-actions` bar (sticky at the bottom, safe-area aware) so it stays under the thumb while the content scrolls.
+- Tables (`DataTable`): the scroll wrapper is `relative`; keep it so, otherwise screen-reader-only text inside
+  the table widens the page on phones.
+- Icon-only `Button`s (`size="icon"` / `"icon-sm"`) must have an `aria-label`: it is also shown as the hover tooltip.
+- Phone tab bar: nav items take a `short` label (about 70 px per tab). The first four items are tabs, the rest
+  live in the "Plus" sheet.
+
+## Copy helpers (`src/lib/labels.ts`, `src/lib/api-errors.ts`)
+
+- `plural(n, one, many)`, `tokensLabel(n)`, `openSpotsLabel(tx, n)`, `playersLabel(tx, filled, total)`:
+  never write "place(s)" in the interface.
+- `apiErrorText(e, tx)`: what to show when an API call fails. It translates the API error codes members can
+  meet (slot taken, not enough tokens, cancellation closed…) and falls back to a plain "try again";
+  never show a raw status or an untranslated server sentence.
+- Dates come from `lib/club-time.ts` already capitalised ("Vendredi 2 octobre"): do not add CSS `capitalize`.
 
 ## Feedback (toasts)
 
@@ -89,9 +111,9 @@ utilities (`ms-`, `ps-`, `start-`, `end-`) rather than `ml-`/`left-`.
 ## Club identity
 
 Name, contact, hours and token rules: `src/config/club.ts`. Photos: `PHOTOS` in the same file (WebP in `public/`).
+These four pictures are placeholders: replace them with the customer's own photos of the club (same file names,
+1600 px wide WebP, under 250 kB each) before delivery.
 
-## Demo mode
-
-`pnpm --filter @workspace/padel-club dev:demo` runs the real UI against an in-memory club
-(`src/lib/demo.ts`): no API server or Supabase needed. Useful for design reviews and sales demos.
-Never enabled in production builds.
+Photography is used where it shows the place: home hero and gallery, the sign-in panel, a court's own photo
+(Admin → Terrains) behind its name in the booking dialog, a tournament's or an article's own picture. A tournament
+without a picture gets a drawn court cover (`EventCover`), never a repeated stock image.

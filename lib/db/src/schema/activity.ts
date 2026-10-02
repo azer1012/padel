@@ -1,6 +1,4 @@
 import { pgTable, serial, integer, text, timestamp, pgEnum } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod/v4";
 
 export const activityTypeEnum = pgEnum("activity_type", [
   "reservation_created",
@@ -9,6 +7,10 @@ export const activityTypeEnum = pgEnum("activity_type", [
   "token_debited",
   "user_registered",
   "settings_updated",
+  "payment_updated",
+  "role_changed",
+  "court_updated",
+  "pricing_updated",
 ]);
 
 export const activityTable = pgTable("activity", {
@@ -20,9 +22,4 @@ export const activityTable = pgTable("activity", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertActivitySchema = createInsertSchema(activityTable).omit({
-  id: true,
-  createdAt: true,
-});
-export type InsertActivity = z.infer<typeof insertActivitySchema>;
 export type Activity = typeof activityTable.$inferSelect;

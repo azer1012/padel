@@ -1,8 +1,6 @@
-import { db, tokenTransactionsTable, usersTable } from "@workspace/db";
+import { tokenTransactionsTable, usersTable, type Tx } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { HttpError } from "./http";
-
-export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 type Movement = {
   userId: number;
@@ -31,7 +29,10 @@ export async function moveTokens(tx: Tx, m: Movement) {
     .select()
     .from(usersTable)
     .where(eq(usersTable.id, m.userId))
-    .for("update");
+    // NO KEY UPDATE, not UPDATE: rows inserted earlier in the transaction (a booking,
+    // a spot) already hold a key-share lock on this member through their foreign key.
+    // A full row lock would deadlock two simultaneous operations of the same member.
+    .for("no key update");
   if (!user) throw new HttpError(404, "User not found", "USER_NOT_FOUND");
 
   const balanceAfter = user.tokenBalance + m.delta;

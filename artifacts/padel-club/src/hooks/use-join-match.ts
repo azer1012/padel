@@ -7,10 +7,12 @@ import {
   getListUpcomingReservationsQueryKey,
   getGetTokenBalanceQueryKey,
 } from "@workspace/api-client-react";
-import { format } from "date-fns";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { useTx } from "@/lib/i18n";
+import { clubDay } from "@/lib/club-time";
+import { plural, tokensLabel } from "@/lib/labels";
+import { apiErrorText } from "@/lib/api-errors";
 
 export function useJoinMatch() {
   const { isSignedIn } = useAuth();
@@ -28,7 +30,7 @@ export function useJoinMatch() {
     join.mutate(
       { id: reservationId },
       {
-        onSuccess: () => {
+        onSuccess: (joined) => {
           toast({
             title: tx({
               fr: "Vous êtes dans le match !",
@@ -36,22 +38,22 @@ export function useJoinMatch() {
               ar: "أنت في المباراة!",
             }),
             description: tx({
-              fr: "1 token débité.",
-              en: "1 token charged.",
-              ar: "تم خصم رصيد واحد.",
+              fr: `${tokensLabel(joined.tokensCharged)} ${plural(joined.tokensCharged, "débité", "débités")}.`,
+              en: `${tokensLabel(joined.tokensCharged)} charged.`,
+              ar: `تم خصم ${joined.tokensCharged} رصيد.`,
             }),
           });
           qc.invalidateQueries({ queryKey: getOpenMatchesQueryKey() });
           qc.invalidateQueries({
-            queryKey: getCalendarQueryKey({ date: format(new Date(startTime), "yyyy-MM-dd") }),
+            queryKey: getCalendarQueryKey({ date: clubDay(startTime) }),
           });
           qc.invalidateQueries({ queryKey: getListUpcomingReservationsQueryKey() });
           qc.invalidateQueries({ queryKey: getGetTokenBalanceQueryKey() });
         },
-        onError: (err: any) =>
+        onError: (err) =>
           toast({
             title: tx({ fr: "Impossible de rejoindre", en: "Couldn't join", ar: "تعذر الانضمام" }),
-            description: err?.data?.error,
+            description: apiErrorText(err, tx),
             variant: "destructive",
           }),
       },

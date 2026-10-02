@@ -4,7 +4,7 @@
  *
  *   TEST_PG_URL=postgres://postgres@127.0.0.1:54329/postgres pnpm --filter @workspace/scripts run db:test
  *
- * Requires `psql` on PATH (the invariants file uses psql meta-commands).
+ * Uses `psql` when it is on PATH, otherwise the pg driver.
  */
 import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
@@ -33,12 +33,29 @@ try {
     console.log(`  migrated ${f}`);
   }
   await c.end();
-  const run = spawnSync(
-    "psql",
-    [url.toString(), "-X", "-f", resolve(root, "supabase/tests/db-invariants.sql")],
-    { stdio: "inherit" },
-  );
-  failed = run.status !== 0;
+  const file = resolve(root, "supabase/tests/db-invariants.sql");
+  const run = spawnSync("psql", [url.toString(), "-X", "-f", file], { stdio: "inherit" });
+  if (run.error) {
+    // No psql on this machine: run the same file through the driver (it stops at the
+    // first error, like ON_ERROR_STOP; the two psql meta-commands are dropped).
+    const t = new pg.Client({ connectionString: url.toString() });
+    t.on("notice", (n) => console.log(`NOTICE:  ${n.message}`));
+    await t.connect();
+    try {
+      await t.query(
+        readFileSync(file, "utf8")
+          .split(/\r?\n/)
+          .filter((l) => !l.startsWith("\\"))
+          .join("\n"),
+      );
+      failed = false;
+    } catch (err) {
+      console.error(`ERROR:  ${(err as Error).message}`);
+      failed = true;
+    } finally {
+      await t.end();
+    }
+  } else failed = run.status !== 0;
 } finally {
   await admin.query(`drop database if exists ${name} with (force)`);
   await admin.end();

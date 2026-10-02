@@ -9,8 +9,6 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod/v4";
 import { terrainsTable } from "./terrains";
 import { usersTable } from "./users";
 import { relations } from "drizzle-orm";
@@ -91,11 +89,6 @@ export const reservationsRelations = relations(reservationsTable, ({ one, many }
   equipment: many(reservationEquipmentTable),
 }));
 
-export const insertReservationSchema = createInsertSchema(reservationsTable).omit({
-  id: true,
-  createdAt: true,
-});
-export type InsertReservation = z.infer<typeof insertReservationSchema>;
 export type Reservation = typeof reservationsTable.$inferSelect;
 
 // ─── Reservation Players ─────────────────────────────────────────────────────

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { format } from "date-fns";
 import { useListNews } from "@workspace/api-client-react";
 import type { NewsArticle } from "@workspace/api-client-react";
 import { ArrowRightIcon, NewspaperIcon } from "@/components/icons";
@@ -12,19 +11,19 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState, Page, PageHeader } from "@/components/smash/primitives";
-import { useI18n, useTx, useDateLocale } from "@/lib/i18n";
+import { useI18n, useTx } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { clubDate } from "@/lib/club-time";
 
 export default function News() {
   const tx = useTx();
   const { t } = useI18n();
-  const locale = useDateLocale();
+  const { lang } = useI18n();
   const { data: response, isLoading, isError, refetch } = useListNews({ limit: 30 });
   const [open, setOpen] = useState<NewsArticle | null>(null);
   const articles = response?.data ?? [];
   const [featured, ...rest] = articles;
-  const date = (a: NewsArticle) =>
-    format(new Date(a.publishedAt ?? a.createdAt), "d MMMM yyyy", { locale });
+  const date = (a: NewsArticle) => clubDate(a.publishedAt ?? a.createdAt, lang, "dateLong");
 
   const Card = ({ a, big }: { a: NewsArticle; big?: boolean }) => (
     <button

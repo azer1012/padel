@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { format } from "date-fns";
 import {
   useListTournaments,
   useCreateTournament,
@@ -30,10 +29,13 @@ import {
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
-import { Field, Pill, toLocalInput, useConfirm, type Tone } from "@/components/smash/admin";
+import { Field, Pill, useConfirm, type Tone } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
-import { useTx, useDateLocale } from "@/lib/i18n";
-import { PHOTOS } from "@/config/club";
+import { useTx, useI18n } from "@/lib/i18n";
+import { clubDate, clubDateTime, toClubInput, fromClubInput } from "@/lib/club-time";
+import { apiErrorText } from "@/lib/api-errors";
+import { plural } from "@/lib/labels";
+import { EventCover } from "@/components/smash/cover";
 
 type Status = Tournament["status"];
 type Form = {
@@ -66,7 +68,7 @@ const TONE: Record<Status, Tone> = {
 
 export default function AdminTournaments() {
   const tx = useTx();
-  const locale = useDateLocale();
+  const { lang } = useI18n();
   const { toast } = useToast();
   const qc = useQueryClient();
   const { confirm, dialog } = useConfirm();
@@ -95,7 +97,6 @@ export default function AdminTournaments() {
     setEditing("new");
   };
   const openEdit = (t: Tournament) => {
-    // toLocalInput keeps the club's local time (the old code showed UTC and shifted dates on save)
     setForm({
       name: t.name,
       description: t.description ?? "",
@@ -103,8 +104,8 @@ export default function AdminTournaments() {
       prizeInfo: t.prizeInfo ?? "",
       imageUrl: t.imageUrl ?? "",
       maxTeams: t.maxTeams ? String(t.maxTeams) : "",
-      startDate: toLocalInput(t.startDate),
-      endDate: toLocalInput(t.endDate),
+      startDate: toClubInput(t.startDate),
+      endDate: toClubInput(t.endDate),
     });
     setEditing(t);
   };
@@ -122,7 +123,7 @@ export default function AdminTournaments() {
       });
       return;
     }
-    if (form.endDate && new Date(form.endDate) < new Date(form.startDate)) {
+    if (form.endDate && form.endDate < form.startDate) {
       toast({
         title: tx({
           fr: "La fin doit être après le début",
@@ -136,8 +137,8 @@ export default function AdminTournaments() {
     const payload = {
       name: form.name.trim(),
       description: form.description || undefined,
-      startDate: new Date(form.startDate).toISOString(),
-      endDate: form.endDate ? new Date(form.endDate).toISOString() : undefined,
+      startDate: fromClubInput(form.startDate),
+      endDate: form.endDate ? fromClubInput(form.endDate) : undefined,
       maxTeams: form.maxTeams ? parseInt(form.maxTeams) : undefined,
       status: form.status,
       prizeInfo: form.prizeInfo || undefined,
@@ -148,10 +149,10 @@ export default function AdminTournaments() {
       setEditing(null);
       refresh();
     };
-    const fail = (e: any) =>
+    const fail = (e: unknown) =>
       toast({
         title: tx({ fr: "Enregistrement impossible", en: "Couldn't save", ar: "تعذر الحفظ" }),
-        description: e?.data?.error,
+        description: apiErrorText(e, tx),
         variant: "destructive",
       });
     if (editing && editing !== "new")
@@ -192,8 +193,8 @@ export default function AdminTournaments() {
     const ok = await confirm({
       title: tx({ fr: `Annuler ${t.name} ?`, en: `Cancel ${t.name}?`, ar: `إلغاء ${t.name}؟` }),
       description: tx({
-        fr: `${t.registeredTeams ?? 0} équipe(s) inscrite(s) verront le tournoi comme annulé.`,
-        en: `${t.registeredTeams ?? 0} registered team(s) will see it as cancelled.`,
+        fr: `${t.registeredTeams ?? 0} ${plural(t.registeredTeams ?? 0, "équipe inscrite verra", "équipes inscrites verront")} le tournoi comme annulé.`,
+        en: `${t.registeredTeams ?? 0} registered ${plural(t.registeredTeams ?? 0, "team", "teams")} will see it as cancelled.`,
         ar: `${t.registeredTeams ?? 0} فريق مسجل سيرى البطولة ملغاة.`,
       }),
       confirmLabel: tx({ fr: "Annuler le tournoi", en: "Cancel tournament", ar: "إلغاء البطولة" }),
@@ -263,12 +264,7 @@ export default function AdminTournaments() {
                 className="lift enter flex flex-col overflow-hidden rounded-[30px] bg-card shadow-sm"
               >
                 <div className="relative h-[150px]">
-                  <img
-                    src={t.imageUrl || PHOTOS.tournament}
-                    alt=""
-                    loading="lazy"
-                    className="size-full object-cover"
-                  />
+                  <EventCover src={t.imageUrl} seed={t.id} className="size-full" />
                   <span className="absolute start-4 top-4">
                     <Pill tone={TONE[t.status]}>{statusLabel(t.status)}</Pill>
                   </span>
@@ -286,10 +282,10 @@ export default function AdminTournaments() {
                       <PencilSimpleIcon />
                     </Button>
                   </div>
-                  <span className="flex items-center gap-2 text-sm font-bold capitalize text-court">
+                  <span className="flex items-center gap-2 text-sm font-bold text-court">
                     <CalendarDotsIcon className="size-4" />
-                    {format(new Date(t.startDate), "EEE d MMM yyyy · HH:mm", { locale })}
-                    {t.endDate ? ` → ${format(new Date(t.endDate), "d MMM", { locale })}` : ""}
+                    {clubDateTime(t.startDate, lang, "shortYear")}
+                    {t.endDate ? ` → ${clubDate(t.endDate, lang, "dayMonth")}` : ""}
                   </span>
                   {t.prizeInfo && (
                     <span className="flex items-center gap-2 text-sm font-semibold">

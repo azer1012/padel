@@ -1,4 +1,4 @@
-import { Router, type Request } from "express";
+import { Router } from "express";
 import {
   db,
   tokenTransactionsTable,
@@ -6,20 +6,19 @@ import {
   usersTable,
   activityTable,
 } from "@workspace/db";
-import { eq, desc, count, and } from "drizzle-orm";
-import { requireUser, requireAdmin } from "../lib/auth";
+import { eq, desc, count, and, sql, type SQL } from "drizzle-orm";
+import { currentUser, requireUser, requireAdmin } from "../lib/auth";
+import { fullName } from "../lib/members";
 import { notifyLater } from "../lib/notify";
-import { formatClubDate, type Lang } from "../lib/club-time";
+import { formatClubDate } from "../lib/club-time";
 import { moveTokens } from "../lib/ledger";
 import { getSettings } from "../lib/settings";
 import { HttpError, cleanText, oneOf, paging, pgCode, requireId, toId } from "../lib/http";
 
 const router = Router();
-type DbUser = typeof usersTable.$inferSelect;
-const me = (req: Request) => (req as any).dbUser as DbUser;
 
 router.get("/tokens/balance", requireUser, async (req, res) => {
-  const user = me(req);
+  const user = currentUser(req);
   res.json({
     userId: user.id,
     balance: user.tokenBalance,
@@ -29,7 +28,7 @@ router.get("/tokens/balance", requireUser, async (req, res) => {
 });
 
 router.get("/tokens/transactions", requireUser, async (req, res) => {
-  const user = me(req);
+  const user = currentUser(req);
   const { page, limit, offset } = paging(req.query as Record<string, string>, 20, 100);
   const where = eq(tokenTransactionsTable.userId, user.id);
   const [{ total }] = await db.select({ total: count() }).from(tokenTransactionsTable).where(where);
@@ -51,7 +50,7 @@ router.get("/tokens/transactions", requireUser, async (req, res) => {
  * `idempotencyKey` (one per dialog) makes a double click or a retried request harmless.
  */
 router.post("/tokens/admin/adjust", requireAdmin, async (req, res) => {
-  const admin = me(req);
+  const admin = currentUser(req);
   const b = req.body ?? {};
   const userId = requireId(b.userId, "member");
   const type = oneOf(b.type, ["credit", "debit", "adjustment"] as const);
@@ -127,7 +126,7 @@ router.post("/tokens/admin/adjust", requireAdmin, async (req, res) => {
         .select()
         .from(usersTable)
         .where(eq(usersTable.id, userId))
-        .for("update");
+        .for("no key update");
       if (!target) throw new HttpError(404, "User not found", "USER_NOT_FOUND");
       const delta =
         type === "credit" ? amount : type === "debit" ? -amount : amount - target.tokenBalance;
@@ -152,7 +151,7 @@ router.post("/tokens/admin/adjust", requireAdmin, async (req, res) => {
         type: delta >= 0 ? "token_credited" : "token_debited",
         message: `${Math.abs(delta)} token(s) ${delta >= 0 ? "added to" : "removed from"} ${target.email}: ${description} (by ${admin.email})`,
         userId: target.id,
-        userName: `${target.firstName ?? ""} ${target.lastName ?? ""}`.trim() || target.email,
+        userName: fullName(target),
       });
       return { ...moved, target, delta };
     });
@@ -172,7 +171,6 @@ router.post("/tokens/admin/adjust", requireAdmin, async (req, res) => {
   }
 
   if (result.delta > 0) {
-    const lang = (result.target.language ?? "fr") as Lang;
     notifyLater(
       result.target.id,
       {
@@ -180,7 +178,7 @@ router.post("/tokens/admin/adjust", requireAdmin, async (req, res) => {
         amount: result.delta,
         balance: result.balanceAfter,
         reason: description,
-        expiresOn: expiresAt ? formatClubDate(expiresAt, lang) : null,
+        expiresOn: expiresAt ? formatClubDate(expiresAt, result.target.language) : null,
       },
       `tx:${result.row.id}`,
     );
@@ -195,7 +193,7 @@ router.post("/tokens/admin/adjust", requireAdmin, async (req, res) => {
 router.get("/tokens/admin/transactions", requireAdmin, async (req, res) => {
   const q = req.query as Record<string, string>;
   const { page, limit, offset } = paging(q, 20, 100);
-  const conditions = [];
+  const conditions: SQL[] = [];
   if (toId(q.userId)) conditions.push(eq(tokenTransactionsTable.userId, toId(q.userId)!));
   const type = oneOf(q.type, ["credit", "debit", "adjustment"] as const);
   if (type) conditions.push(eq(tokenTransactionsTable.type, type));
@@ -209,7 +207,11 @@ router.get("/tokens/admin/transactions", requireAdmin, async (req, res) => {
     limit,
     offset,
   });
-  res.json({ data, total: Number(total), page, limit });
+  // Tokens held by all members right now (the club's outstanding liability)
+  const [{ circulating }] = await db
+    .select({ circulating: sql<number>`coalesce(sum(${usersTable.tokenBalance}), 0)::int` })
+    .from(usersTable);
+  res.json({ data, total: Number(total), page, limit, circulating: Number(circulating) });
 });
 
 export default router;

@@ -1,4 +1,4 @@
-import { Router, type Request } from "express";
+import { Router } from "express";
 import {
   db,
   clubSettingsTable,
@@ -6,22 +6,19 @@ import {
   scheduleExceptionsTable,
   tokenPackagesTable,
   tokenTransactionsTable,
-  reservationsTable,
-  activityTable,
   terrainsTable,
-  usersTable,
 } from "@workspace/db";
-import { and, asc, count, eq, gt, gte, sql } from "drizzle-orm";
+import { asc, count, eq, gte, sql } from "drizzle-orm";
 import { z } from "zod";
-import { requireAdmin } from "../lib/auth";
-import { HttpError, cleanText, pgCode, requireId } from "../lib/http";
+import { currentUser, requireAdmin } from "../lib/auth";
+import { logActivity } from "../lib/activity";
+import { countUpcomingBookings } from "../lib/bookings";
+import { HttpError, cleanText, pgCode, requireId, toMoney, type Body } from "../lib/http";
 import { getOpeningHours, getSettings, invalidateSettings, publicSettings } from "../lib/settings";
 import { isValidCloseHhmm, isValidHhmm } from "../lib/slots";
 import { addDays, clubParts, isClubDate } from "../lib/club-time";
 
 const router = Router();
-type DbUser = typeof usersTable.$inferSelect;
-const me = (req: Request) => (req as any).dbUser as DbUser;
 
 /**
  * Every editable setting with its allowed range. Mirrors the CHECK constraints of
@@ -96,30 +93,6 @@ function validationError(err: z.ZodError): never {
   );
 }
 
-const upcoming = async () =>
-  Number(
-    (
-      await db
-        .select({ n: count() })
-        .from(reservationsTable)
-        .where(
-          and(
-            eq(reservationsTable.status, "confirmed"),
-            gt(reservationsTable.startTime, new Date()),
-          ),
-        )
-    )[0].n,
-  );
-
-async function logChange(admin: DbUser, message: string) {
-  await db.insert(activityTable).values({
-    type: "settings_updated",
-    message: `${message} (by ${admin.email})`,
-    userId: admin.id,
-    userName: `${admin.firstName ?? ""} ${admin.lastName ?? ""}`.trim() || admin.email,
-  });
-}
-
 // ─── Public: the rules every screen needs (prices, duration, features) ───────
 router.get("/settings", async (_req, res) => {
   const [settings, hours, packages] = await Promise.all([
@@ -148,7 +121,7 @@ router.get("/settings", async (_req, res) => {
 router.get("/admin/settings", requireAdmin, async (_req, res) => {
   invalidateSettings();
   const [settings, hours] = await Promise.all([getSettings(), getOpeningHours()]);
-  res.json({ ...settings, openingHours: hours, upcomingBookings: await upcoming() });
+  res.json({ ...settings, openingHours: hours, upcomingBookings: await countUpcomingBookings() });
 });
 
 router.patch("/admin/settings", requireAdmin, async (req, res) => {
@@ -167,7 +140,7 @@ router.patch("/admin/settings", requireAdmin, async (req, res) => {
       { issues: [{ field: "minPlayers", message: "≤ maxPlayers" }] },
     );
 
-  const admin = me(req);
+  const admin = currentUser(req);
   const [saved] = await db
     .update(clubSettingsTable)
     .set({ ...patch, updatedAt: new Date(), updatedBy: admin.id })
@@ -177,20 +150,25 @@ router.patch("/admin/settings", requireAdmin, async (req, res) => {
   const changed = (Object.keys(patch) as SettingKey[])
     .filter((k) => current[k] !== saved[k])
     .map((k) => `${k}: ${String(current[k])} → ${String(saved[k])}`);
-  if (changed.length) await logChange(admin, `Settings changed · ${changed.join(", ")}`);
-  res.json({ ...saved, openingHours: await getOpeningHours(), upcomingBookings: await upcoming() });
+  if (changed.length)
+    await logActivity(req, "settings_updated", `Settings changed · ${changed.join(", ")}`);
+  res.json({
+    ...saved,
+    openingHours: await getOpeningHours(),
+    upcomingBookings: await countUpcomingBookings(),
+  });
 });
 
 /** Back to the installation defaults (the column defaults of club_settings). */
 router.post("/admin/settings/reset", requireAdmin, async (req, res) => {
   const section = String(req.body?.section ?? "");
-  const admin = me(req);
+  const admin = currentUser(req);
   if (section === "openingHours") {
     await db
       .update(openingHoursTable)
       .set({ isClosed: sql`default`, openTime: sql`default`, closeTime: sql`default` });
     invalidateSettings();
-    await logChange(admin, "Opening hours reset to default");
+    await logActivity(req, "settings_updated", "Opening hours reset to default");
   } else {
     const keys = SECTIONS[section];
     if (!keys) throw new HttpError(400, "Unknown section", "VALIDATION_ERROR");
@@ -203,10 +181,10 @@ router.post("/admin/settings/reset", requireAdmin, async (req, res) => {
       })
       .where(eq(clubSettingsTable.id, 1));
     invalidateSettings();
-    await logChange(admin, `Settings section "${section}" reset to default`);
+    await logActivity(req, "settings_updated", `Settings section "${section}" reset to default`);
   }
   const [settings, hours] = await Promise.all([getSettings(), getOpeningHours()]);
-  res.json({ ...settings, openingHours: hours, upcomingBookings: await upcoming() });
+  res.json({ ...settings, openingHours: hours, upcomingBookings: await countUpcomingBookings() });
 });
 
 // ─── Admin: weekly opening hours ─────────────────────────────────────────────
@@ -214,18 +192,20 @@ router.put("/admin/opening-hours", requireAdmin, async (req, res) => {
   const days = req.body?.days;
   if (!Array.isArray(days) || days.length !== 7)
     throw new HttpError(400, "Send the 7 days of the week", "VALIDATION_ERROR");
-  const rows = days.map((d: any) => {
+  const rows = (days as Body[]).map((d) => {
     const weekday = Number(d?.weekday);
     if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6)
       throw new HttpError(400, "Invalid weekday", "VALIDATION_ERROR");
     const isClosed = d?.isClosed === true;
-    if (!isValidHhmm(d?.openTime) || !isValidCloseHhmm(d?.closeTime))
+    const openTime = d?.openTime,
+      closeTime = d?.closeTime;
+    if (!isValidHhmm(openTime) || !isValidCloseHhmm(closeTime))
       throw new HttpError(400, "Times must be HH:MM", "VALIDATION_ERROR", { weekday });
-    if (!isClosed && d.openTime >= d.closeTime)
+    if (!isClosed && openTime >= closeTime)
       throw new HttpError(400, "Closing time must be after opening time", "VALIDATION_ERROR", {
         weekday,
       });
-    return { weekday, isClosed, openTime: d.openTime as string, closeTime: d.closeTime as string };
+    return { weekday, isClosed, openTime, closeTime };
   });
   if (new Set(rows.map((r) => r.weekday)).size !== 7)
     throw new HttpError(400, "Each weekday must appear once", "VALIDATION_ERROR");
@@ -240,7 +220,7 @@ router.put("/admin/opening-hours", requireAdmin, async (req, res) => {
         });
   });
   invalidateSettings();
-  await logChange(me(req), "Opening hours updated");
+  await logActivity(req, "settings_updated", "Opening hours updated");
   res.json(await getOpeningHours());
 });
 
@@ -288,8 +268,9 @@ router.post("/admin/schedule-exceptions", requireAdmin, async (req, res) => {
         reason: cleanText(b.reason, 120),
       })
       .returning();
-    await logChange(
-      me(req),
+    await logActivity(
+      req,
+      "settings_updated",
       `${isClosed ? "Closure" : `Special hours ${openTime}–${closeTime}`} on ${b.date}${terrainId ? ` (court #${terrainId})` : ""}`,
     );
     res.status(201).json(row);
@@ -307,11 +288,12 @@ router.delete("/admin/schedule-exceptions/:id", requireAdmin, async (req, res) =
     .where(eq(scheduleExceptionsTable.id, id))
     .returning();
   if (!row) throw new HttpError(404, "Not found", "NOT_FOUND");
+  await logActivity(req, "settings_updated", `Schedule exception of ${row.date} removed`);
   res.status(204).send();
 });
 
 // ─── Admin: token packs sold at the desk ─────────────────────────────────────
-function packInput(b: any, creating: boolean) {
+function packInput(b: Body, creating: boolean) {
   const out: Partial<typeof tokenPackagesTable.$inferInsert> = {};
   if (creating || b?.name !== undefined) {
     const name = cleanText(b?.name, 60);
@@ -325,14 +307,13 @@ function packInput(b: any, creating: boolean) {
     out.tokens = n;
   }
   if (creating || b?.price !== undefined) {
-    const p = Number(b?.price);
-    if (!Number.isFinite(p) || p < 0 || p > 1_000_000)
-      throw new HttpError(400, "Invalid price", "VALIDATION_ERROR");
-    out.price = Math.round(p * 100) / 100;
+    const price = toMoney(b?.price, 1_000_000);
+    if (price === null) throw new HttpError(400, "Invalid price", "VALIDATION_ERROR");
+    out.price = price;
   }
   if (typeof b?.isActive === "boolean") out.isActive = b.isActive;
   if (b?.sortOrder !== undefined) {
-    const n = Number(b.sortOrder);
+    const n = Number(b?.sortOrder);
     if (!Number.isInteger(n) || n < 0 || n > 1000)
       throw new HttpError(400, "Invalid order", "VALIDATION_ERROR");
     out.sortOrder = n;
@@ -354,16 +335,28 @@ router.post("/admin/token-packages", requireAdmin, async (req, res) => {
     .insert(tokenPackagesTable)
     .values(packInput(req.body, true) as typeof tokenPackagesTable.$inferInsert)
     .returning();
+  await logActivity(
+    req,
+    "settings_updated",
+    `Token pack "${row.name}" created (${row.tokens} tokens, ${row.price})`,
+  );
   res.status(201).json(row);
 });
 
 router.patch("/admin/token-packages/:id", requireAdmin, async (req, res) => {
+  const patch = packInput(req.body, false);
+  if (!Object.keys(patch).length) throw new HttpError(400, "Nothing to update", "VALIDATION_ERROR");
   const [row] = await db
     .update(tokenPackagesTable)
-    .set(packInput(req.body, false))
+    .set(patch)
     .where(eq(tokenPackagesTable.id, requireId(req.params.id)))
     .returning();
   if (!row) throw new HttpError(404, "Not found", "NOT_FOUND");
+  await logActivity(
+    req,
+    "settings_updated",
+    `Token pack "${row.name}" updated (${row.tokens} tokens, ${row.price}, ${row.isActive ? "on sale" : "off sale"})`,
+  );
   res.json(row);
 });
 
@@ -381,6 +374,7 @@ router.delete("/admin/token-packages/:id", requireAdmin, async (req, res) => {
     .where(eq(tokenPackagesTable.id, id))
     .returning();
   if (!row) throw new HttpError(404, "Not found", "NOT_FOUND");
+  await logActivity(req, "settings_updated", `Token pack "${row.name}" deleted`);
   res.status(204).send();
 });
 

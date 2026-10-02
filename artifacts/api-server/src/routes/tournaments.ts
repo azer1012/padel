@@ -1,11 +1,18 @@
-import { Router, type Request } from "express";
-import { db, tournamentsTable, tournamentRegistrationsTable, usersTable } from "@workspace/db";
+import { Router } from "express";
+import { db, tournamentsTable, tournamentRegistrationsTable } from "@workspace/db";
 import { and, asc, eq, sql } from "drizzle-orm";
-import { requireAdmin, requireUser, loadUser } from "../lib/auth";
-import { HttpError, cleanText, oneOf, pgCode, requireId } from "../lib/http";
+import { currentUser, optionalUser, requireAdmin, requireUser, loadUser } from "../lib/auth";
+import {
+  HttpError,
+  cleanImageUrl,
+  cleanText,
+  oneOf,
+  pgCode,
+  requireId,
+  type Body,
+} from "../lib/http";
 
 const router = Router();
-type DbUser = typeof usersTable.$inferSelect;
 const STATUSES = ["upcoming", "open", "ongoing", "completed", "cancelled"] as const;
 
 function parseDate(v: unknown, what: string, required: boolean) {
@@ -18,7 +25,7 @@ function parseDate(v: unknown, what: string, required: boolean) {
   return d;
 }
 
-function tournamentInput(b: any, creating: boolean) {
+function tournamentInput(b: Body, creating: boolean) {
   const name = cleanText(b?.name, 120);
   if (creating && !name) throw new HttpError(400, "Name is required", "VALIDATION_ERROR");
   const status = b?.status === undefined ? undefined : oneOf(b.status, STATUSES);
@@ -33,9 +40,7 @@ function tournamentInput(b: any, creating: boolean) {
   const endDate = parseDate(b?.endDate, "end date", false);
   if (startDate && endDate && endDate < startDate)
     throw new HttpError(400, "The end date is before the start date", "VALIDATION_ERROR");
-  const imageUrl = cleanText(b?.imageUrl, 500);
-  if (imageUrl && !/^(https:\/\/|\/)/.test(imageUrl))
-    throw new HttpError(400, "Image URL must start with https://", "VALIDATION_ERROR");
+  const imageUrl = cleanImageUrl(b?.imageUrl);
   return {
     ...(name !== null || creating ? { name: name! } : {}),
     ...(b?.description !== undefined ? { description: cleanText(b.description, 4000) } : {}),
@@ -49,7 +54,7 @@ function tournamentInput(b: any, creating: boolean) {
 }
 
 router.get("/tournaments", loadUser, async (req, res) => {
-  const user = (req as any).dbUser as DbUser | undefined;
+  const user = optionalUser(req);
   const list = await db.select().from(tournamentsTable).orderBy(asc(tournamentsTable.startDate));
   let mine = new Set<number>();
   if (user) {
@@ -88,9 +93,9 @@ router.patch("/tournaments/:id", requireAdmin, async (req, res) => {
 });
 
 /** Registration: only while open, once per player, never beyond maxTeams. */
-router.post("/tournaments/:id/register", requireUser, async (req: Request, res) => {
+router.post("/tournaments/:id/register", requireUser, async (req, res) => {
   const id = requireId(req.params.id);
-  const user = (req as any).dbUser as DbUser;
+  const user = currentUser(req);
   const teamName = cleanText(req.body?.teamName, 80);
   try {
     const reg = await db.transaction(async (tx) => {
@@ -126,9 +131,9 @@ router.post("/tournaments/:id/register", requireUser, async (req: Request, res) 
   }
 });
 
-router.delete("/tournaments/:id/register", requireUser, async (req: Request, res) => {
+router.delete("/tournaments/:id/register", requireUser, async (req, res) => {
   const id = requireId(req.params.id);
-  const user = (req as any).dbUser as DbUser;
+  const user = currentUser(req);
   await db.transaction(async (tx) => {
     const [t] = await tx
       .select()

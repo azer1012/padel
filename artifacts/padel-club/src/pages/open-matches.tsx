@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { isToday, isTomorrow, differenceInCalendarDays } from "date-fns";
 import { useGetOpenMatches } from "@workspace/api-client-react";
 import { TennisBallIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
@@ -9,27 +8,32 @@ import { EmptyState, ErrorState, Page, PageHeader } from "@/components/smash/pri
 import { MatchCard } from "@/components/smash/match-card";
 import { useJoinMatch } from "@/hooks/use-join-match";
 import { useTx } from "@/lib/i18n";
+import { clubDay, clubToday, addClubDays } from "@/lib/club-time";
+import { tokensLabel } from "@/lib/labels";
+import { useClubRules } from "@/hooks/use-club-rules";
 
 type Range = "all" | "today" | "tomorrow" | "week";
 
 export default function OpenMatches() {
   const tx = useTx();
+  const rules = useClubRules();
   const { data: matches, isLoading, isError, refetch } = useGetOpenMatches();
   const { run, pendingId } = useJoinMatch();
   const [range, setRange] = useState<Range>("all");
 
+  const today = clubToday();
   const filtered = useMemo(
     () =>
       (matches ?? [])
         .filter((m) => {
-          const d = new Date(m.startTime);
-          if (range === "today") return isToday(d);
-          if (range === "tomorrow") return isTomorrow(d);
-          if (range === "week") return differenceInCalendarDays(d, new Date()) < 7;
+          const day = clubDay(m.startTime);
+          if (range === "today") return day === today;
+          if (range === "tomorrow") return day === addClubDays(today, 1);
+          if (range === "week") return day < addClubDays(today, 7);
           return true;
         })
         .sort((a, b) => +new Date(a.startTime) - +new Date(b.startTime)),
-    [matches, range],
+    [matches, range, today],
   );
 
   const ranges: { id: Range; label: string }[] = [
@@ -49,9 +53,9 @@ export default function OpenMatches() {
           ar: "لا شريك؟ لا مشكلة.",
         })}
         subtitle={tx({
-          fr: "Des joueurs ouvrent leurs matchs au club. Prenez une place libre pour 1 token.",
-          en: "Players open their matches to the club. Take an open spot for 1 token.",
-          ar: "اللاعبون يفتحون مبارياتهم. خذ مكانًا شاغرًا برصيد واحد.",
+          fr: `Des joueurs ouvrent leurs matchs au club. Prenez une place libre pour ${tokensLabel(rules.tokenCostPlayer)}.`,
+          en: `Players open their matches to the club. Take an open spot for ${tokensLabel(rules.tokenCostPlayer)}.`,
+          ar: `اللاعبون يفتحون مبارياتهم. خذ مكانًا شاغرًا بـ ${rules.tokenCostPlayer} رصيد.`,
         })}
         actions={
           <Button asChild variant="dark">
@@ -64,13 +68,13 @@ export default function OpenMatches() {
       <div
         role="group"
         aria-label={tx({ fr: "Période", en: "When", ar: "الفترة" })}
-        className="enter flex self-start rounded-full bg-card p-1 shadow-sm"
+        className="enter pill-group"
       >
         {ranges.map((r) => (
           <button
             key={r.id}
             type="button"
-            className="pill-tab h-10"
+            className="pill-tab"
             aria-pressed={range === r.id}
             onClick={() => setRange(r.id)}
           >

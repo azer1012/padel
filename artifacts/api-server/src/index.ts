@@ -12,10 +12,15 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 if (env.nodeEnv === "production") {
+  // Fail closed: a production API never answers browsers of unknown websites
   if (env.corsOrigin === true)
-    logger.warn("CORS_ORIGIN is not set: any website can call this API from a browser");
+    throw new Error(
+      "CORS_ORIGIN must list the club's website origin(s) in production, e.g. https://club.example",
+    );
   if (!env.frontendUrl)
     logger.warn("FRONTEND_URL is not set: invite links and emails will be broken");
+  if (env.resendApiKey && !process.env.EMAIL_FROM)
+    logger.warn("EMAIL_FROM is not set: the e-mail provider will refuse every notification");
 }
 
 // Safety net: log instead of crashing on a stray rejected promise

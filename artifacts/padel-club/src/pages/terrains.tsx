@@ -1,6 +1,6 @@
 import { useGetMe } from "@workspace/api-client-react";
 import { CoinsIcon, TimerIcon, UsersIcon } from "@/components/icons";
-import CourtCalendar from "@/components/court-calendar";
+import CourtCalendar from "@/components/calendar/court-calendar";
 import { Page, PageHeader } from "@/components/smash/primitives";
 import { useAuth } from "@/lib/auth";
 import { useTx } from "@/lib/i18n";
@@ -8,7 +8,7 @@ import { useClubRules } from "@/hooks/use-club-rules";
 
 export default function Terrains() {
   const { isSignedIn } = useAuth();
-  const { data: me } = useGetMe({ query: { enabled: isSignedIn } as any });
+  const { data: me } = useGetMe({ query: { enabled: isSignedIn } });
   const tx = useTx();
   const rules = useClubRules();
   const facts = [

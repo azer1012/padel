@@ -3,7 +3,7 @@ import { and, eq, gt, inArray, lte } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { notify } from "../lib/notify";
 import { equipmentFor } from "../lib/equipment";
-import { formatClubDate, formatClubTime, type Lang } from "../lib/club-time";
+import { formatClubDate, formatClubTime } from "../lib/club-time";
 import { getSettings } from "../lib/settings";
 
 const MIN = 60 * 1000;
@@ -39,7 +39,7 @@ export async function sendReminders(now = new Date()) {
   const lead = settings.reminderLeadMinutes;
   const due = await db.query.reservationsTable.findMany({
     where: and(
-      eq(reservationsTable.status, "confirmed" as any),
+      eq(reservationsTable.status, "confirmed"),
       gt(reservationsTable.startTime, new Date(now.getTime() + 5 * MIN)),
       lte(reservationsTable.startTime, new Date(now.getTime() + lead * MIN)),
     ),
@@ -54,7 +54,6 @@ export async function sendReminders(now = new Date()) {
     for (const uid of players.get(r.id) ?? []) {
       const u = users.get(uid);
       if (!u) continue;
-      const lang = (u.language ?? "fr") as Lang;
       const gear = await equipmentFor(r.id, uid);
       if (
         await notify(
@@ -62,7 +61,7 @@ export async function sendReminders(now = new Date()) {
           {
             kind: "reservation_reminder",
             terrain: r.terrain?.name ?? "",
-            date: formatClubDate(r.startTime, lang),
+            date: formatClubDate(r.startTime, u.language),
             time: formatClubTime(r.startTime),
             equipment: gear,
           },
@@ -80,7 +79,7 @@ export async function sendMatchFinished(now = new Date()) {
   if (!(await getSettings()).matchFinishedNotificationsEnabled) return 0;
   const done = await db.query.reservationsTable.findMany({
     where: and(
-      eq(reservationsTable.status, "confirmed" as any),
+      eq(reservationsTable.status, "confirmed"),
       gt(reservationsTable.endTime, new Date(now.getTime() - 6 * 60 * MIN)),
       lte(reservationsTable.endTime, now),
     ),

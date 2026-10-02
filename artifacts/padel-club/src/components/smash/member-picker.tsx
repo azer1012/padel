@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useListUsers } from "@workspace/api-client-react";
 import type { User } from "@workspace/api-client-react";
 import { MagnifyingGlassIcon, XIcon } from "@/components/icons";
 import { Input } from "@/components/ui/input";
 import { useTx } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-
-const fullName = (u: User) => `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email;
+import { memberName } from "@/lib/labels";
+import { useDebounced } from "@/hooks/use-debounced";
 
 /** Admin: find a member by name, email or phone. */
 export function MemberPicker({
@@ -22,21 +22,18 @@ export function MemberPicker({
 }) {
   const tx = useTx();
   const [term, setTerm] = useState("");
-  const [debounced, setDebounced] = useState("");
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(term.trim()), 250);
-    return () => clearTimeout(t);
-  }, [term]);
-  const { data, isFetching } = useListUsers({ search: debounced || undefined, limit: 8 } as any, {
-    query: { enabled: !value } as any,
-  });
+  const search = useDebounced(term.trim());
+  const { data, isFetching } = useListUsers(
+    { search: search || undefined, limit: 8 },
+    { query: { enabled: !value } },
+  );
   const users = (data?.data ?? []).filter((u) => !excludeIds.includes(u.id));
 
   if (value)
     return (
       <div className="flex items-center justify-between gap-3 rounded-2xl bg-secondary px-4 py-3">
         <span className="flex min-w-0 flex-col">
-          <span className="truncate font-bold">{fullName(value)}</span>
+          <span className="truncate font-bold">{memberName(value)}</span>
           <span className="truncate text-xs text-muted-foreground">
             {value.email} · {value.tokenBalance} tokens
           </span>
@@ -83,7 +80,7 @@ export function MemberPicker({
               className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-start hover:bg-secondary"
             >
               <span className="flex min-w-0 flex-col">
-                <span className="truncate font-semibold">{fullName(u)}</span>
+                <span className="truncate font-semibold">{memberName(u)}</span>
                 <span className="truncate text-xs text-muted-foreground">
                   {u.email}
                   {u.phone ? ` · ${u.phone}` : ""}

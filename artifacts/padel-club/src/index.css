@@ -100,7 +100,7 @@
   --muted-foreground: 230 30% 41%; /*       #4A5488 */
   --accent: 229 100% 96%; /* soft court tint for menus */
   --accent-foreground: 230 66% 18%;
-  --destructive: 358 75% 59%;
+  --destructive: 358 68% 50%;
   --destructive-foreground: 0 0% 100%;
   --input: 229 52% 89%;
   --ring: 230 92% 57%;
@@ -151,7 +151,7 @@
   --color-muted-d: #aeb7e6;
   --color-soft-d: #d5dbf7;
   --color-star: #ffb020;
-  --color-success: #1f9d5b;
+  --color-success: #17834b;
   --font-display:
     "Bricolage Grotesque", "IBM Plex Sans Arabic", ui-sans-serif, system-ui, sans-serif;
   --ease-out-soft: cubic-bezier(0.2, 0.7, 0.2, 1);
@@ -454,6 +454,48 @@
     color: var(--color-night);
   }
 
+  /* Segmented control: a row of .pill-tab that scrolls sideways instead of widening the page */
+  .pill-group {
+    display: flex;
+    align-self: flex-start;
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding: 4px;
+    border-radius: 999px;
+    background: hsl(var(--card));
+    box-shadow: var(--shadow-sm);
+  }
+  .pill-group::-webkit-scrollbar {
+    display: none;
+  }
+  .pill-group > .pill-tab {
+    height: 40px;
+    flex-shrink: 0;
+  }
+  /* The group clips what sticks out: keep the focus ring inside the pill */
+  .pill-group > .pill-tab:focus-visible {
+    outline-offset: -3px;
+  }
+
+  /* Action bar of a dialog: stays in reach while the content above scrolls */
+  .dialog-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    margin: 0 -24px -24px;
+    padding: 12px 24px max(20px, env(safe-area-inset-bottom));
+    background: hsl(var(--card));
+    box-shadow: 0 -14px 18px -16px rgb(16 26 77 / 0.28);
+  }
+  @media (min-width: 640px) {
+    .dialog-actions {
+      margin: 0 -32px -32px;
+      padding: 14px 32px 24px;
+    }
+  }
+
   /* Aerial court tiles (hero board) */
   .stage {
     perspective: 1800px;
@@ -580,7 +622,7 @@
   .slot[data-state="past"] {
     background: transparent;
     border: 2px dashed #e1e6f7;
-    color: #a3aacb;
+    color: #5f6899;
     cursor: default;
   }
   .slot[data-state="blocked"] {

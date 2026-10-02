@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { addDays, format, isSameDay } from "date-fns";
 import { useGetCalendar } from "@workspace/api-client-react";
 import type { CalendarSlot, CalendarTerrain } from "@workspace/api-client-react";
 import { ArrowRightIcon, HandTapIcon } from "@/components/icons";
@@ -8,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { CourtLines, LiveDot } from "@/components/smash/primitives";
 import { useTx } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { clubTime } from "@/lib/club-time";
+import { clubTime, clubDay, clubToday, addClubDays } from "@/lib/club-time";
 import { useClubRules } from "@/hooks/use-club-rules";
+import { plural, tokensLabel } from "@/lib/labels";
 
 type CourtState = "free" | "partial" | "busy" | "selected";
 const hhmm = (iso: string) => clubTime(iso);
@@ -23,18 +23,15 @@ function isJoinable(s?: CalendarSlot) {
 
 /** Today's (or tomorrow's, late at night) availability grouped by start time. */
 export function useTonight() {
-  const today = new Date();
-  const q1 = useGetCalendar(
-    { date: format(today, "yyyy-MM-dd") },
-    { query: { refetchInterval: 60_000 } as any },
-  );
+  const today = clubToday();
+  const q1 = useGetCalendar({ date: today }, { query: { refetchInterval: 60_000 } });
   const todayHasFuture = (q1.data?.terrains ?? []).some((t) =>
-    t.slots.some((s) => s.status !== "past" && isSameDay(new Date(s.startTime), today)),
+    t.slots.some((s) => s.status !== "past" && clubDay(s.startTime) === today),
   );
-  const tomorrow = addDays(today, 1);
+  const tomorrow = addClubDays(today, 1);
   const q2 = useGetCalendar(
-    { date: format(tomorrow, "yyyy-MM-dd") },
-    { query: { enabled: q1.isSuccess && !todayHasFuture } as any },
+    { date: tomorrow },
+    { query: { enabled: q1.isSuccess && !todayHasFuture } },
   );
   const useTomorrow = q1.isSuccess && !todayHasFuture;
   const q = useTomorrow ? q2 : q1;
@@ -45,14 +42,13 @@ export function useTonight() {
     const s = new Set<string>();
     terrains.forEach((t) =>
       t.slots.forEach((sl) => {
-        if (sl.status !== "past" && isSameDay(new Date(sl.startTime), day))
-          s.add(hhmm(sl.startTime));
+        if (sl.status !== "past" && clubDay(sl.startTime) === day) s.add(hhmm(sl.startTime));
       }),
     );
     return Array.from(s).sort();
   }, [terrains, day]);
   const slotAt = (t: CalendarTerrain, time: string) =>
-    t.slots.find((s) => hhmm(s.startTime) === time && isSameDay(new Date(s.startTime), day));
+    t.slots.find((s) => hhmm(s.startTime) === time && clubDay(s.startTime) === day);
   const freeAt = (time: string) => terrains.filter((t) => isBookable(slotAt(t, time))).length;
   return { ...q, terrains, times, slotAt, freeAt, isTomorrow: useTomorrow };
 }
@@ -109,8 +105,8 @@ export function LiveBoard({
         ? tx({ fr: "Libre", en: "Free", ar: "متاح" })
         : c.state === "partial"
           ? tx({
-              fr: `${c.s?.openSpots} place(s)`,
-              en: `${c.s?.openSpots} spot(s)`,
+              fr: `${c.s?.openSpots} ${plural(c.s?.openSpots ?? 0, "place", "places")}`,
+              en: `${c.s?.openSpots} ${plural(c.s?.openSpots ?? 0, "spot", "spots")}`,
               ar: `${c.s?.openSpots} مكان`,
             })
           : c.next
@@ -124,7 +120,7 @@ export function LiveBoard({
       className={
         mobile
           ? "hscroll -mx-5 gap-2 px-5"
-          : "flex gap-1.5 rounded-3xl border border-white/10 bg-white/6 p-1.5"
+          : "hscroll max-w-full gap-1.5 rounded-3xl border border-white/10 bg-white/6 p-1.5"
       }
     >
       {tabs.map((tm, i) => {
@@ -152,7 +148,7 @@ export function LiveBoard({
                 className="size-[7px] rounded-full"
                 style={{ background: n >= 2 ? "var(--color-ball)" : "var(--color-coral)" }}
               />
-              {tx({ fr: `${n} libre(s)`, en: `${n} free`, ar: `${n} متاح` })}
+              {tx({ fr: `${n} ${plural(n, "libre", "libres")}`, en: `${n} free`, ar: `${n} متاح` })}
             </span>
           </button>
         );
@@ -182,7 +178,7 @@ export function LiveBoard({
                 <span className="disp absolute end-2.5 top-1.5 text-[26px] opacity-90">
                   {String(i + 1).padStart(2, "0")}
                 </span>
-                <span className="absolute start-2.5 top-2.5 max-w-[60%] truncate text-xs font-bold opacity-80">
+                <span className="absolute start-2.5 top-2.5 max-w-[60%] truncate text-xs font-bold opacity-95">
                   {c.t.terrain.name}
                 </span>
                 {c.base !== "free" &&
@@ -237,9 +233,9 @@ export function LiveBoard({
               <span className="text-sm font-bold text-success">
                 {sel.base === "free"
                   ? tx({
-                      fr: "ou 1 token pour votre place",
-                      en: "or 1 token for your spot",
-                      ar: "أو رصيد واحد لمكانك",
+                      fr: `ou ${tokensLabel(rules.tokenCostPlayer)} pour votre place`,
+                      en: `or ${tokensLabel(rules.tokenCostPlayer)} for your spot`,
+                      ar: `أو ${rules.tokenCostPlayer} رصيد لمكانك`,
                     })
                   : tx({ fr: "pour rejoindre", en: "to join", ar: "للانضمام" })}
               </span>

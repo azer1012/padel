@@ -67,7 +67,7 @@ NULL by default = use the club settings / weekly hours. Set both times or neithe
 | `notifications`                                   | In-app notifications.                                                                   |
 | `notification_log`                                | One row per (user, kind, ref) sent: makes every notification idempotent across retries. |
 | `push_subscriptions`                              | Web push endpoints per device.                                                          |
-| `activity`                                        | Staff-facing activity feed (bookings, cancellations, token moves, settings changes).    |
+| `activity`                                        | Audit trail of staff and booking events (see "Audit trail" below).                      |
 | `news`, `tournaments`, `tournament_registrations` | Club content.                                                                           |
 
 Legacy, unused by the application (kept, private, empty on new projects):
@@ -80,6 +80,39 @@ are `users.role`.
 | -------------------- | ---------------------------------------------------------------------------- |
 | `token_ledger_audit` | Accounts whose balance doesn't match their last ledger entry. Must be empty. |
 | `open_matches`       | Public matches with open spots (`security_invoker`).                         |
+
+### Audit trail (`activity.type`)
+
+| Type                                           | Written when                                                                 |
+| ---------------------------------------------- | ---------------------------------------------------------------------------- |
+| `reservation_created`, `reservation_cancelled` | a booking, a slot block, a recurring series, a cancellation (with the admin) |
+| `token_credited`, `token_debited`              | an admin credit, debit or balance correction (the ledger holds the amounts)  |
+| `settings_updated`                             | Réglages, opening hours, exceptions, token packs (old → new values)          |
+| `payment_updated`                              | a cash payment marked received / not received at the desk                    |
+| `role_changed`                                 | a member promoted to admin or back to player                                 |
+| `court_updated`                                | a court created, edited, put in maintenance, archived, restored or deleted   |
+| `pricing_updated`                              | a peak / off-peak pricing rule created, edited or deleted                    |
+| `user_registered`                              | reserved for sign-ups                                                        |
+
+Every entry names the admin who acted and, when a member is concerned, that member.
+
+## Dates and times
+
+One rule: **the database stores instants in UTC, the club's time zone is applied
+when a time is read or shown.**
+
+- Columns are `timestamp` (without time zone) holding UTC. The API writes them
+  through Drizzle (always UTC) and pins every database session to UTC
+  (`lib/db/src/index.ts`), so SQL `now()` defaults agree with it on any server.
+- "What day / what time is it at the club" is computed in one place per side:
+  `artifacts/api-server/src/lib/club-time.ts` (`CLUB_TIMEZONE`) and
+  `artifacts/padel-club/src/lib/club-time.ts` (`VITE_CLUB_TIMEZONE`). Slots,
+  opening hours, recurring series, reports and e-mails use them, so a player
+  travelling abroad still sees club times, and daylight-saving changes are handled.
+- Opening hours and pricing-rule hours are club wall-clock strings (`HH:MM`);
+  holidays are club dates (`date`).
+- In SQL, convert before grouping by day or hour:
+  `(start_time at time zone 'UTC') at time zone '<club zone>'`.
 
 ## Rules the database guarantees
 
@@ -112,6 +145,7 @@ They hold even if the API had a bug, and are tested by
 | `20261001000000_pricing_equipment_series_notifications.sql` | Pricing rules, equipment, recurring bookings, notifications.                |
 | `20261002000000_security_and_integrity.sql`                 | Lockdown, overlap constraint, capacity, ledger guards, payment states.      |
 | `20261003000000_club_settings.sql`                          | Club settings, opening hours, exceptions, packs, court fields, invitations. |
+| `20261005000000_audit_trail_types.sql`                      | Audit-trail types (cash, roles, courts, pricing rules) and two indexes.     |
 
 All migrations are additive or guarded; none deletes club data. Apply them with
 `pnpm --filter @workspace/scripts run db:migrate` (or `supabase db push`, or the

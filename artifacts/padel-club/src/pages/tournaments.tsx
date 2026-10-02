@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { format } from "date-fns";
 import {
   useListTournaments,
   useRegisterForTournament,
@@ -15,15 +14,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState, Page, PageHeader } from "@/components/smash/primitives";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
-import { useI18n, useTx, useDateLocale } from "@/lib/i18n";
-import { PHOTOS } from "@/config/club";
+import { useI18n, useTx } from "@/lib/i18n";
+import { clubDate } from "@/lib/club-time";
+import { apiErrorText } from "@/lib/api-errors";
+import { EventCover } from "@/components/smash/cover";
 
 type Filter = "all" | "open" | "upcoming" | "past";
 
 export default function Tournaments() {
   const tx = useTx();
   const { t } = useI18n();
-  const locale = useDateLocale();
+  const { lang } = useI18n();
   const { isSignedIn } = useAuth();
   const [, setLocation] = useLocation();
   const { data: tournaments, isLoading, isError, refetch } = useListTournaments();
@@ -77,14 +78,14 @@ export default function Tournaments() {
           });
           qc.invalidateQueries({ queryKey: getListTournamentsQueryKey() });
         },
-        onError: (e: any) =>
+        onError: (e) =>
           toast({
             title: tx({
               fr: "Inscription impossible",
               en: "Registration failed",
               ar: "تعذر التسجيل",
             }),
-            description: e?.data?.error,
+            description: apiErrorText(e, tx),
             variant: "destructive",
           }),
       },
@@ -109,12 +110,12 @@ export default function Tournaments() {
           ar: "بطولات النادي لكل المستويات. سجّل فريقك بنقرة.",
         })}
       />
-      <div role="group" className="enter flex self-start rounded-full bg-card p-1 shadow-sm">
+      <div role="group" className="enter pill-group">
         {filters.map((f) => (
           <button
             key={f.id}
             type="button"
-            className="pill-tab h-10"
+            className="pill-tab"
             aria-pressed={filter === f.id}
             onClick={() => setFilter(f.id)}
           >
@@ -158,12 +159,12 @@ export default function Tournaments() {
                 key={x.id}
                 className="lift group flex flex-col overflow-hidden rounded-[32px] bg-card shadow-sm"
               >
-                <div className="photo relative h-[220px]">
-                  <img
-                    src={x.imageUrl || PHOTOS.tournament}
-                    alt=""
-                    loading="lazy"
-                    className="size-full object-cover transition-transform duration-700 group-hover:scale-105"
+                <div className="relative h-[220px]">
+                  <EventCover
+                    src={x.imageUrl}
+                    seed={x.id}
+                    className="size-full"
+                    imgClassName="transition-transform duration-700 group-hover:scale-105"
                   />
                   <Badge
                     variant={statusVariant(x.status)}
@@ -173,10 +174,10 @@ export default function Tournaments() {
                   </Badge>
                 </div>
                 <div className="flex flex-1 flex-col gap-4 p-6 sm:p-7">
-                  <span className="flex items-center gap-2 text-sm font-bold capitalize text-court">
+                  <span className="flex items-center gap-2 text-sm font-bold text-court">
                     <CalendarDotsIcon className="size-4" />
-                    {format(new Date(x.startDate), "EEEE d MMMM yyyy", { locale })}
-                    {x.endDate ? ` → ${format(new Date(x.endDate), "d MMM", { locale })}` : ""}
+                    {clubDate(x.startDate, lang, "longYear")}
+                    {x.endDate ? ` → ${clubDate(x.endDate, lang, "dayMonth")}` : ""}
                   </span>
                   <h2 className="disp m-0 text-[30px] leading-tight">{x.name}</h2>
                   {x.description && (

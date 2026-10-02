@@ -165,7 +165,7 @@ await step("book a full court (4 tokens) and get an invite link", async () => {
   await dialog.getByRole("radio", { name: /Terrain complet/ }).waitFor();
   await shot(y.page, "03-book-dialog");
   await dialog.getByRole("button", { name: "Confirmer" }).click();
-  await dialog.getByText("C'est réservé !").waitFor({ timeout: 10000 });
+  await dialog.getByText("Réservation confirmée").waitFor({ timeout: 10000 });
   const code = dialog.locator("code");
   await code.waitFor({ timeout: 10000 });
   inviteUrl = (await code.innerText()).trim();
@@ -195,10 +195,9 @@ await step("book only my spot (1 token) as an open match", async () => {
   await y.page.goto(`${WEB}/terrains`);
   await openSlot(y.page, "Court 3", "20:00");
   const dialog = y.page.getByRole("dialog");
-  await dialog.getByRole("radio", { name: /Ma place/ }).click();
+  await dialog.getByRole("radio", { name: /Juste ma place/ }).click();
   await dialog.getByRole("button", { name: "Confirmer" }).click();
-  await dialog.getByText("C'est réservé !").waitFor({ timeout: 10000 });
-  await dialog.getByRole("button", { name: "Terminé" }).click();
+  await dialog.getByText("Réservation confirmée").waitFor({ timeout: 10000 });
   const up = await api(USERS.yasmine, "GET", "/reservations/upcoming");
   const own = up.body.find((r) => r.bookingMode === "own_spot");
   ownSpotId = own.id;
@@ -211,7 +210,7 @@ await step("another player takes a spot and pays cash at the club (2/4)", async 
   await i.page.goto(`${WEB}/terrains`);
   await openSlot(i.page, "Court 3", "20:00");
   const dialog = i.page.getByRole("dialog");
-  await dialog.getByText(/3 place\(s\) libre\(s\)/).waitFor({ timeout: 10000 });
+  await dialog.getByText(/3 places libres/).waitFor({ timeout: 10000 });
   await shot(i.page, "07-open-match-mobile");
   await dialog.getByRole("button", { name: /Payer au club/ }).click();
   await i.page.getByText("Vous êtes dans le match !").first().waitFor({ timeout: 10000 });
@@ -244,7 +243,7 @@ await step("a slot taken meanwhile is refused cleanly (no double booking)", asyn
   assert(r.status === 201, `admin booking ${r.status}`);
   const dialog = y.page.getByRole("dialog");
   await dialog.getByRole("button", { name: "Confirmer" }).click();
-  await y.page.getByText("Ce créneau vient d'être réservé").first().waitFor({ timeout: 10000 });
+  await y.page.getByText("Ce terrain vient d'être réservé").first().waitFor({ timeout: 10000 });
   await y.page.getByRole("dialog").waitFor({ state: "hidden", timeout: 10000 });
   const me = await api(USERS.yasmine, "GET", "/users/me");
   assert(me.body.tokenBalance === 7, `balance changed to ${me.body.tokenBalance}`);
@@ -405,7 +404,7 @@ await step("a new booking follows the new rules (60 min, 6 tokens)", async () =>
     .waitFor({ timeout: 10000 });
   await dialog.getByText("120 TND").first().waitFor();
   await dialog.getByRole("button", { name: "Confirmer" }).click();
-  await dialog.getByText("C'est réservé !").waitFor({ timeout: 10000 });
+  await dialog.getByText("Réservation confirmée").waitFor({ timeout: 10000 });
   await shot(y.page, "20-booked-60min");
   const after = (await api(USERS.yasmine, "GET", "/users/me")).body.tokenBalance;
   assert(after === before - 6, `balance ${before} → ${after}`);
@@ -425,10 +424,10 @@ await step("invite a member in the app; they see it on their dashboard", async (
   await shot(y.page, "21-invite-member");
   const i = await as(USERS.ines, { width: 390, height: 844 });
   await i.page.goto(`${WEB}/dashboard`);
-  await i.page.getByText(/invitation\(s\) à un match/).waitFor({ timeout: 15000 });
+  await i.page.getByText(/1 invitation à un match/).waitFor({ timeout: 15000 });
   await shot(i.page, "22-dashboard-invitation-mobile");
   await i.page.getByRole("button", { name: "Refuser" }).first().click();
-  await i.page.getByText(/invitation\(s\) à un match/).waitFor({ state: "hidden", timeout: 10000 });
+  await i.page.getByText(/invitation à un match/).waitFor({ state: "hidden", timeout: 10000 });
   await i.ctx.close();
 });
 

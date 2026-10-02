@@ -208,3 +208,15 @@ do $$ begin
     'courts should inherit club settings by default';
   raise notice 'ok 10 - club settings single row, validated, courts inherit';
 end $$;
+
+-- 11. Audit trail: staff actions have their own types; unknown types are refused
+do $$ begin
+  insert into public.activity (type, message) values
+    ('payment_updated', 'x'), ('role_changed', 'x'), ('court_updated', 'x'), ('pricing_updated', 'x');
+  begin
+    insert into public.activity (type, message) values ('anything_else', 'x');
+    raise exception 'unknown activity type accepted';
+  exception when check_violation then null;
+  end;
+  raise notice 'ok 11 - audit trail types';
+end $$;

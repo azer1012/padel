@@ -46,27 +46,41 @@ The SMTP password lives only in the Supabase dashboard (never in the repo or `.e
 
 ## 3. Auth e-mail templates
 
-**Authentication → Emails → Templates**. Keep `{{ .ConfirmationURL }}` in every
-template; keep them short and plain (better deliverability).
+**Authentication → Emails → Templates**. Keep them short and plain (better
+deliverability), and use the **token-hash link** below instead of the default
+`{{ .ConfirmationURL }}`.
 
-| Template              | Subject (FR)                            |
-| --------------------- | --------------------------------------- |
-| Confirm signup        | Confirmez votre compte `<Club name>`    |
-| Reset password        | Réinitialisez votre mot de passe        |
-| Change e-mail address | Confirmez votre nouvelle adresse e-mail |
-| Magic link            | (unused by the app)                     |
+Why: the default link only completes in the browser that asked for it. A player
+who signs up on a laptop and opens the e-mail on a phone (or in a mail app's
+built-in browser) would land on "this link is no longer valid". The token-hash
+link opens the site's `/auth/confirm` page, which works on any device.
+
+| Template              | Subject (FR)                            | Link in the body                                                                                        |
+| --------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Confirm signup        | Confirmez votre compte `<Club name>`    | `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next={{ .RedirectTo }}`             |
+| Reset password        | Réinitialisez votre mot de passe        | `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery`                                 |
+| Change e-mail address | Confirmez votre nouvelle adresse e-mail | `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email_change&next={{ .SiteURL }}/profile` |
+| Magic link            | (unused by the app)                     |                                                                                                         |
+
+`{{ .SiteURL }}` is **Authentication → URL Configuration → Site URL**: it must be
+the club's website (`https://<club-domain>`, no trailing slash).
 
 Example body (Confirm signup):
 
 ```html
 <p>Bonjour,</p>
 <p>Confirmez votre adresse pour activer votre compte <Club name> :</p>
-<p><a href="{{ .ConfirmationURL }}">Confirmer mon adresse</a></p>
+<p>
+  <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next={{ .RedirectTo }}"
+    >Confirmer mon adresse</a
+  >
+</p>
 <p>Si vous n'avez pas créé de compte, ignorez ce message.</p>
 ```
 
-The password-reset link brings players to `/reset-password` (allowed by the
-`https://<club-domain>/**` redirect URL).
+After confirming, the player is signed in and sent to the page they were heading
+to; the password-reset link brings them to `/reset-password`. A template still
+using `{{ .ConfirmationURL }}` keeps working, in the same browser only.
 
 ## 4. API notification e-mails
 
@@ -89,7 +103,8 @@ club's own duration, token costs and currency.
 ## 5. Test
 
 - [ ] Sign up with a fresh Gmail and Outlook address: confirmation arrives in the inbox, not spam
-- [ ] Password reset arrives and the link opens `/reset-password`
+- [ ] Open the confirmation e-mail on **another device** than the one used to sign up: the account opens
+- [ ] Password reset arrives and the link opens `/reset-password`, also from another device
 - [ ] Book a match: confirmation e-mail with the club name and correct time
 - [ ] Credit tokens to a test member: "tokens added" e-mail
 - [ ] <https://www.mail-tester.com>: score ≥ 9/10

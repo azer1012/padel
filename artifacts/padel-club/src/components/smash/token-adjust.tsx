@@ -4,7 +4,6 @@ import {
   useAdjustUserTokens,
   useGetUser,
   getListUsersQueryKey,
-  apiErrorMessage,
   getGetUserQueryKey,
   getListAllTokenTransactionsQueryKey,
   getGetTokenBalanceQueryKey,
@@ -19,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, Segmented, displayName } from "@/components/smash/admin";
+import { Field, Segmented } from "@/components/smash/admin";
 import { Avatar } from "@/components/smash/primitives";
 import { MemberPicker } from "@/components/smash/member-picker";
 import type { User } from "@workspace/api-client-react";
@@ -27,6 +26,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useTx } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useClubRules } from "@/hooks/use-club-rules";
+import { memberName, plural, tokensLabel } from "@/lib/labels";
+import { apiErrorText } from "@/lib/api-errors";
 
 type Kind = "credit" | "debit" | "adjustment";
 
@@ -44,7 +45,7 @@ export function TokenAdjustDialog({
   const { toast } = useToast();
   const qc = useQueryClient();
   const adjust = useAdjustUserTokens();
-  const { data: locked } = useGetUser(userId ?? 0, { query: { enabled: open && !!userId } as any });
+  const { data: locked } = useGetUser(userId ?? 0, { query: { enabled: open && !!userId } });
   const [picked, setPicked] = useState<User | null>(null);
   // One key per dialog opening: a double click or a retry can't credit twice
   const [idempotencyKey, setIdempotencyKey] = useState("");
@@ -148,7 +149,7 @@ export function TokenAdjustDialog({
           idempotencyKey,
           ...(kind === "credit" && packageId ? { packageId } : {}),
           ...(kind === "credit" && cashValue !== null ? { cashAmount: cashValue } : {}),
-        } as any,
+        },
       },
       {
         onSuccess: () => {
@@ -156,18 +157,18 @@ export function TokenAdjustDialog({
             title:
               kind === "credit"
                 ? tx({
-                    fr: `${n} token(s) crédité(s)`,
-                    en: `${n} token(s) credited`,
+                    fr: `${tokensLabel(n)} ${plural(n, "crédité", "crédités")}`,
+                    en: `${tokensLabel(n)} credited`,
                     ar: `تمت إضافة ${n}`,
                   })
                 : kind === "debit"
                   ? tx({
-                      fr: `${n} token(s) débité(s)`,
-                      en: `${n} token(s) debited`,
+                      fr: `${tokensLabel(n)} ${plural(n, "débité", "débités")}`,
+                      en: `${tokensLabel(n)} debited`,
                       ar: `تم خصم ${n}`,
                     })
                   : tx({ fr: "Solde corrigé", en: "Balance corrected", ar: "تم تصحيح الرصيد" }),
-            description: member ? displayName(member) : undefined,
+            description: member ? memberName(member) : undefined,
           });
           qc.invalidateQueries({ queryKey: getListUsersQueryKey() });
           qc.invalidateQueries({ queryKey: getGetUserQueryKey(parseInt(memberId)) });
@@ -175,14 +176,14 @@ export function TokenAdjustDialog({
           qc.invalidateQueries({ queryKey: getGetTokenBalanceQueryKey() });
           onOpenChange(false);
         },
-        onError: (err: any) =>
+        onError: (err) =>
           toast({
             title: tx({
               fr: "Opération impossible",
               en: "Couldn't update tokens",
               ar: "تعذرت العملية",
             }),
-            description: apiErrorMessage(err, ""),
+            description: apiErrorText(err, tx),
             variant: "destructive",
           }),
       },
@@ -198,8 +199,8 @@ export function TokenAdjustDialog({
           </DialogTitle>
           <DialogDescription>
             {tx({
-              fr: `Une place = ${rules.tokenCostPlayer} token(s) · terrain complet = ${rules.tokenCostFullCourt} tokens.`,
-              en: `One spot = ${rules.tokenCostPlayer} token(s) · full court = ${rules.tokenCostFullCourt} tokens.`,
+              fr: `Une place = ${tokensLabel(rules.tokenCostPlayer)} · terrain complet = ${tokensLabel(rules.tokenCostFullCourt)}.`,
+              en: `One spot = ${tokensLabel(rules.tokenCostPlayer)} · full court = ${tokensLabel(rules.tokenCostFullCourt)}.`,
               ar: `مكان = ${rules.tokenCostPlayer} · ملعب كامل = ${rules.tokenCostFullCourt}`,
             })}
           </DialogDescription>
@@ -207,9 +208,9 @@ export function TokenAdjustDialog({
         <form className="flex flex-col gap-4" onSubmit={submit}>
           {userId && member ? (
             <div className="flex items-center gap-3 rounded-[20px] bg-mist p-3">
-              <Avatar name={displayName(member)} index={member.id} size={44} />
+              <Avatar name={memberName(member)} index={member.id} size={44} />
               <span className="flex flex-col">
-                <span className="font-bold">{displayName(member)}</span>
+                <span className="font-bold">{memberName(member)}</span>
                 <span className="text-sm text-muted-foreground">{member.email}</span>
               </span>
             </div>

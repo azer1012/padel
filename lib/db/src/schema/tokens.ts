@@ -1,6 +1,4 @@
 import { pgTable, serial, integer, timestamp, text, pgEnum, numeric } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod/v4";
 import { usersTable } from "./users";
 import { reservationsTable } from "./reservations";
 import { relations } from "drizzle-orm";
@@ -40,9 +38,4 @@ export const tokenTransactionsRelations = relations(tokenTransactionsTable, ({ o
   }),
 }));
 
-export const insertTokenTransactionSchema = createInsertSchema(tokenTransactionsTable).omit({
-  id: true,
-  createdAt: true,
-});
-export type InsertTokenTransaction = z.infer<typeof insertTokenTransactionSchema>;
 export type TokenTransaction = typeof tokenTransactionsTable.$inferSelect;

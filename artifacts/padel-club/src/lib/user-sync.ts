@@ -1,20 +1,18 @@
 import type { User } from "@supabase/supabase-js";
-import { apiFetch } from "@/services/api";
+import { syncProfile } from "@workspace/api-client-react";
 
+/**
+ * After sign-in: lets the API fill an empty profile from the provider's metadata
+ * (Google name and avatar). The e-mail is never sent: the API takes it from the token.
+ */
 export async function syncUser(authUser: User) {
+  const meta = authUser.user_metadata ?? {};
+  const [firstName, ...rest] = ((meta.full_name as string | undefined) ?? "").split(" ");
   try {
-    const fullName = authUser.user_metadata?.full_name as string | undefined;
-    const [firstName, ...lastNameParts] = fullName?.split(" ") ?? [];
-
-    await apiFetch("/api/users/sync", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: authUser.email,
-        firstName: (authUser.user_metadata?.first_name as string | undefined) ?? firstName,
-        lastName: ((authUser.user_metadata?.last_name as string | undefined) ?? lastNameParts.join(" ")) || null,
-        imageUrl: authUser.user_metadata?.avatar_url,
-      }),
+    await syncProfile({
+      firstName: (meta.first_name as string | undefined) ?? firstName,
+      lastName: ((meta.last_name as string | undefined) ?? rest.join(" ")) || null,
+      imageUrl: meta.avatar_url as string | undefined,
     });
   } catch {
     // Non-blocking: the database already creates the profile at signup, and the

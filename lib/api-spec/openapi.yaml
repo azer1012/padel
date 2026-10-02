@@ -1,9 +1,15 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: Padel Club Platform API
+  description: |
+    Padel Club Platform API.
+
+    Errors: every refusal is `{ "error": "<message>", "code": "<MACHINE_CODE>" }`,
+    sometimes with `details`. Clients branch on `code` (UNAUTHORIZED, PROFILE_MISSING,
+    FORBIDDEN, NOT_FOUND, VALIDATION_ERROR, SLOT_TAKEN, MATCH_FULL, ALREADY_JOINED,
+    INSUFFICIENT_TOKENS, CANCELLATION_CLOSED, FEATURE_DISABLED, RATE_LIMITED,
+    INTERNAL_ERROR…), never on the message.
 servers:
   - url: /api
     description: Base API path
@@ -162,6 +168,7 @@ paths:
       operationId: getTerrain
       tags: [terrains]
       summary: Get terrain by ID
+      description: Inactive and archived courts are only visible to admins (404 otherwise).
       parameters:
         - name: id
           in: path
@@ -417,6 +424,10 @@ paths:
       operationId: leaveSession
       tags: [reservations]
       summary: Leave a session and get token refund
+      description: >
+        The spot's tokens are refunded (unless the club's late-cancellation policy is
+        "no refund"), the player's rental gear is released, the next player becomes the
+        organiser, and a member's match left with nobody is cancelled (freed).
       parameters:
         - name: id
           in: path
@@ -426,6 +437,16 @@ paths:
       responses:
         "200":
           description: Left session
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, refunded, freed, refundForfeited]
+                properties:
+                  message: { type: string }
+                  refunded: { type: integer, description: Tokens given back }
+                  freed: { type: boolean, description: The match had no player left and was cancelled }
+                  refundForfeited: { type: boolean, description: Late leave, tokens kept by the club }
 
   /reservations/{id}/invite:
     post:

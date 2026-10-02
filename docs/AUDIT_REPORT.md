@@ -1,8 +1,100 @@
 # Audit and hardening report — reusable padel club product
 
-Two passes on `main`: (1) production audit and hardening of the platform,
+Four passes on `main`: (1) production audit and hardening of the platform,
 (2) turning it into a reusable product sold one club at a time, with every
-operational rule configurable by the club. This report covers the current state.
+operational rule configurable by the club, (3) a full re-audit against the code
+and the live database (2026-10-02), (4) a code-level review and refactor
+(2026-10-02). This report covers the current state.
+
+## Pass 4 (2026-10-02): code review and refactor
+
+No database change, no new feature. Where each responsibility lives is now written
+down in `docs/ARCHITECTURE.md`.
+
+Behaviour that changed, all covered by tests:
+
+| Found                                                                                                                          | Now                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| The desk removing a player left that player's rental gear reserved, and a member's match with nobody in it stayed on the grid  | One rule for "a player leaves" and "the desk removes a player": refund, gear released, organiser handed over, empty match cancelled |
+| A member leaving a desk booking made for a guest cancelled the guest's booking                                                 | Guest bookings stay                                                                                                                 |
+| Editing a booking without sending `notes` erased the notes                                                                     | Only what the request carries is changed                                                                                            |
+| Several refusals had no machine code (401 / 403 of the sign-in checks, notifications, recurring bookings, the cron endpoint)   | Every refusal is `{ error, code }`                                                                                                  |
+| An archived or inactive court was readable by anyone through `GET /terrains/:id`                                               | Admins only, like the list                                                                                                          |
+| "1 token" was written in five screens and one toast, whatever the club's token cost                                            | The club's configured cost, or what the API actually charged                                                                        |
+| A late cancellation under "no refund" still said "your tokens were refunded"                                                   | The real outcome                                                                                                                    |
+| Dates were formatted in the visitor's own timezone on most screens; admin date-time fields were read in the browser's timezone | Club time everywhere, through one module                                                                                            |
+| The admin timeline was drawn from 07:00 to 24:00 whatever the opening hours                                                    | The club's opening hours                                                                                                            |
+
+Structure:
+
+- API: route files no longer import each other; booking rules are in
+  `lib/bookings.ts`, member names in `lib/members.ts`, the signed-in member is read
+  with `currentUser(req)`. No `any` left in the API source; request bodies are
+  unknown until validated.
+- Website: the 1,500-line calendar is four files in `components/calendar/`; one API
+  access path (the typed client); the client's types match what the API accepts and
+  returns, which removed about 45 casts.
+- Removed: the generated `lib/api-zod` package (63 files, used for one health
+  check), the unused `drizzle-zod` schemas, about 60 template entries in the API
+  build script, unused helpers and types.
+
+Tests this pass (local Postgres 18, real API, Chromium): typecheck 0 errors (the API
+tests are now type-checked too), lint clean, **82 / 82** API tests (75 + 7 new),
+**11 / 11** database blocks, **26 / 26** browser steps, production build OK.
+
+Open, for the owner:
+
+- **Token expiry** is half-built: the API stores an expiry date on a credit and the
+  screens can show "tokens expire soon", but nothing ever expires a token and the
+  admin form does not offer the field. Build it or remove it.
+- **Tournament unregistration**, **adding equipment to an existing booking** and
+  **marking one notification read** exist in the API but have no button.
+- The legacy tables `clubs`, `staff_roles` and the column `terrains.capacity` are
+  still there, unused.
+
+## 0. Pass 3 (2026-10-02): re-audit against the live project
+
+Verified on the hosted project this session: 23 tables, RLS on all, no policy, no
+table / view / function / sequence reachable by `anon` or `authenticated` (catalog
+check **and** real REST, RPC, GraphQL and Storage calls with the public key: all
+refused); ledger reconciled; no orphan rows; migration history equal to the
+repository plus one version from an unmerged branch (below).
+
+| Found                                                                                                                                                      | Status                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| A member of a match received the full database row of the other players (e-mail, phone, token balance, auth id)                                            | Fixed: names only ("First L."), tested                                     |
+| `pnpm run lint` failed (529 errors): ESLint walked into a local tooling copy of the repository                                                             | Fixed: tooling folders ignored by ESLint and git                           |
+| The API tests could not start on Windows (`TZ=… node`); the SQL tests needed `psql`                                                                        | Fixed: both run on every OS                                                |
+| `created_at` and every SQL `now()` depended on the database server's time zone (correct on Supabase, wrong elsewhere)                                      | Fixed: API sessions pinned to UTC, tested                                  |
+| Equipment availability assumed 90-minute matches; the desk's rental list used the server's day, not the club's                                             | Fixed: club match length and club day, tested                              |
+| News, equipment, pricing rules, recurring bookings, push: inputs not validated (crashes answered as 500, any image URL accepted, `24:30` accepted)         | Fixed: validated, clean 4xx, tested                                        |
+| A member could remove another member's push subscription by knowing its endpoint                                                                           | Fixed, tested                                                              |
+| Recurring bookings computed weekly dates in the server's time zone                                                                                         | Fixed: club time, tested                                                   |
+| Cash payments marked at the desk, court changes and pricing-rule changes left no trace; role changes were filed as "user registered"                       | Fixed: audit-trail types (migration `20261005000000`), tested              |
+| Two simultaneous token operations of one member (two joins, a booking and a join) deadlocked in Postgres: one answered 500 after a second (no tokens lost) | Fixed: wallet lock no longer conflicts with the booking's own rows, tested |
+| Production API started with CORS open to every website when `CORS_ORIGIN` was missing (a warning only)                                                     | Fixed: refuses to start                                                    |
+| "Tokens in circulation" was summed in the browser over the first 200 members                                                                               | Fixed: computed by the API                                                 |
+| The whole data cache was dropped each time the tab regained focus and every hour; `/users/sync` re-posted each time                                        | Fixed: only when the signed-in member changes                              |
+| Member search could be scripted to walk the member list                                                                                                    | Fixed: per-member limit                                                    |
+| Demo build scripts did not run on Windows                                                                                                                  | Fixed at the time; demo mode has since been removed                        |
+| No security headers for the static site                                                                                                                    | `_headers` file shipped; CSP template in the deployment guide              |
+
+Open, not code:
+
+- **E-mail confirmation is off on the hosted project** (accounts are created without
+  proving the address) and leaked-password protection is off. Turn both on once SMTP works.
+- **Google sign-in is not enabled** on the hosted project (only e-mail).
+- **The hosted database is one migration ahead of `main`**: `20261004000000_user_gender`
+  (a `users.gender` column) comes from the unmerged branch
+  `claude/ecstatic-noether-lm132w` ("Sign-up asks for phone and gender"). `main` works
+  with it (nullable, unused). Merge that branch or drop the column: owner's decision.
+- **"Minimum players"** is stored and validated but no booking rule uses it.
+- **No in-app account deletion**; the member lists of two admin dropdowns stop at 200.
+- Ledger descriptions are stored in English and shown as such in the French UI.
+
+Tests this pass (local Postgres 18, real API, Chromium): typecheck 0 errors, lint
+clean, **75 / 75** API tests (61 existing + 14 new), **11 / 11** database blocks plus
+one new, **26 / 26** browser steps, production build OK. See `docs/TESTING.md`.
 
 ## 1. Executive summary
 
@@ -22,9 +114,8 @@ operational rule configurable by the club. This report covers the current state.
   database invariant blocks, 26/26 browser E2E steps (including the admin
   switching to 60-minute matches at new prices and players following), build OK,
   `pnpm audit --prod` clean.
-- **Not done**: the hosted project still holds the old empty prototype schema;
-  applying the migrations is one paste in the SQL editor (§13). Real e-mail,
-  Google sign-in and the live API can't be tested from this environment.
+- **Not done**: real e-mail (SMTP), Google sign-in and the production domain still
+  need the club's accounts (§12).
 
 ## 2. Fixed
 
@@ -127,7 +218,7 @@ Docs: `docs/DATABASE.md`, `docs/DATABASE_DIAGRAM.md`. Legacy unused tables kept
   `lib/slots.ts` (schedule engine), `lib/pricing.ts` (rule > court > settings),
   `routes/settings.ts` (zod-validated, strict). All club data goes through Express.
 - Client: typed hooks in `lib/api-client-react/src/extras.ts`; `useClubRules()`
-  for every screen. Demo mode mocks the new endpoints.
+  for every screen.
 - Configuration layers: `docs/CONFIGURATION.md`.
 
 ## 10. Security

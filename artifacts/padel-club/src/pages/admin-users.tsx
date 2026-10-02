@@ -1,11 +1,9 @@
-import { useEffect, useState } from "react";
-import { format } from "date-fns";
+import { useState } from "react";
 import {
   useListUsers,
   getListUsersQueryKey,
   useGetMe,
   useAdminUpdateUser,
-  apiErrorMessage,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "@workspace/api-client-react";
@@ -25,22 +23,24 @@ import {
   Pill,
   SearchInput,
   Toolbar,
-  displayName,
   type Column,
   useConfirm,
 } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
 import { TokenAdjustDialog } from "@/components/smash/token-adjust";
-import { useTx, useDateLocale } from "@/lib/i18n";
+import { useTx, useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { clubDate } from "@/lib/club-time";
+import { memberName, plural, tokensLabel } from "@/lib/labels";
+import { useDebounced } from "@/hooks/use-debounced";
+import { apiErrorText } from "@/lib/api-errors";
 
 const PAGE = 20;
 
 export default function AdminUsers() {
   const tx = useTx();
-  const locale = useDateLocale();
+  const { lang } = useI18n();
   const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [tokenUser, setTokenUser] = useState<number | null>(null);
   const { data: me } = useGetMe();
@@ -54,13 +54,13 @@ export default function AdminUsers() {
     const ok = await confirm({
       title: promote
         ? tx({
-            fr: `Donner l'accès admin à ${displayName(u)} ?`,
-            en: `Give ${displayName(u)} admin access?`,
+            fr: `Donner l'accès admin à ${memberName(u)} ?`,
+            en: `Give ${memberName(u)} admin access?`,
             ar: "منح صلاحية المسؤول؟",
           })
         : tx({
-            fr: `Retirer l'accès admin de ${displayName(u)} ?`,
-            en: `Remove ${displayName(u)}'s admin access?`,
+            fr: `Retirer l'accès admin de ${memberName(u)} ?`,
+            en: `Remove ${memberName(u)}'s admin access?`,
             ar: "سحب صلاحية المسؤول؟",
           }),
       description: promote
@@ -84,25 +84,22 @@ export default function AdminUsers() {
           toast({ title: tx({ fr: "Rôle mis à jour", en: "Role updated", ar: "تم تحديث الدور" }) });
         },
         onError: (e) =>
-          toast({ title: "Oups", description: apiErrorMessage(e, ""), variant: "destructive" }),
+          toast({
+            title: tx({
+              fr: "Action impossible",
+              en: "Couldn't do that",
+              ar: "تعذر تنفيذ الإجراء",
+            }),
+            description: apiErrorText(e, tx),
+            variant: "destructive",
+          }),
       },
     );
   }
 
-  // Debounce so we don't hit the API on every keystroke
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setQuery(search.trim());
-      setPage(1);
-    }, 300);
-    return () => clearTimeout(t);
-  }, [search]);
-
-  const params: Record<string, any> = { page, limit: PAGE };
-  if (query) params.search = query;
-  const { data, isLoading } = useListUsers(params, {
-    query: { queryKey: getListUsersQueryKey(params) },
-  });
+  // Debounced so the API is not hit on every keystroke
+  const query = useDebounced(search.trim(), 300);
+  const { data, isLoading } = useListUsers({ page, limit: PAGE, search: query || undefined });
 
   const columns: Column<User>[] = [
     {
@@ -110,10 +107,10 @@ export default function AdminUsers() {
       header: tx({ fr: "Membre", en: "Member", ar: "العضو" }),
       cell: (u) => (
         <span className="flex items-center gap-3">
-          <Avatar name={displayName(u)} index={u.id} size={40} />
+          <Avatar name={memberName(u)} index={u.id} size={40} />
           <span className="flex min-w-0 flex-col">
             <span className="flex items-center gap-2 truncate font-bold">
-              {displayName(u)}
+              {memberName(u)}
               {u.role === "admin" && (
                 <Pill tone="court" className="h-6">
                   Admin
@@ -147,20 +144,25 @@ export default function AdminUsers() {
       header: tx({ fr: "Membre depuis", en: "Joined", ar: "انضم" }),
       hideBelow: "md",
       cell: (u) => (
-        <span className="text-sm text-muted-foreground">
-          {format(new Date(u.createdAt), "d MMM yyyy", { locale })}
-        </span>
+        <span className="text-sm text-muted-foreground">{clubDate(u.createdAt, lang, "date")}</span>
       ),
     },
     {
       key: "balance",
-      header: "Tokens",
+      header: tx({ fr: "Tokens", en: "Tokens", ar: "الرصيد" }),
       cell: (u) => {
         const b = u.tokenBalance ?? 0;
         return (
-          <span
+          <button
+            type="button"
+            onClick={() => setTokenUser(u.id)}
+            aria-label={tx({
+              fr: `${tokensLabel(b)}, gérer les tokens de ${memberName(u)}`,
+              en: `${tokensLabel(b)}, manage ${memberName(u)}’s tokens`,
+              ar: `${b} رصيد، إدارة رصيد ${memberName(u)}`,
+            })}
             className={cn(
-              "inline-flex h-8 min-w-12 items-center justify-center gap-1.5 rounded-full px-3 text-sm font-extrabold",
+              "inline-flex h-9 min-w-14 items-center justify-center gap-1.5 rounded-full px-3 text-sm font-extrabold transition-transform hover:-translate-y-0.5 active:scale-95",
               b === 0
                 ? "bg-[#FDE4E4] text-[#A3262B]"
                 : b < 4
@@ -170,7 +172,7 @@ export default function AdminUsers() {
           >
             <CoinsIcon className="size-3.5" />
             {b}
-          </span>
+          </button>
         );
       },
     },
@@ -184,6 +186,7 @@ export default function AdminUsers() {
             data-testid={`btn-manage-tokens-${u.id}`}
             variant="outline"
             size="sm"
+            className="hidden md:inline-flex"
             onClick={() => setTokenUser(u.id)}
           >
             <CoinsIcon />
@@ -230,8 +233,8 @@ export default function AdminUsers() {
         subtitle={
           data
             ? tx({
-                fr: `${data.total} joueur(s) inscrit(s). Recherchez un membre pour gérer ses tokens.`,
-                en: `${data.total} registered player(s). Find a member to manage their tokens.`,
+                fr: `${data.total} ${plural(data.total, "joueur inscrit", "joueurs inscrits")}. Recherchez un membre pour gérer ses tokens.`,
+                en: `${data.total} registered ${plural(data.total, "player", "players")}. Find a member to manage their tokens.`,
                 ar: `${data.total} لاعب مسجل.`,
               })
             : undefined
@@ -240,7 +243,10 @@ export default function AdminUsers() {
       <Toolbar>
         <SearchInput
           value={search}
-          onChange={setSearch}
+          onChange={(value) => {
+            setSearch(value);
+            setPage(1);
+          }}
           placeholder={tx({
             fr: "Nom, email ou téléphone…",
             en: "Name, email or phone…",

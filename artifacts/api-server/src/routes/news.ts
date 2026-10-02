@@ -1,15 +1,33 @@
 import { Router } from "express";
 import { db, newsTable } from "@workspace/db";
 import { eq, desc, count } from "drizzle-orm";
-import { requireAdmin, loadUser } from "../lib/auth";
+import { requireAdmin, loadUser, optionalUser } from "../lib/auth";
+import { HttpError, cleanImageUrl, cleanText, paging, requireId, type Body } from "../lib/http";
 
 const router = Router();
 
+/** Validated article fields. Images must be https (or a file of the site itself). */
+function articleInput(b: Body, creating: boolean) {
+  const out: Partial<typeof newsTable.$inferInsert> = {};
+  if (creating || b?.title !== undefined) {
+    const title = cleanText(b?.title, 160);
+    if (!title) throw new HttpError(400, "Title is required", "VALIDATION_ERROR");
+    out.title = title;
+  }
+  if (creating || b?.content !== undefined) {
+    const content = cleanText(b?.content, 20_000);
+    if (!content) throw new HttpError(400, "Content is required", "VALIDATION_ERROR");
+    out.content = content;
+  }
+  if (b?.excerpt !== undefined) out.excerpt = cleanText(b.excerpt, 400);
+  if (b?.category !== undefined) out.category = cleanText(b.category, 40);
+  if (b?.imageUrl !== undefined) out.imageUrl = cleanImageUrl(b.imageUrl);
+  if (typeof b?.isPublished === "boolean") out.isPublished = b.isPublished;
+  return out;
+}
+
 router.get("/news", async (req, res) => {
-  const { page = "1", limit = "10" } = req.query as Record<string, string>;
-  const pageNum = Math.max(1, parseInt(page) || 1);
-  const limitNum = Math.min(50, Math.max(1, parseInt(limit) || 10));
-  const offset = (pageNum - 1) * limitNum;
+  const { page, limit, offset } = paging(req.query as Record<string, unknown>, 10, 50);
 
   const [{ total }] = await db
     .select({ total: count() })
@@ -21,63 +39,39 @@ router.get("/news", async (req, res) => {
     .from(newsTable)
     .where(eq(newsTable.isPublished, true))
     .orderBy(desc(newsTable.createdAt))
-    .limit(limitNum)
+    .limit(limit)
     .offset(offset);
 
-  res.json({ data, total: Number(total), page: pageNum, limit: limitNum });
+  res.json({ data, total: Number(total), page, limit });
 });
 
 router.post("/news", requireAdmin, async (req, res) => {
-  const { title, excerpt, content, imageUrl, isPublished = false, category } = req.body;
+  const values = articleInput(req.body, true) as typeof newsTable.$inferInsert;
   const [article] = await db
     .insert(newsTable)
-    .values({
-      title,
-      excerpt,
-      content,
-      imageUrl,
-      isPublished,
-      category,
-      publishedAt: isPublished ? new Date() : undefined,
-    })
+    .values({ ...values, publishedAt: values.isPublished ? new Date() : undefined })
     .returning();
   res.status(201).json(article);
 });
 
 router.get("/news/:id", loadUser, async (req, res) => {
-  const id = parseInt(req.params.id as string);
-  const auth = (req as any).dbUser;
+  const id = requireId(req.params.id);
   const [article] = await db.select().from(newsTable).where(eq(newsTable.id, id));
-  if (!article) {
-    res.status(404).json({ error: "Not found" });
-    return;
-  }
-  if (!article.isPublished && auth?.role !== "admin") {
-    res.status(404).json({ error: "Not found" });
-    return;
-  }
+  if (!article || (!article.isPublished && optionalUser(req)?.role !== "admin"))
+    throw new HttpError(404, "Not found", "NOT_FOUND");
   res.json(article);
 });
 
 router.patch("/news/:id", requireAdmin, async (req, res) => {
-  const id = parseInt(req.params.id as string);
-  const { title, excerpt, content, imageUrl, isPublished, category } = req.body;
+  const id = requireId(req.params.id);
+  const patch = articleInput(req.body, false);
   const [existing] = await db.select().from(newsTable).where(eq(newsTable.id, id));
-  if (!existing) {
-    res.status(404).json({ error: "Not found" });
-    return;
-  }
-  const wasPublished = existing.isPublished;
+  if (!existing) throw new HttpError(404, "Not found", "NOT_FOUND");
   const [updated] = await db
     .update(newsTable)
     .set({
-      title,
-      excerpt,
-      content,
-      imageUrl,
-      isPublished,
-      category,
-      publishedAt: isPublished && !wasPublished ? new Date() : existing.publishedAt,
+      ...patch,
+      publishedAt: patch.isPublished && !existing.isPublished ? new Date() : existing.publishedAt,
     })
     .where(eq(newsTable.id, id))
     .returning();
@@ -85,7 +79,7 @@ router.patch("/news/:id", requireAdmin, async (req, res) => {
 });
 
 router.delete("/news/:id", requireAdmin, async (req, res) => {
-  const id = parseInt(req.params.id as string);
+  const id = requireId(req.params.id);
   await db.delete(newsTable).where(eq(newsTable.id, id));
   res.status(204).send();
 });

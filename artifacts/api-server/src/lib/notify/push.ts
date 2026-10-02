@@ -29,9 +29,11 @@ export async function sendPush(
           { TTL: 60 * 60 * 6 },
         );
         sent++;
-      } catch (err: any) {
-        if (err?.statusCode === 404 || err?.statusCode === 410) dead.push(s.id);
-        else logger.warn({ err: err?.message, userId }, "push failed");
+      } catch (err) {
+        const { statusCode, message } = err as { statusCode?: number; message?: string };
+        // Gone: the browser revoked this subscription
+        if (statusCode === 404 || statusCode === 410) dead.push(s.id);
+        else logger.warn({ err: message, userId }, "push failed");
       }
     }),
   );

@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListTerrains,
@@ -27,10 +26,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, Segmented, displayName } from "@/components/smash/admin";
+import { Field, Segmented } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
-import { useTx, useDateLocale } from "@/lib/i18n";
+import { useTx, useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { clubDate, fromClubInput } from "@/lib/club-time";
+import { memberName, plural } from "@/lib/labels";
+import { apiErrorText } from "@/lib/api-errors";
 
 const blank = {
   terrainId: "",
@@ -51,11 +53,11 @@ export function SeriesDialog({
   onOpenChange: (o: boolean) => void;
 }) {
   const tx = useTx();
-  const locale = useDateLocale();
+  const { lang } = useI18n();
   const { toast } = useToast();
   const qc = useQueryClient();
   const { data: terrains } = useListTerrains();
-  const { data: users } = useListUsers({ limit: 200 } as any);
+  const { data: users } = useListUsers({ limit: 200 });
   const preview = usePreviewSeries(),
     create = useCreateSeries();
   const [f, setF] = useState(blank);
@@ -74,7 +76,7 @@ export function SeriesDialog({
 
   const payload = () => ({
     terrainId: Number(f.terrainId),
-    firstStart: new Date(f.firstStart).toISOString(),
+    firstStart: fromClubInput(f.firstStart),
     occurrences: Number(f.occurrences),
     intervalWeeks: Number(f.intervalWeeks),
     userId: f.userId ? Number(f.userId) : undefined,
@@ -83,10 +85,10 @@ export function SeriesDialog({
     label: f.label || undefined,
   });
   const ready = !!f.terrainId && !!f.firstStart && (!!f.userId || !!f.guestName.trim());
-  const err = (e: any) =>
+  const err = (e: unknown) =>
     toast({
       title: tx({ fr: "Impossible", en: "Couldn't do that", ar: "تعذر ذلك" }),
-      description: e?.data?.error,
+      description: apiErrorText(e, tx),
       variant: "destructive",
     });
 
@@ -107,8 +109,8 @@ export function SeriesDialog({
             }),
             description: r.skipped.length
               ? tx({
-                  fr: `${r.skipped.length} date(s) déjà prise(s), ignorée(s).`,
-                  en: `${r.skipped.length} date(s) already taken, skipped.`,
+                  fr: `${r.skipped.length} ${plural(r.skipped.length, "date déjà prise, ignorée", "dates déjà prises, ignorées")}.`,
+                  en: `${r.skipped.length} ${plural(r.skipped.length, "date", "dates")} already taken, skipped.`,
                   ar: `تم تخطي ${r.skipped.length} موعد محجوز.`,
                 })
               : undefined,
@@ -188,7 +190,7 @@ export function SeriesDialog({
                 </SelectItem>
                 {users?.data?.map((u) => (
                   <SelectItem key={u.id} value={String(u.id)}>
-                    {displayName(u)}
+                    {memberName(u)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -308,9 +310,7 @@ export function SeriesDialog({
                     ) : (
                       <CheckIcon className="size-3.5 shrink-0" />
                     )}
-                    <span className="capitalize">
-                      {format(new Date(d.startTime), "EEE d MMM", { locale })}
-                    </span>
+                    <span>{clubDate(d.startTime, lang, "short")}</span>
                   </li>
                 ))}
               </ul>
@@ -340,8 +340,8 @@ export function SeriesDialog({
                   loading={create.isPending}
                 >
                   {tx({
-                    fr: `Réserver ${free} séance(s)`,
-                    en: `Book ${free} session(s)`,
+                    fr: `Réserver ${free} ${plural(free, "séance", "séances")}`,
+                    en: `Book ${free} ${plural(free, "session", "sessions")}`,
                     ar: `احجز ${free} حصة`,
                   })}
                 </Button>

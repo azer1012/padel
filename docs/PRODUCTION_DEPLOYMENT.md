@@ -119,6 +119,8 @@ Environment: the **SERVER ONLY** block of `.env.example`. Required:
   `false` and call `POST /api/internal/jobs/run` every 5 minutes with the header
   `x-cron-secret: <CRON_SECRET>`. Reminder timing and on/off switches are in
   **Admin → Réglages → Notifications**.
+- `CORS_ORIGIN` is mandatory when `NODE_ENV=production`: the server refuses to
+  start without it (comma-separated origins, e.g. `https://club.example`).
 - Behind a proxy: `TRUST_PROXY=true` so rate limiting sees real client IPs.
 - Settings are cached for 10 s per API instance (the instance that saved them
   sees the change at once). Run a single instance per club, or accept that
@@ -147,10 +149,19 @@ Serve `dist/public` as a single-page app (unknown paths → `index.html`) and ro
 Or host the API on its own domain and build the site with
 `VITE_API_URL=https://<api-host>` (and put the site's origin in the API's `CORS_ORIGIN`).
 
-Recommended response headers: `Strict-Transport-Security`,
-`X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,
-long caching for `/assets/*` (hashed files). Don't cache `index.html`, `sw.js`
-or `manifest.webmanifest`.
+Response headers: the build ships a `_headers` file (read by Netlify and
+Cloudflare Pages) with `X-Content-Type-Options`, `X-Frame-Options`,
+`Referrer-Policy`, `Permissions-Policy`, long caching for `/assets/*` and no
+caching for `index.html`, `sw.js` and `manifest.webmanifest`. On another host,
+set the same headers in its configuration, and add `Strict-Transport-Security`
+once HTTPS is confirmed. A Content-Security-Policy is per club (it names the
+club's Supabase and API hosts); a starting point:
+
+```
+default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+font-src https://fonts.gstatic.com; connect-src 'self' https://<project-ref>.supabase.co https://<api-host>;
+frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+```
 
 ---
 
@@ -165,6 +176,7 @@ pnpm run build
 
 Then on the real site:
 
+- [ ] Supabase → Authentication: **Confirm email is on**, leaked-password protection is on
 - [ ] sign up with a fresh address → receive and click the confirmation e-mail
 - [ ] password reset end to end
 - [ ] Google sign-in (if enabled)

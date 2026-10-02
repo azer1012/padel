@@ -1,10 +1,14 @@
 import { pgTable, serial, text, integer, timestamp, pgEnum } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod/v4";
 import { usersTable } from "./users";
 import { relations } from "drizzle-orm";
 
-export const tournamentStatusEnum = pgEnum("tournament_status", ["upcoming", "open", "ongoing", "completed", "cancelled"]);
+export const tournamentStatusEnum = pgEnum("tournament_status", [
+  "upcoming",
+  "open",
+  "ongoing",
+  "completed",
+  "cancelled",
+]);
 
 export const tournamentsTable = pgTable("tournaments", {
   id: serial("id").primaryKey(),
@@ -22,23 +26,28 @@ export const tournamentsTable = pgTable("tournaments", {
 
 export const tournamentRegistrationsTable = pgTable("tournament_registrations", {
   id: serial("id").primaryKey(),
-  tournamentId: integer("tournament_id").notNull().references(() => tournamentsTable.id),
-  userId: integer("user_id").notNull().references(() => usersTable.id),
+  tournamentId: integer("tournament_id")
+    .notNull()
+    .references(() => tournamentsTable.id),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => usersTable.id),
   teamName: text("team_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const tournamentRegistrationsRelations = relations(tournamentRegistrationsTable, ({ one }) => ({
-  tournament: one(tournamentsTable, {
-    fields: [tournamentRegistrationsTable.tournamentId],
-    references: [tournamentsTable.id],
+export const tournamentRegistrationsRelations = relations(
+  tournamentRegistrationsTable,
+  ({ one }) => ({
+    tournament: one(tournamentsTable, {
+      fields: [tournamentRegistrationsTable.tournamentId],
+      references: [tournamentsTable.id],
+    }),
+    user: one(usersTable, {
+      fields: [tournamentRegistrationsTable.userId],
+      references: [usersTable.id],
+    }),
   }),
-  user: one(usersTable, {
-    fields: [tournamentRegistrationsTable.userId],
-    references: [usersTable.id],
-  }),
-}));
+);
 
-export const insertTournamentSchema = createInsertSchema(tournamentsTable).omit({ id: true, createdAt: true });
-export type InsertTournament = z.infer<typeof insertTournamentSchema>;
 export type Tournament = typeof tournamentsTable.$inferSelect;

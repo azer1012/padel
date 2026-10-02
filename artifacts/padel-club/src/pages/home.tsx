@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { format } from "date-fns";
 import {
   useGetOpenMatches,
   useListTerrains,
@@ -18,11 +17,13 @@ import { Button } from "@/components/ui/button";
 import { LiveBoard, useTonight } from "@/components/smash/live-board";
 import { BallIcon } from "@/components/smash/brand";
 import { Avatar, Eyebrow, LiveDot } from "@/components/smash/primitives";
-import { useTx, useDateLocale } from "@/lib/i18n";
+import { useTx, useI18n } from "@/lib/i18n";
 import { CLUB, PHOTOS } from "@/config/club";
 import { cn } from "@/lib/utils";
-import { clubTime } from "@/lib/club-time";
+import { clubTime, clubDate } from "@/lib/club-time";
 import { useClubRules } from "@/hooks/use-club-rules";
+import { plural, tokensLabel } from "@/lib/labels";
+import { EventCover } from "@/components/smash/cover";
 
 const signInTo = (path: string) => `/sign-in?redirect=${encodeURIComponent(path)}`;
 
@@ -38,7 +39,7 @@ function Counter({ value, label }: { value: number; label: string }) {
 export default function Home() {
   const rules = useClubRules();
   const tx = useTx();
-  const locale = useDateLocale();
+  const { lang } = useI18n();
   const tonight = useTonight();
   const [timeIndex, setTimeIndex] = useState(0);
   const { data: matches, isLoading: matchesLoading } = useGetOpenMatches();
@@ -62,8 +63,8 @@ export default function Home() {
     (matches ?? []).slice(0, 3).forEach((m) =>
       items.push(
         tx({
-          fr: `Open match ${clubTime(m.startTime)}, ${m.openSpots} place(s)`,
-          en: `Open match ${clubTime(m.startTime)}, ${m.openSpots} spot(s)`,
+          fr: `Open match ${clubTime(m.startTime)}, ${m.openSpots} ${plural(m.openSpots, "place", "places")}`,
+          en: `Open match ${clubTime(m.startTime)}, ${m.openSpots} ${plural(m.openSpots, "spot", "spots")}`,
           ar: `مباراة مفتوحة ${clubTime(m.startTime)}`,
         }),
       ),
@@ -73,8 +74,8 @@ export default function Home() {
       if (n)
         items.push(
           tx({
-            fr: `${n} terrain(s) libre(s) à ${tm}`,
-            en: `${n} court(s) free at ${tm}`,
+            fr: `${n} ${plural(n, "terrain libre", "terrains libres")} à ${tm}`,
+            en: `${n} ${plural(n, "court", "courts")} free at ${tm}`,
             ar: `${n} ملعب متاح ${tm}`,
           }),
         );
@@ -96,7 +97,7 @@ export default function Home() {
   return (
     <>
       {/* ─────────── HERO ─────────── */}
-      <section className="on-dark relative grid grid-cols-[minmax(0,1fr)] items-center gap-10 overflow-clip bg-night px-5 pb-16 pt-28 text-white lg:grid-cols-[540px_minmax(0,1fr)] lg:gap-8 lg:px-16 lg:pb-[110px] lg:pt-[150px]">
+      <section className="on-dark relative grid grid-cols-[minmax(0,1fr)] items-center gap-10 overflow-clip bg-night px-5 pb-16 pt-28 text-white lg:grid-cols-[minmax(0,600px)_minmax(0,1fr)] lg:gap-8 lg:px-16 lg:pb-[96px] lg:pt-[124px]">
         <img
           src={PHOTOS.hero}
           alt=""
@@ -122,7 +123,7 @@ export default function Home() {
                   ar: "مباشر من النادي الليلة",
                 })}
           </Eyebrow>
-          <h1 className="disp m-0 text-[clamp(50px,6.2vw,92px)] leading-[0.94]">
+          <h1 className="disp m-0 text-[clamp(44px,4.9vw,72px)] leading-[0.94]">
             {[
               tx({ fr: "Un terrain libre.", en: "See a free court.", ar: "ملعب متاح." }),
               tx({ fr: "Un tap.", en: "Tap it.", ar: "نقرة واحدة." }),
@@ -133,7 +134,7 @@ export default function Home() {
               </span>
             ))}
           </h1>
-          <p className="rise delay-4 m-0 max-w-[480px] text-[17px] leading-relaxed text-muted-d lg:text-xl">
+          <p className="rise delay-4 m-0 max-w-[520px] text-[17px] leading-relaxed text-muted-d lg:text-lg">
             {tx({
               fr: "Tous les terrains du club, en direct. Choisissez l'heure, prenez un terrain et amenez vos amis. La confirmation arrive avant vos chaussures.",
               en: "Every court at the club, live. Choose a time, pick your court and bring your friends. Confirmation arrives before your shoes are on.",
@@ -152,8 +153,8 @@ export default function Home() {
                   {tonight.isLoading
                     ? "…"
                     : tx({
-                        fr: `${freeNow} terrain(s) libre(s)`,
-                        en: `${freeNow} court(s) free`,
+                        fr: `${freeNow} ${plural(freeNow, "terrain libre", "terrains libres")}`,
+                        en: `${freeNow} ${plural(freeNow, "court", "courts")} free`,
                         ar: `${freeNow} ملعب متاح`,
                       })}
                 </span>
@@ -416,8 +417,8 @@ export default function Home() {
             <Eyebrow live data-reveal="" className="text-ball">
               {matches
                 ? tx({
-                    fr: `${matches.length} match(s) cherchent des joueurs`,
-                    en: `${matches.length} match(es) looking for players`,
+                    fr: `${matches.length} ${plural(matches.length, "match cherche", "matchs cherchent")} des joueurs`,
+                    en: `${matches.length} ${plural(matches.length, "match", "matches")} looking for players`,
                     ar: `${matches.length} مباراة تبحث عن لاعبين`,
                   })
                 : "Open matches"}
@@ -434,9 +435,9 @@ export default function Home() {
               className="m-0 max-w-[560px] text-lg text-[#DCE3FF] lg:text-[21px]"
             >
               {tx({
-                fr: "Des joueurs ouvrent leurs matchs. Prenez la place libre pour 1 token et c'est parti.",
-                en: "Players open their matches. Take the empty spot for 1 token and you're in.",
-                ar: "اللاعبون يفتحون مبارياتهم. خذ المكان الشاغر برصيد واحد.",
+                fr: `Des joueurs ouvrent leurs matchs. Prenez la place libre pour ${tokensLabel(rules.tokenCostPlayer)} et c'est parti.`,
+                en: `Players open their matches. Take the empty spot for ${tokensLabel(rules.tokenCostPlayer)} and you're in.`,
+                ar: `اللاعبون يفتحون مبارياتهم. خذ المكان الشاغر بـ ${rules.tokenCostPlayer} رصيد.`,
               })}
             </p>
           </div>
@@ -470,11 +471,18 @@ export default function Home() {
             >
               <div className="flex items-start justify-between gap-3">
                 <span className="flex flex-col">
-                  <span className="disp text-[52px] leading-[0.9] lg:text-[60px]" dir="ltr">
+                  <span
+                    className="disp self-start text-[52px] leading-[0.9] lg:text-[60px]"
+                    dir="ltr"
+                  >
                     {clubTime(m.startTime)}
                   </span>
-                  <span className="mt-1 text-sm font-semibold capitalize text-[#DCE3FF]">
-                    {format(new Date(m.startTime), "EEEE d MMM", { locale })}
+                  <span className="mt-1 text-sm font-semibold text-[#DCE3FF]">
+                    {clubDate(m.startTime, lang, {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "short",
+                    })}
                   </span>
                 </span>
                 <span className="rounded-full bg-white/12 px-3 py-1.5 text-[13px] font-bold">
@@ -661,9 +669,9 @@ export default function Home() {
           </span>
           <h2 data-reveal="" className="disp m-0 text-[clamp(44px,6.6vw,96px)] leading-[0.92]">
             {tx({
-              fr: "1 token = 1 place.",
-              en: "1 token = 1 spot.",
-              ar: "رصيد واحد = مكان واحد.",
+              fr: `${tokensLabel(rules.tokenCostPlayer)} = 1 place.`,
+              en: `${tokensLabel(rules.tokenCostPlayer)} = 1 spot.`,
+              ar: `${rules.tokenCostPlayer} رصيد = مكان واحد.`,
             })}
           </h2>
           <p
@@ -798,18 +806,16 @@ export default function Home() {
                     data-reveal="late"
                     className="lift group flex flex-col overflow-hidden rounded-[32px] bg-white"
                   >
-                    <span className="photo h-[200px]">
-                      <img
-                        src={t.imageUrl || PHOTOS.tournament}
-                        alt=""
-                        loading="lazy"
-                        className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      />
-                    </span>
+                    <EventCover
+                      src={t.imageUrl}
+                      seed={t.id}
+                      className="h-[200px]"
+                      imgClassName="transition-transform duration-500 group-hover:scale-105"
+                    />
                     <span className="flex flex-col gap-3 p-6">
                       <span className="flex items-center gap-2 text-sm font-bold text-court">
                         <CalendarDotsIcon className="size-4" />
-                        {format(new Date(t.startDate), "d MMMM yyyy", { locale })}
+                        {clubDate(t.startDate, lang, "dateLong")}
                       </span>
                       <span className="disp text-2xl tracking-[-0.02em]">{t.name}</span>
                       {t.maxTeams ? (

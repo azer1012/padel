@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { authErrorMessage } from "@/lib/auth-errors";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PasswordInput, passwordIsStrong } from "@/components/smash/password-input";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/smash/brand";
 import { useTx } from "@/lib/i18n";
@@ -39,9 +39,13 @@ export default function ResetPassword() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (password.length < 8) {
+    if (!passwordIsStrong(password)) {
       setError(
-        tx({ fr: "8 caractères minimum.", en: "At least 8 characters.", ar: "8 أحرف على الأقل." }),
+        tx({
+          fr: "Mot de passe trop faible : 8 caractères minimum, avec des lettres et des chiffres.",
+          en: "Password too weak: at least 8 characters, with letters and numbers.",
+          ar: "كلمة المرور ضعيفة: 8 أحرف على الأقل مع حروف وأرقام.",
+        }),
       );
       return;
     }
@@ -101,7 +105,7 @@ export default function ResetPassword() {
             </Button>
           </>
         ) : done ? (
-          <p className="m-0 text-muted-foreground">
+          <p className="m-0 text-muted-foreground" role="status">
             {tx({
               fr: "Redirection vers votre espace…",
               en: "Taking you to your dashboard…",
@@ -114,23 +118,33 @@ export default function ResetPassword() {
               <Label htmlFor="new-password">
                 {tx({ fr: "Nouveau mot de passe", en: "New password", ar: "كلمة المرور الجديدة" })}
               </Label>
-              <Input
+              <PasswordInput
                 id="new-password"
-                type="password"
                 autoComplete="new-password"
                 minLength={8}
                 required
+                aria-describedby="new-password-hint"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
+              <p id="new-password-hint" className="m-0 mt-2 text-xs text-muted-foreground">
+                {tx({
+                  fr: "8 caractères minimum, avec des lettres et des chiffres.",
+                  en: "At least 8 characters, with letters and numbers.",
+                  ar: "8 أحرف على الأقل، مع حروف وأرقام.",
+                })}
+              </p>
             </div>
             <div>
               <Label htmlFor="confirm-password">
-                {tx({ fr: "Confirmer", en: "Confirm", ar: "تأكيد" })}
+                {tx({
+                  fr: "Confirmer le mot de passe",
+                  en: "Confirm the password",
+                  ar: "تأكيد كلمة المرور",
+                })}
               </Label>
-              <Input
+              <PasswordInput
                 id="confirm-password"
-                type="password"
                 autoComplete="new-password"
                 minLength={8}
                 required
@@ -147,7 +161,11 @@ export default function ResetPassword() {
               </p>
             )}
             <Button type="submit" size="lg" disabled={saving || !isLoaded} loading={saving}>
-              {tx({ fr: "Enregistrer", en: "Save", ar: "حفظ" })}
+              {tx({
+                fr: "Enregistrer le mot de passe",
+                en: "Save the password",
+                ar: "حفظ كلمة المرور",
+              })}
             </Button>
           </form>
         )}

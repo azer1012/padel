@@ -8,8 +8,6 @@ import {
   pgEnum,
   real,
 } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod/v4";
 
 export const terrainTypeEnum = pgEnum("terrain_type", ["indoor", "outdoor"]);
 
@@ -36,9 +34,4 @@ export const terrainsTable = pgTable("terrains", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertTerrainSchema = createInsertSchema(terrainsTable).omit({
-  id: true,
-  createdAt: true,
-});
-export type InsertTerrain = z.infer<typeof insertTerrainSchema>;
 export type Terrain = typeof terrainsTable.$inferSelect;

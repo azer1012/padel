@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { format } from "date-fns";
 import {
   useListReservations,
   useCancelReservation,
@@ -10,7 +9,7 @@ import {
   getCalendarQueryKey,
   useGetCalendar,
 } from "@workspace/api-client-react";
-import type { Reservation, User } from "@workspace/api-client-react";
+import type { Reservation, User, ListReservationsParams } from "@workspace/api-client-react";
 import { MemberPicker } from "@/components/smash/member-picker";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -39,7 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import CourtCalendar from "@/components/court-calendar";
+import CourtCalendar from "@/components/calendar/court-calendar";
 import { SeriesDialog } from "@/components/smash/series-dialog";
 import { useSeries, useCancelSeries, extrasKeys } from "@workspace/api-client-react";
 import { Avatar, Page, PageHeader } from "@/components/smash/primitives";
@@ -50,21 +49,22 @@ import {
   Pill,
   Segmented,
   Toolbar,
-  displayName,
   useConfirm,
   type Column,
   type Tone,
 } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
-import { useTx, useDateLocale } from "@/lib/i18n";
-import { clubTime } from "@/lib/club-time";
+import { useTx, useI18n } from "@/lib/i18n";
+import { clubTime, clubDay, clubDate, clubDateTime, clubToday } from "@/lib/club-time";
 import { useClubRules } from "@/hooks/use-club-rules";
+import { memberName, plural } from "@/lib/labels";
+import { apiErrorText } from "@/lib/api-errors";
 
 const PAGE = 20;
 type BookingType = "manual" | "phone" | "online";
 const emptyBooking = {
   terrainId: "",
-  date: format(new Date(), "yyyy-MM-dd"),
+  date: clubToday(),
   time: "",
   member: null as User | null,
   paymentMethod: "cash_club" as "cash_club" | "token",
@@ -77,7 +77,7 @@ const emptyBooking = {
 
 export default function AdminReservations() {
   const tx = useTx();
-  const locale = useDateLocale();
+  const { lang } = useI18n();
   const { toast } = useToast();
   const qc = useQueryClient();
   const { confirm, dialog } = useConfirm();
@@ -85,9 +85,7 @@ export default function AdminReservations() {
 
   const [view, setView] = useState<"calendar" | "list" | "series">("calendar");
   const [seriesOpen, setSeriesOpen] = useState(false);
-  const { data: series, isLoading: loadingSeries } = useSeries({
-    enabled: view === "series",
-  } as any);
+  const { data: series, isLoading: loadingSeries } = useSeries({ enabled: view === "series" });
   const cancelSeries = useCancelSeries();
   const [date, setDate] = useState("");
   const [terrainFilter, setTerrainFilter] = useState("all");
@@ -99,20 +97,20 @@ export default function AdminReservations() {
   // Free slots of the chosen court and day, from the API (duration, hours, holidays, bookings)
   const { data: dayCal, isFetching: loadingSlots } = useGetCalendar(
     { date: nb.date, terrainIds: nb.terrainId },
-    { query: { enabled: createOpen && !!nb.date && !!nb.terrainId } as any },
+    { query: { enabled: createOpen && !!nb.date && !!nb.terrainId } },
   );
   const freeSlots = (dayCal?.terrains[0]?.slots ?? []).filter(
     (s) => s.status === "available" && s.bookable !== false,
   );
 
-  const params: Record<string, any> = { page, limit: PAGE };
-  if (date) params.date = date;
-  if (terrainFilter !== "all") params.terrainId = parseInt(terrainFilter);
-  if (statusFilter !== "all") params.status = statusFilter;
-
-  const { data, isLoading } = useListReservations(params, {
-    query: { queryKey: getListReservationsQueryKey(params), enabled: view === "list" },
-  });
+  const params: ListReservationsParams = {
+    page,
+    limit: PAGE,
+    date: date || undefined,
+    terrainId: terrainFilter === "all" ? undefined : parseInt(terrainFilter),
+    status: statusFilter === "all" ? undefined : (statusFilter as ListReservationsParams["status"]),
+  };
+  const { data, isLoading } = useListReservations(params, { query: { enabled: view === "list" } });
   const { data: terrains } = useListTerrains();
   const cancelMutation = useCancelReservation();
   const createMutation = useCreateReservation();
@@ -121,7 +119,7 @@ export default function AdminReservations() {
     qc.invalidateQueries({ queryKey: getListReservationsQueryKey() });
     if (startTime)
       qc.invalidateQueries({
-        queryKey: getCalendarQueryKey({ date: format(new Date(startTime), "yyyy-MM-dd") }),
+        queryKey: getCalendarQueryKey({ date: clubDay(startTime) }),
       });
   };
 
@@ -132,7 +130,7 @@ export default function AdminReservations() {
         en: "Cancel this booking?",
         ar: "إلغاء هذا الحجز؟",
       }),
-      description: `${r.terrain?.name ?? ""}, ${format(new Date(r.startTime), "EEEE d MMMM · HH:mm", { locale })}. ${tx({ fr: "Les tokens des joueurs seront remboursés.", en: "Players' tokens will be refunded.", ar: "سيتم إرجاع رصيد اللاعبين." })}`,
+      description: `${r.terrain?.name ?? ""}, ${clubDateTime(r.startTime, lang, "long")}. ${tx({ fr: "Les tokens des joueurs seront remboursés.", en: "Players' tokens will be refunded.", ar: "سيتم إرجاع رصيد اللاعبين." })}`,
       confirmLabel: tx({ fr: "Oui, annuler", en: "Yes, cancel", ar: "نعم، ألغِ" }),
       destructive: true,
     });
@@ -146,10 +144,10 @@ export default function AdminReservations() {
           });
           refresh(r.startTime);
         },
-        onError: (e: any) =>
+        onError: (e) =>
           toast({
             title: tx({ fr: "Annulation impossible", en: "Couldn't cancel", ar: "تعذر الإلغاء" }),
-            description: e?.data?.error,
+            description: apiErrorText(e, tx),
             variant: "destructive",
           }),
       },
@@ -183,7 +181,7 @@ export default function AdminReservations() {
           guestPhone: !nb.member ? nb.guestPhone || undefined : undefined,
           bookingType: nb.bookingType,
           notes: nb.notes || undefined,
-        } as any,
+        },
       },
       {
         onSuccess: () => {
@@ -194,14 +192,14 @@ export default function AdminReservations() {
           setNb(emptyBooking);
           refresh(startTime);
         },
-        onError: (e: any) =>
+        onError: (e) =>
           toast({
             title: tx({
               fr: "Création impossible",
               en: "Couldn't create booking",
               ar: "تعذر إنشاء الحجز",
             }),
-            description: e?.data?.error ?? e?.message,
+            description: apiErrorText(e, tx),
             variant: "destructive",
           }),
       },
@@ -232,7 +230,7 @@ export default function AdminReservations() {
       header: tx({ fr: "Joueur", en: "Player", ar: "اللاعب" }),
       cell: (r) => {
         const name = r.user
-          ? displayName(r.user)
+          ? memberName(r.user)
           : r.guestName || tx({ fr: "Invité", en: "Guest", ar: "ضيف" });
         return (
           <span className="flex items-center gap-3">
@@ -262,9 +260,7 @@ export default function AdminReservations() {
       header: tx({ fr: "Date", en: "When", ar: "الموعد" }),
       cell: (r) => (
         <span className="flex flex-col">
-          <span className="font-semibold capitalize">
-            {format(new Date(r.startTime), "EEE d MMM", { locale })}
-          </span>
+          <span className="font-semibold">{clubDate(r.startTime, lang, "short")}</span>
           <span className="text-xs text-muted-foreground" dir="ltr">
             {clubTime(r.startTime)} – {clubTime(r.endTime)}
           </span>
@@ -279,7 +275,7 @@ export default function AdminReservations() {
     },
     {
       key: "tokens",
-      header: "Tokens",
+      header: tx({ fr: "Tokens", en: "Tokens", ar: "الرصيد" }),
       hideBelow: "lg",
       cell: (r) => <span className="font-bold">{r.tokensCharged}</span>,
     },
@@ -418,8 +414,8 @@ export default function AdminReservations() {
                     })}
                   </Pill>
                 </div>
-                <span className="text-sm font-semibold capitalize">
-                  {format(new Date(sr.firstStart), "EEEE", { locale })} ·{" "}
+                <span className="text-sm font-semibold">
+                  {clubDate(sr.firstStart, lang, "weekday")} ·{" "}
                   <span dir="ltr">{clubTime(sr.firstStart)}</span>
                   {sr.intervalWeeks > 1
                     ? tx({
@@ -430,9 +426,9 @@ export default function AdminReservations() {
                     : ""}
                 </span>
                 {sr.nextStart && (
-                  <span className="text-sm capitalize text-muted-foreground">
+                  <span className="text-sm text-muted-foreground">
                     {tx({ fr: "Prochaine : ", en: "Next: ", ar: "القادمة: " })}
-                    {format(new Date(sr.nextStart), "EEE d MMM", { locale })}
+                    {clubDate(sr.nextStart, lang, "short")}
                   </span>
                 )}
                 <Button
@@ -449,8 +445,8 @@ export default function AdminReservations() {
                         ar: "إلغاء الحصص القادمة؟",
                       }),
                       description: tx({
-                        fr: `${sr.remaining} séance(s) seront libérées. L'historique est conservé.`,
-                        en: `${sr.remaining} session(s) will be freed. History is kept.`,
+                        fr: `${sr.remaining} ${plural(sr.remaining, "séance sera libérée", "séances seront libérées")}. L'historique est conservé.`,
+                        en: `${sr.remaining} ${plural(sr.remaining, "session", "sessions")} will be freed. History is kept.`,
                         ar: `سيتم تحرير ${sr.remaining} حصة.`,
                       }),
                       confirmLabel: tx({
@@ -465,8 +461,8 @@ export default function AdminReservations() {
                         onSuccess: (r) => {
                           toast({
                             title: tx({
-                              fr: `${r.cancelled} séance(s) annulée(s)`,
-                              en: `${r.cancelled} session(s) cancelled`,
+                              fr: `${r.cancelled} ${plural(r.cancelled, "séance annulée", "séances annulées")}`,
+                              en: `${r.cancelled} ${plural(r.cancelled, "session", "sessions")} cancelled`,
                               ar: `تم إلغاء ${r.cancelled} حصة`,
                             }),
                           });
@@ -514,7 +510,15 @@ export default function AdminReservations() {
                 setPage(1);
               }}
             >
-              <SelectTrigger data-testid="select-terrain-filter" className="w-[190px]">
+              <SelectTrigger
+                data-testid="select-terrain-filter"
+                className="w-[190px]"
+                aria-label={tx({
+                  fr: "Filtrer par terrain",
+                  en: "Filter by court",
+                  ar: "تصفية حسب الملعب",
+                })}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -535,7 +539,15 @@ export default function AdminReservations() {
                 setPage(1);
               }}
             >
-              <SelectTrigger data-testid="select-status-filter" className="w-[170px]">
+              <SelectTrigger
+                data-testid="select-status-filter"
+                className="w-[170px]"
+                aria-label={tx({
+                  fr: "Filtrer par statut",
+                  en: "Filter by status",
+                  ar: "تصفية حسب الحالة",
+                })}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -614,7 +626,7 @@ export default function AdminReservations() {
                   id="nb-date"
                   data-testid="input-date"
                   type="date"
-                  min={format(new Date(), "yyyy-MM-dd")}
+                  min={clubToday()}
                   value={nb.date}
                   onChange={(e) => setNb((b) => ({ ...b, date: e.target.value, time: "" }))}
                 />

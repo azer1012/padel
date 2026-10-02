@@ -1,13 +1,15 @@
 import { Router } from "express";
 import { db, terrainsTable, reservationsTable } from "@workspace/db";
-import { and, asc, count, eq, gt, inArray, isNotNull, isNull } from "drizzle-orm";
-import { loadUser, requireAdmin } from "../lib/auth";
-import { HttpError, cleanText, oneOf, requireId } from "../lib/http";
+import { and, asc, count, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { loadUser, optionalUser, requireAdmin } from "../lib/auth";
+import { countUpcomingBookings } from "../lib/bookings";
+import { HttpError, cleanText, oneOf, requireId, toMoney, type Body } from "../lib/http";
 import { isValidCloseHhmm, isValidHhmm } from "../lib/slots";
+import { logActivity } from "../lib/activity";
 
 const router = Router();
 
-function terrainInput(b: any, creating: boolean) {
+function terrainInput(b: Body, creating: boolean) {
   const out: Partial<typeof terrainsTable.$inferInsert> = {};
   if (creating || b?.name !== undefined) {
     const name = cleanText(b?.name, 60);
@@ -36,36 +38,38 @@ function terrainInput(b: any, creating: boolean) {
   if (b?.pricePerPerson !== undefined) {
     if (b.pricePerPerson === null || b.pricePerPerson === "") out.pricePerPerson = null;
     else {
-      const p = Number(b.pricePerPerson);
-      if (!Number.isFinite(p) || p < 0 || p > 10_000)
-        throw new HttpError(400, "Invalid price", "VALIDATION_ERROR");
-      out.pricePerPerson = p;
+      const price = toMoney(b.pricePerPerson, 10_000);
+      if (price === null) throw new HttpError(400, "Invalid price", "VALIDATION_ERROR");
+      out.pricePerPerson = price;
     }
   }
   if (b?.openingTime !== undefined || b?.closingTime !== undefined) {
     const open = b?.openingTime || null,
       close = b?.closingTime || null;
-    if ((open === null) !== (close === null))
-      throw new HttpError(
-        400,
-        "Set both opening and closing time, or neither to use the club hours",
-        "VALIDATION_ERROR",
-      );
-    if (open !== null) {
+    if (open === null && close === null) {
+      out.openingTime = null;
+      out.closingTime = null;
+    } else {
+      if (open === null || close === null)
+        throw new HttpError(
+          400,
+          "Set both opening and closing time, or neither to use the club hours",
+          "VALIDATION_ERROR",
+        );
       if (!isValidHhmm(open) || !isValidCloseHhmm(close))
         throw new HttpError(400, "Invalid time (HH:MM)", "VALIDATION_ERROR");
       if (open >= close)
         throw new HttpError(400, "Closing time must be after opening time", "VALIDATION_ERROR");
+      out.openingTime = open;
+      out.closingTime = close;
     }
-    out.openingTime = open;
-    out.closingTime = close;
   }
   if (b?.photos !== undefined) {
     if (!Array.isArray(b.photos))
       throw new HttpError(400, "photos must be a list", "VALIDATION_ERROR");
     out.photos = b.photos
       .map((p: unknown) => cleanText(p, 500))
-      .filter((p: string | null): p is string => !!p && /^(https:\/\/|\/)/.test(p))
+      .filter((p): p is string => !!p && /^(https:\/\/|\/(?!\/))/.test(p))
       .slice(0, 10);
   }
   return out;
@@ -73,7 +77,7 @@ function terrainInput(b: any, creating: boolean) {
 
 /** Players see bookable courts; admins see every non-archived court (archived ones on request). */
 router.get("/terrains", loadUser, async (req, res) => {
-  const isAdmin = (req as any).dbUser?.role === "admin";
+  const isAdmin = optionalUser(req)?.role === "admin";
   const archived = isAdmin && req.query.archived === "true";
   const where = isAdmin
     ? archived
@@ -98,6 +102,7 @@ router.post("/terrains", requireAdmin, async (req, res) => {
       ...terrainInput(req.body, true),
     } as typeof terrainsTable.$inferInsert)
     .returning();
+  await logActivity(req, "court_updated", `Court "${terrain.name}" created`);
   res.status(201).json(terrain);
 });
 
@@ -124,47 +129,40 @@ router.put("/terrains/order", requireAdmin, async (req, res) => {
   );
 });
 
-router.get("/terrains/:id", async (req, res) => {
+/** Same visibility as the list: visitors and players only see bookable courts. */
+router.get("/terrains/:id", loadUser, async (req, res) => {
   const [terrain] = await db
     .select()
     .from(terrainsTable)
     .where(eq(terrainsTable.id, requireId(req.params.id)));
-  if (!terrain) throw new HttpError(404, "Court not found", "NOT_FOUND");
+  const hidden = terrain && (!terrain.isActive || terrain.archivedAt !== null);
+  if (!terrain || (hidden && optionalUser(req)?.role !== "admin"))
+    throw new HttpError(404, "Court not found", "NOT_FOUND");
   res.json(terrain);
 });
 
 router.patch("/terrains/:id", requireAdmin, async (req, res) => {
   const id = requireId(req.params.id);
   const patch = terrainInput(req.body, false);
+  if (!Object.keys(patch).length) throw new HttpError(400, "Nothing to update", "VALIDATION_ERROR");
   const [updated] = await db
     .update(terrainsTable)
     .set(patch)
     .where(eq(terrainsTable.id, id))
     .returning();
   if (!updated) throw new HttpError(404, "Court not found", "NOT_FOUND");
-  res.json({ ...updated, upcomingBookings: await upcomingBookings(id) });
-});
-
-const upcomingBookings = async (terrainId: number) =>
-  Number(
-    (
-      await db
-        .select({ n: count() })
-        .from(reservationsTable)
-        .where(
-          and(
-            eq(reservationsTable.terrainId, terrainId),
-            eq(reservationsTable.status, "confirmed"),
-            gt(reservationsTable.startTime, new Date()),
-          ),
-        )
-    )[0].n,
+  await logActivity(
+    req,
+    "court_updated",
+    `Court "${updated.name}" updated · ${Object.keys(patch).join(", ")}`,
   );
+  res.json({ ...updated, upcomingBookings: await countUpcomingBookings(id) });
+});
 
 /** Archive: hidden everywhere, history kept. Refused while future bookings exist. */
 router.post("/terrains/:id/archive", requireAdmin, async (req, res) => {
   const id = requireId(req.params.id);
-  const pending = await upcomingBookings(id);
+  const pending = await countUpcomingBookings(id);
   if (pending > 0)
     throw new HttpError(
       409,
@@ -178,6 +176,7 @@ router.post("/terrains/:id/archive", requireAdmin, async (req, res) => {
     .where(eq(terrainsTable.id, id))
     .returning();
   if (!updated) throw new HttpError(404, "Court not found", "NOT_FOUND");
+  await logActivity(req, "court_updated", `Court "${updated.name}" archived`);
   res.json(updated);
 });
 
@@ -189,6 +188,7 @@ router.post("/terrains/:id/unarchive", requireAdmin, async (req, res) => {
     .where(eq(terrainsTable.id, id))
     .returning();
   if (!updated) throw new HttpError(404, "Court not found", "NOT_FOUND");
+  await logActivity(req, "court_updated", `Court "${updated.name}" restored from the archive`);
   res.json(updated);
 });
 
@@ -205,7 +205,8 @@ router.delete("/terrains/:id", requireAdmin, async (req, res) => {
       "This court has bookings in its history. Archive it instead of deleting it.",
       "COURT_HAS_HISTORY",
     );
-  await db.delete(terrainsTable).where(eq(terrainsTable.id, id));
+  const [deleted] = await db.delete(terrainsTable).where(eq(terrainsTable.id, id)).returning();
+  if (deleted) await logActivity(req, "court_updated", `Court "${deleted.name}" deleted`);
   res.status(204).send();
 });
 

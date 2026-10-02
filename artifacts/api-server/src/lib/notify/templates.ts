@@ -55,7 +55,6 @@ type Copy = {
   lines: string[];
   cta?: { label: string; path: string };
   push: { title: string; body: string };
-  inAppType: string;
 };
 
 const t = (lang: Lang, fr: string, en: string, ar: string) =>
@@ -69,7 +68,6 @@ function copy(e: NotificationEvent, lang: Lang, f: ClubFacts): Copy {
         ? t(lang, `Bienvenue ${e.firstName} !`, `Welcome ${e.firstName}!`, `مرحبًا ${e.firstName}!`)
         : t(lang, "Bienvenue !", "Welcome!", "مرحبًا!");
       return {
-        inAppType: "welcome",
         subject: t(lang, `Bienvenue chez ${club}`, `Welcome to ${club}`, `مرحبًا بك في ${club}`),
         heading: hi,
         lines: [
@@ -112,7 +110,6 @@ function copy(e: NotificationEvent, lang: Lang, f: ClubFacts): Copy {
       const gear = (e.equipment ?? []).filter((g) => g.quantity > 0);
       const gearTotal = gear.reduce((s, g) => s + g.price * g.quantity, 0);
       return {
-        inAppType: "booking_confirmed",
         subject: t(
           lang,
           `C'est réservé : ${e.terrain}, ${e.date} à ${e.time}`,
@@ -159,7 +156,6 @@ function copy(e: NotificationEvent, lang: Lang, f: ClubFacts): Copy {
     }
     case "booking_cancelled":
       return {
-        inAppType: "booking_cancelled",
         subject: t(
           lang,
           `Réservation annulée : ${e.terrain}, ${e.date}`,
@@ -195,7 +191,6 @@ function copy(e: NotificationEvent, lang: Lang, f: ClubFacts): Copy {
     case "reservation_reminder": {
       const gear = (e.equipment ?? []).filter((g) => g.quantity > 0);
       return {
-        inAppType: "reservation_reminder",
         subject: t(
           lang,
           `Rappel : votre match à ${e.time} (${e.terrain})`,
@@ -239,7 +234,6 @@ function copy(e: NotificationEvent, lang: Lang, f: ClubFacts): Copy {
     }
     case "match_finished":
       return {
-        inAppType: "match_finished",
         subject: t(
           lang,
           "Merci pour ce match ! On remet ça ?",
@@ -282,7 +276,6 @@ function copy(e: NotificationEvent, lang: Lang, f: ClubFacts): Copy {
       };
     case "invitation":
       return {
-        inAppType: "invitation",
         subject: t(
           lang,
           `${e.from} vous invite à jouer : ${e.terrain}, ${e.date} à ${e.time}`,
@@ -322,7 +315,6 @@ function copy(e: NotificationEvent, lang: Lang, f: ClubFacts): Copy {
       };
     case "tokens_added":
       return {
-        inAppType: "tokens_added",
         subject: t(
           lang,
           `${e.amount} token(s) ajouté(s) à votre compte`,
@@ -420,6 +412,6 @@ export function render(e: NotificationEvent, lang: Lang, frontendUrl: string, fa
       ...(c.cta ? ["", `${c.cta.label}: ${url(c.cta.path)}`] : []),
     ].join("\n"),
     push: { ...c.push, url: c.cta ? url(c.cta.path) : url("/dashboard") },
-    inApp: { type: c.inAppType, title: c.push.title, message: c.lines.slice(0, 2).join(" ") },
+    inApp: { title: c.push.title, message: c.lines.slice(0, 2).join(" ") },
   };
 }

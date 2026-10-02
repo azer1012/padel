@@ -9,7 +9,6 @@ import {
   useArchivedTerrains,
   getListTerrainsQueryKey,
   apiErrorCode,
-  apiErrorMessage,
 } from "@workspace/api-client-react";
 import type { Terrain } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -40,6 +39,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useTx } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useClubRules } from "@/hooks/use-club-rules";
+import { apiErrorText } from "@/lib/api-errors";
+import { plural } from "@/lib/labels";
 
 type Form = {
   name: string;
@@ -93,7 +94,7 @@ export default function AdminTerrains() {
   };
   const saving = createMutation.isPending || updateMutation.isPending;
   const fail = (title: string) => (e: unknown) =>
-    toast({ title, description: apiErrorMessage(e, ""), variant: "destructive" });
+    toast({ title, description: apiErrorText(e, tx), variant: "destructive" });
 
   const openCreate = () => {
     setForm({ ...blank, number: String((terrains?.length ?? 0) + 1) });
@@ -163,8 +164,8 @@ export default function AdminTerrains() {
         description:
           form.isMaintenance && upcoming
             ? tx({
-                fr: `${upcoming} réservation(s) à venir sur ce terrain : prévenez les joueurs ou annulez-les.`,
-                en: `${upcoming} upcoming booking(s) on this court: tell the players or cancel them.`,
+                fr: `${upcoming} ${plural(upcoming, "réservation", "réservations")} à venir sur ce terrain : prévenez les joueurs ou annulez-les.`,
+                en: `${upcoming} upcoming ${plural(upcoming, "booking", "bookings")} on this court: tell the players or cancel them.`,
                 ar: `${upcoming} حجز قادم على هذا الملعب.`,
               })
             : undefined,
@@ -177,7 +178,7 @@ export default function AdminTerrains() {
     );
     if (current)
       updateMutation.mutate(
-        { id: current.id, data: payload as any },
+        { id: current.id, data: payload },
         {
           onSuccess: done(
             tx({ fr: "Terrain mis à jour", en: "Court updated", ar: "تم تحديث الملعب" }),
@@ -187,7 +188,7 @@ export default function AdminTerrains() {
       );
     else
       createMutation.mutate(
-        { data: payload as any },
+        { data: payload },
         {
           onSuccess: done(tx({ fr: "Terrain ajouté", en: "Court added", ar: "تمت إضافة الملعب" })),
           onError,
@@ -305,7 +306,7 @@ export default function AdminTerrains() {
         subtitle={
           terrains
             ? tx({
-                fr: `${active} terrain(s) réservables sur ${terrains.length}. Prix et horaires par défaut : Réglages.`,
+                fr: `${active} ${plural(active, "terrain réservable", "terrains réservables")} sur ${terrains.length}. Prix et horaires par défaut : Réglages.`,
                 en: `${active} of ${terrains.length} courts bookable. Default prices and hours: Settings.`,
                 ar: `${active} من ${terrains.length} ملاعب قابلة للحجز.`,
               })
@@ -441,13 +442,17 @@ export default function AdminTerrains() {
                   />
                   {tx({ fr: "Réservable", en: "Bookable", ar: "قابل للحجز" })}
                 </label>
-                <span className="flex gap-1">
+                <span className="flex flex-wrap items-center gap-1">
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     disabled={index === 0 || reorderMutation.isPending}
                     onClick={() => move(t, -1)}
-                    aria-label={tx({ fr: "Monter", en: "Move up", ar: "تحريك لأعلى" })}
+                    aria-label={tx({
+                      fr: "Monter dans la liste",
+                      en: "Move up in the list",
+                      ar: "تحريك لأعلى",
+                    })}
                   >
                     <ArrowUpIcon />
                   </Button>
@@ -456,13 +461,18 @@ export default function AdminTerrains() {
                     size="icon-sm"
                     disabled={index === terrains.length - 1 || reorderMutation.isPending}
                     onClick={() => move(t, 1)}
-                    aria-label={tx({ fr: "Descendre", en: "Move down", ar: "تحريك لأسفل" })}
+                    aria-label={tx({
+                      fr: "Descendre dans la liste",
+                      en: "Move down in the list",
+                      ar: "تحريك لأسفل",
+                    })}
                   >
                     <ArrowDownIcon />
                   </Button>
                   <Button
-                    variant="ghost"
-                    size="icon-sm"
+                    variant="secondary"
+                    size="sm"
+                    className="h-9"
                     data-testid={`btn-edit-terrain-${t.id}`}
                     onClick={() => openEdit(t)}
                     aria-label={tx({
@@ -472,6 +482,7 @@ export default function AdminTerrains() {
                     })}
                   >
                     <PencilSimpleIcon />
+                    {tx({ fr: "Modifier", en: "Edit", ar: "تعديل" })}
                   </Button>
                   <Button
                     variant="ghost"

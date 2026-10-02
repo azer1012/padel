@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { format, addDays } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useAdminEquipment,
@@ -32,10 +31,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
 import { Field, Pill, Segmented, useConfirm, type Tone } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
-import { useTx, useDateLocale } from "@/lib/i18n";
+import { useTx, useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { clubTime } from "@/lib/club-time";
+import { clubTime, clubToday, clubDayLabel, addClubDays } from "@/lib/club-time";
 import { useClubRules } from "@/hooks/use-club-rules";
+import { apiErrorText } from "@/lib/api-errors";
 
 type Form = {
   name: string;
@@ -57,11 +57,11 @@ const blank: Form = {
 export default function AdminEquipment() {
   const rules = useClubRules();
   const tx = useTx();
-  const locale = useDateLocale();
+  const { lang } = useI18n();
   const { toast } = useToast();
   const qc = useQueryClient();
   const { confirm, dialog } = useConfirm();
-  const [day, setDay] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [day, setDay] = useState(clubToday());
   const { data: items, isLoading } = useAdminEquipment();
   const { data: rentals, isLoading: loadingRentals } = useRentals(day);
   const create = useCreateEquipment(),
@@ -119,10 +119,10 @@ export default function AdminEquipment() {
       setEditing(null);
       refresh();
     };
-    const fail = (err: any) =>
+    const fail = (err: unknown) =>
       toast({
         title: tx({ fr: "Enregistrement impossible", en: "Couldn't save", ar: "تعذر الحفظ" }),
-        description: err?.data?.error,
+        description: apiErrorText(err, tx),
         variant: "destructive",
       });
     if (editing && editing !== "new")
@@ -155,7 +155,7 @@ export default function AdminEquipment() {
     )
       return;
     del.mutate(i.id, {
-      onSuccess: (r: any) => {
+      onSuccess: (r) => {
         toast({
           title: r?.archived
             ? tx({ fr: "Article archivé", en: "Item archived", ar: "تمت الأرشفة" })
@@ -181,7 +181,7 @@ export default function AdminEquipment() {
   const toPrepare = (rentals ?? [])
     .filter((r) => r.status === "reserved")
     .reduce((s, r) => s + r.quantity, 0);
-  const days = [0, 1, 2].map((n) => format(addDays(new Date(), n), "yyyy-MM-dd"));
+  const days = [0, 1, 2].map((n) => addClubDays(clubToday(), n));
 
   return (
     <Page wide>
@@ -221,7 +221,7 @@ export default function AdminEquipment() {
                     ? tx({ fr: "Aujourd'hui", en: "Today", ar: "اليوم" })
                     : i === 1
                       ? tx({ fr: "Demain", en: "Tomorrow", ar: "غدًا" })
-                      : format(new Date(d + "T12:00"), "EEE d", { locale }),
+                      : clubDayLabel(d, lang, "weekdayDay"),
               }))}
             />
             <Input
@@ -353,12 +353,12 @@ export default function AdminEquipment() {
           }
         />
       ) : (
-        <ul className="stagger m-0 grid list-none gap-3 p-0 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="stagger m-0 grid list-none grid-cols-1 gap-3 p-0 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((i) => (
             <li
               key={i.id}
               className={cn(
-                "lift enter flex items-center gap-4 rounded-[24px] bg-card p-4 shadow-sm",
+                "lift enter flex min-w-0 items-center gap-3 rounded-[24px] bg-card p-4 shadow-sm",
                 !i.isActive && "opacity-55",
               )}
             >

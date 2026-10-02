@@ -1,11 +1,12 @@
-import { format } from "date-fns";
 import type { OpenMatch } from "@workspace/api-client-react";
 import { CoinsIcon, PlusIcon, SunIcon, WarehouseIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/smash/primitives";
-import { useTx, useDateLocale } from "@/lib/i18n";
+import { useTx, useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useClubRules } from "@/hooks/use-club-rules";
+import { clubTime, clubDate } from "@/lib/club-time";
+import { openSpotsLabel, playersLabel, tokensLabel } from "@/lib/labels";
 
 export function MatchCard({
   match,
@@ -19,9 +20,15 @@ export function MatchCard({
   className?: string;
 }) {
   const tx = useTx();
-  const locale = useDateLocale();
-  const { tokenCostPlayer: cost } = useClubRules();
+  const { lang } = useI18n();
+  const rules = useClubRules();
+  // Peak hours cost more: the match carries its own price per spot
+  const cost = match.tokensPerSpot ?? rules.tokenCostPlayer;
   const start = new Date(match.startTime);
+  const names = match.players
+    .map((p) => p.name)
+    .filter(Boolean)
+    .join(", ");
   const outdoor = match.terrain?.type === "outdoor";
   return (
     <article
@@ -32,11 +39,11 @@ export function MatchCard({
     >
       <div className="flex items-start justify-between gap-3">
         <span className="flex flex-col">
-          <span className="disp text-[48px] leading-[0.9]" dir="ltr">
-            {format(start, "HH:mm")}
+          <span className="disp self-start text-[48px] leading-[0.9]" dir="ltr">
+            {clubTime(start)}
           </span>
-          <span className="mt-1 text-sm font-semibold capitalize text-muted-foreground">
-            {format(start, "EEEE d MMMM", { locale })}
+          <span className="mt-1 text-sm font-semibold text-muted-foreground">
+            {clubDate(start, lang)}
           </span>
         </span>
         <span className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5 text-[13px] font-bold">
@@ -44,6 +51,11 @@ export function MatchCard({
           {match.terrain?.name}
         </span>
       </div>
+      {names && (
+        <span className="-mb-3 truncate text-sm font-semibold text-muted-foreground">
+          {tx({ fr: `Avec ${names}`, en: `With ${names}`, ar: `مع ${names}` })}
+        </span>
+      )}
       <p className="m-0 text-[17px] font-bold leading-snug">
         {match.publicDescription ||
           tx({
@@ -52,15 +64,8 @@ export function MatchCard({
             ar: "مباراة ودية لكل المستويات",
           })}
       </p>
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-[#E4E8F7] pt-5 text-court">
-        <span
-          className="flex ps-2.5"
-          aria-label={tx({
-            fr: `${match.filledSpots} joueurs sur ${match.totalSpots}`,
-            en: `${match.filledSpots} of ${match.totalSpots} players`,
-            ar: `${match.filledSpots} من ${match.totalSpots}`,
-          })}
-        >
+      <div className="mt-auto flex items-center justify-between gap-3 border-t border-[#E4E8F7] pt-5 text-court">
+        <span className="flex ps-2.5" aria-hidden="true">
           {match.players.map((p, i) => (
             <span
               key={i}
@@ -81,18 +86,23 @@ export function MatchCard({
             </span>
           ))}
         </span>
-        <Button onClick={onJoin} loading={pending} size="sm" className="shrink-0">
-          <CoinsIcon weight="fill" />
-          {tx({ fr: `Rejoindre · ${cost}`, en: `Join · ${cost}`, ar: `انضم · ${cost}` })}
-        </Button>
+        <span className="flex flex-col items-end text-end">
+          <span className="text-base font-extrabold text-ink">
+            {playersLabel(tx, match.filledSpots, match.totalSpots)}
+          </span>
+          <span className="text-sm font-semibold text-[#0F6B3C]">
+            {openSpotsLabel(tx, match.openSpots)}
+          </span>
+        </span>
       </div>
-      <span className="-mt-2 text-sm font-semibold text-success">
+      <Button onClick={onJoin} loading={pending} className="-mt-1 w-full">
+        <CoinsIcon weight="fill" />
         {tx({
-          fr: `${match.openSpots} place(s) libre(s)`,
-          en: `${match.openSpots} spot(s) left`,
-          ar: `${match.openSpots} مكان شاغر`,
+          fr: `Rejoindre · ${tokensLabel(cost)}`,
+          en: `Join · ${tokensLabel(cost)}`,
+          ar: `انضم · ${cost} رصيد`,
         })}
-      </span>
+      </Button>
     </article>
   );
 }

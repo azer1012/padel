@@ -39,5 +39,4 @@ export const PHOTOS = {
   hero: "/hero-padel.webp",
   indoor: "/terrain-indoor.webp",
   outdoor: "/terrain-outdoor.webp",
-  tournament: "/tournament.webp",
 } as const;

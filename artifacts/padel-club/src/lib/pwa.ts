@@ -1,13 +1,12 @@
 /**
  * Installable app + web push.
- * - registerServiceWorker(): production only, never in demo mode or inside an iframe (previews)
+ * - registerServiceWorker(): production only, never inside an iframe (previews)
  * - install prompt: Chrome/Edge/Android fire `beforeinstallprompt`; iOS Safari needs manual
  *   "Share → Add to Home Screen", so we detect it and show instructions instead
  * - push: subscribe this device with the API's VAPID key
  */
 import { useSyncExternalStore } from "react";
 import { pushSubscribe, pushUnsubscribe } from "@workspace/api-client-react";
-import { DEMO } from "@/lib/demo-flag";
 
 type BIPEvent = Event & {
   prompt: () => Promise<void>;
@@ -28,11 +27,13 @@ const inIframe = () => {
 export const isStandalone = () =>
   typeof window !== "undefined" &&
   (window.matchMedia?.("(display-mode: standalone)").matches ||
-    (navigator as any).standalone === true);
+    // iOS Safari only: true when launched from the home screen
+    (navigator as Navigator & { standalone?: boolean }).standalone === true);
 export const isIOS = () =>
   typeof navigator !== "undefined" &&
   /iphone|ipad|ipod/i.test(navigator.userAgent) &&
-  !(window as any).MSStream;
+  // Old Windows Phone browsers claimed to be iPhones
+  !("MSStream" in window);
 export const pushSupported = () =>
   typeof window !== "undefined" &&
   "serviceWorker" in navigator &&
@@ -40,7 +41,7 @@ export const pushSupported = () =>
   "Notification" in window;
 
 export function registerServiceWorker() {
-  if (DEMO || !import.meta.env.PROD || inIframe() || !("serviceWorker" in navigator)) return;
+  if (!import.meta.env.PROD || inIframe() || !("serviceWorker" in navigator)) return;
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
     deferred = e as BIPEvent;
@@ -70,7 +71,7 @@ export function useInstallPrompt() {
     () => false,
   );
   const mode: "native" | "ios" | null =
-    isStandalone() || DEMO || inIframe() ? null : canNative ? "native" : isIOS() ? "ios" : null;
+    isStandalone() || inIframe() ? null : canNative ? "native" : isIOS() ? "ios" : null;
   const install = async () => {
     if (!deferred) return false;
     await deferred.prompt();

@@ -32,9 +32,12 @@ import {
 import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
 import { Field, Pill, Segmented, useConfirm } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
-import { useTx, useDateLocale } from "@/lib/i18n";
+import { useTx, useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { useClubRules } from "@/hooks/use-club-rules";
+import { useClubRules, openingHourBounds } from "@/hooks/use-club-rules";
+import { tokensLabel } from "@/lib/labels";
+import { clubDayLabel, addClubDays } from "@/lib/club-time";
+import { apiErrorText } from "@/lib/api-errors";
 
 type Form = {
   name: string;
@@ -59,20 +62,6 @@ const blank: Form = {
   isActive: true,
 };
 const ORDER = [1, 2, 3, 4, 5, 6, 0]; // Monday first
-/** Hour rows of the preview grid: from the earliest opening to the latest closing. */
-function clubHours(days: { isClosed: boolean; openTime: string; closeTime: string }[]) {
-  const open = days.filter((d) => !d.isClosed);
-  const first = open.length ? Math.min(...open.map((d) => Number(d.openTime.slice(0, 2)))) : 8;
-  const last = open.length
-    ? Math.max(
-        ...open.map((d) =>
-          Math.ceil((Number(d.closeTime.slice(0, 2)) * 60 + Number(d.closeTime.slice(3))) / 60),
-        ),
-      )
-    : 24;
-  return Array.from({ length: Math.max(1, last - first) }, (_, i) => i + first);
-}
-
 /** Same resolution as the server (lib/pricing.ts): highest priority, court-specific first, newest first. */
 function resolve(rules: PricingRule[], day: number, time: string, terrainId: number | null) {
   const m = rules.filter(
@@ -95,8 +84,12 @@ function resolve(rules: PricingRule[], day: number, time: string, terrainId: num
 export default function AdminPricing() {
   const tx = useTx();
   const club = useClubRules();
-  const HOURS = useMemo(() => clubHours(club.openingHours), [club.openingHours]);
-  const locale = useDateLocale();
+  // Hour rows of the preview grid: from the earliest opening to the latest closing
+  const HOURS = useMemo(() => {
+    const { firstHour, lastHour } = openingHourBounds(club.openingHours);
+    return Array.from({ length: lastHour - firstHour }, (_, i) => firstHour + i);
+  }, [club.openingHours]);
+  const { lang } = useI18n();
   const { toast } = useToast();
   const qc = useQueryClient();
   const { confirm, dialog } = useConfirm();
@@ -114,10 +107,8 @@ export default function AdminPricing() {
     qc.invalidateQueries({ queryKey: extrasKeys.pricingRules });
     qc.invalidateQueries({ queryKey: ["/api/calendar"] });
   };
-  const dayName = (d: number) =>
-    new Intl.DateTimeFormat(locale.code ?? "fr", { weekday: "short" }).format(
-      new Date(2024, 0, 7 + d),
-    );
+  // 2024-01-07 is a Sunday: weekday 0
+  const dayName = (d: number) => clubDayLabel(addClubDays("2024-01-07", d), lang, "weekdayShort");
   const courtName = (id: number | null) =>
     id == null
       ? tx({ fr: "Tous les terrains", en: "All courts", ar: "كل الملاعب" })
@@ -141,10 +132,10 @@ export default function AdminPricing() {
     });
     setEditing(r);
   };
-  const fail = (e: any) =>
+  const fail = (e: unknown) =>
     toast({
       title: tx({ fr: "Enregistrement impossible", en: "Couldn't save", ar: "تعذر الحفظ" }),
-      description: e?.data?.error,
+      description: apiErrorText(e, tx),
       variant: "destructive",
     });
 
@@ -236,9 +227,9 @@ export default function AdminPricing() {
         eyebrow="Admin"
         title={tx({ fr: "Tarifs", en: "Pricing", ar: "الأسعار" })}
         subtitle={tx({
-          fr: "Heures pleines et creuses : combien de tokens coûte une place selon le jour et l'heure. Sans règle, une place = 1 token.",
-          en: "Peak and off-peak: how many tokens a spot costs by day and time. With no rule, a spot = 1 token.",
-          ar: "ساعات الذروة وغير الذروة: كم رصيدًا يكلف المكان حسب اليوم والساعة. بدون قاعدة، المكان = رصيد واحد.",
+          fr: `Heures pleines et creuses : combien de tokens coûte une place selon le jour et l'heure. Sans règle, une place = ${tokensLabel(club.tokenCostPlayer)}.`,
+          en: `Peak and off-peak: how many tokens a spot costs by day and time. With no rule, a spot = ${tokensLabel(club.tokenCostPlayer)}.`,
+          ar: `ساعات الذروة وغير الذروة: كم رصيدًا يكلف المكان حسب اليوم والساعة. بدون قاعدة، المكان = ${club.tokenCostPlayer} رصيد.`,
         })}
         actions={
           <Button onClick={openNew} data-testid="btn-create-rule">
@@ -255,7 +246,10 @@ export default function AdminPricing() {
             {tx({ fr: "Votre semaine", en: "Your week", ar: "أسبوعك" })}
           </h2>
           <Select value={previewCourt} onValueChange={setPreviewCourt}>
-            <SelectTrigger className="w-[200px]">
+            <SelectTrigger
+              className="w-[200px]"
+              aria-label={tx({ fr: "Terrain affiché", en: "Court shown", ar: "الملعب المعروض" })}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -270,7 +264,7 @@ export default function AdminPricing() {
             </SelectContent>
           </Select>
         </div>
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[720px] border-separate border-spacing-1" dir="ltr">
             <caption className="sr-only">
               {tx({
@@ -301,7 +295,7 @@ export default function AdminPricing() {
                   {grid[i].map((c, j) => (
                     <td
                       key={j}
-                      title={c.r ? `${c.r.name}: ${c.tokens} token(s)` : "1 token"}
+                      title={c.r ? `${c.r.name}: ${tokensLabel(c.tokens)}` : tokensLabel(c.tokens)}
                       className={cn(
                         "h-9 rounded-md text-center text-xs font-extrabold",
                         c.r ? tone(c.tokens, c.r.isPeak) : "bg-mist text-muted-foreground",
@@ -330,9 +324,9 @@ export default function AdminPricing() {
         <EmptyState
           icon={<TagIcon className="size-7" />}
           title={tx({
-            fr: "Aucune règle : tout est à 1 token par place",
-            en: "No rules: everything is 1 token per spot",
-            ar: "لا قواعد: كل شيء برصيد واحد",
+            fr: `Aucune règle : tout est à ${tokensLabel(club.tokenCostPlayer)} par place`,
+            en: `No rules: everything is ${tokensLabel(club.tokenCostPlayer)} per spot`,
+            ar: `لا قواعد: كل مكان بـ ${club.tokenCostPlayer} رصيد`,
           })}
           text={tx({
             fr: "Créez une règle « heures pleines » pour les soirs de semaine, par exemple.",
@@ -520,7 +514,7 @@ export default function AdminPricing() {
               })}
             >
               <Segmented
-                label="Tokens"
+                label={tx({ fr: "Tokens", en: "Tokens", ar: "الرصيد" })}
                 value={String(form.tokensPerSpot)}
                 onChange={(v) => set("tokensPerSpot", Number(v))}
                 options={["1", "2", "3", "4"].map((v) => ({ value: v, label: v }))}

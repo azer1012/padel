@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { Link } from "wouter";
-import { format, subDays, differenceInMinutes, startOfDay } from "date-fns";
 import {
   useGetMe,
   useGetDashboardStats,
@@ -15,58 +14,85 @@ import {
   CalendarDotsIcon,
   CalendarXIcon,
   CoinsIcon,
+  MoneyIcon,
   PlusIcon,
   PulseIcon,
   UserPlusIcon,
   UsersIcon,
+  WrenchIcon,
 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CountUp, EmptyState, LiveDot, Page, PageHeader } from "@/components/smash/primitives";
-import { useTx, useDateLocale } from "@/lib/i18n";
+import { useTx, useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { useClubRules } from "@/hooks/use-club-rules";
-
-const DAY_START = 7,
-  DAY_END = 24;
+import { openingHourBounds, useClubRules } from "@/hooks/use-club-rules";
+import {
+  clubTime,
+  clubDate,
+  clubDateTime,
+  clubToday,
+  clubDayLabel,
+  addClubDays,
+  clubMinutes,
+} from "@/lib/club-time";
+import { plural } from "@/lib/labels";
 
 export default function AdminDashboard() {
   const rules = useClubRules();
   const tx = useTx();
-  const locale = useDateLocale();
+  const { lang } = useI18n();
   const { data: user } = useGetMe();
-  const today = format(new Date(), "yyyy-MM-dd");
+  const today = clubToday();
   const { data: stats, isLoading: loadingStats } = useGetDashboardStats();
   const { data: activity } = useGetRecentActivity({ limit: 8 });
   const { data: occupancy } = useGetOccupancyStats({
-    startDate: format(subDays(new Date(), 6), "yyyy-MM-dd"),
+    startDate: addClubDays(today, -6),
     endDate: today,
   });
   const { data: calendar, isLoading: loadingCal } = useGetCalendar(
     { date: today },
-    { query: { refetchInterval: 60_000 } as any },
+    { query: { refetchInterval: 60_000 } },
   );
 
+  // Today's timeline runs from the club's earliest opening to its latest closing
+  const { firstHour: dayStart, lastHour: dayEnd } = openingHourBounds(rules.openingHours);
   const now = new Date();
-  const nowFrac = Math.min(
-    1,
-    Math.max(
-      0,
-      (differenceInMinutes(now, startOfDay(now)) / 60 - DAY_START) / (DAY_END - DAY_START),
-    ),
-  );
+  // Position on the timeline, in club time (0 = dayStart, 1 = dayEnd)
+  const frac = (hours: number) => (hours - dayStart) / (dayEnd - dayStart);
+  const nowFrac = Math.min(1, Math.max(0, frac(clubMinutes(now) / 60)));
   const hours = Array.from(
-    { length: (DAY_END - DAY_START) / 2 + 1 },
-    (_, i) => DAY_START + i * 2,
-  ).filter((h) => h < DAY_END);
+    { length: Math.floor((dayEnd - dayStart) / 2) + 1 },
+    (_, i) => dayStart + i * 2,
+  ).filter((h) => h < dayEnd);
   const chart = useMemo(
     () =>
       (occupancy ?? []).map((d) => ({
-        day: format(new Date(d.date), "EEE", { locale }),
+        day: clubDayLabel(d.date, lang, "weekdayShort"),
         rate: Math.round(d.occupancyRate),
       })),
-    [occupancy, locale],
+    [occupancy, lang],
   );
+
+  // What needs a human today: cash still to collect, courts out of service
+  const cashDue = (calendar?.terrains ?? []).reduce(
+    (n, t) =>
+      n +
+      t.slots.reduce(
+        (m, s) =>
+          m +
+          (s.reservationId && !s.isBlocked
+            ? s.players.filter((p) => p.paymentType === "cash_club" && p.paymentStatus !== "paid")
+                .length
+            : 0),
+        0,
+      ),
+    0,
+  );
+  const inMaintenance = (calendar?.terrains ?? []).filter((t) => t.terrain.isMaintenance);
+  const reduceMotion =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
   if (user && user.role !== "admin")
     return (
@@ -138,7 +164,7 @@ export default function AdminDashboard() {
   return (
     <Page wide>
       <PageHeader
-        eyebrow={format(new Date(), "EEEE d MMMM", { locale })}
+        eyebrow={clubDate(new Date(), lang)}
         title={tx({ fr: "Aujourd'hui au club", en: "Today at the club", ar: "اليوم في النادي" })}
         actions={
           <>
@@ -168,7 +194,7 @@ export default function AdminDashboard() {
             )}
           >
             <span className="flex items-start justify-between gap-2 text-sm font-semibold">
-              <span className="opacity-80">{k.label}</span>
+              <span className="opacity-90">{k.label}</span>
               <span className="tile-ic flex size-9 shrink-0 items-center justify-center rounded-xl bg-current/10">
                 <k.icon className="size-5" weight="duotone" />
               </span>
@@ -188,11 +214,51 @@ export default function AdminDashboard() {
                 />
               </span>
             ) : (
-              k.sub && <span className="text-sm opacity-80">{k.sub}</span>
+              k.sub && <span className="text-sm opacity-90">{k.sub}</span>
             )}
           </div>
         ))}
       </div>
+
+      {(cashDue > 0 || inMaintenance.length > 0) && (
+        <ul
+          aria-label={tx({ fr: "À traiter", en: "Needs attention", ar: "يحتاج متابعة" })}
+          className="enter m-0 flex list-none flex-col gap-2 p-0 sm:flex-row sm:flex-wrap"
+        >
+          {cashDue > 0 && (
+            <li>
+              <Link
+                href="/admin/reservations"
+                className="group flex items-center gap-3 rounded-2xl bg-[#FFEBD9] px-4 py-3 text-[15px] font-bold text-[#7A3A0D] transition-transform hover:-translate-y-0.5"
+              >
+                <MoneyIcon className="size-5 shrink-0" />
+                {tx({
+                  fr: `${cashDue} ${plural(cashDue, "paiement en espèces à encaisser", "paiements en espèces à encaisser")} aujourd'hui`,
+                  en: `${cashDue} cash ${plural(cashDue, "payment", "payments")} to collect today`,
+                  ar: `${cashDue} دفعات نقدية للتحصيل اليوم`,
+                })}
+                <ArrowRightIcon className="btn-ic ms-auto size-4 transition-transform group-hover:translate-x-1" />
+              </Link>
+            </li>
+          )}
+          {inMaintenance.length > 0 && (
+            <li>
+              <Link
+                href="/admin/terrains"
+                className="group flex items-center gap-3 rounded-2xl bg-secondary px-4 py-3 text-[15px] font-bold text-ink transition-transform hover:-translate-y-0.5"
+              >
+                <WrenchIcon className="size-5 shrink-0" />
+                {tx({
+                  fr: `En maintenance : ${inMaintenance.map((t) => t.terrain.name).join(", ")}`,
+                  en: `Under maintenance: ${inMaintenance.map((t) => t.terrain.name).join(", ")}`,
+                  ar: `تحت الصيانة: ${inMaintenance.map((t) => t.terrain.name).join("، ")}`,
+                })}
+                <ArrowRightIcon className="btn-ic ms-auto size-4 transition-transform group-hover:translate-x-1" />
+              </Link>
+            </li>
+          )}
+        </ul>
+      )}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         {/* Today's court timeline */}
@@ -223,15 +289,25 @@ export default function AdminDashboard() {
               title={tx({ fr: "Aucun terrain actif", en: "No active courts", ar: "لا ملاعب نشطة" })}
             />
           ) : (
-            <div className="overflow-x-auto">
-              <div className="min-w-[760px]">
+            // Scrolls sideways on small screens: reachable from the keyboard too
+            <div
+              className="relative overflow-x-auto"
+              role="region"
+              tabIndex={0}
+              aria-label={tx({
+                fr: "Occupation des terrains aujourd'hui",
+                en: "Court occupancy today",
+                ar: "إشغال الملاعب اليوم",
+              })}
+            >
+              <div className="min-w-[920px]">
                 <div className="flex ps-[112px] text-xs font-bold text-muted-foreground" dir="ltr">
                   <div className="relative h-5 flex-1">
                     {hours.map((h) => (
                       <span
                         key={h}
                         className="absolute -translate-x-1/2"
-                        style={{ left: `${((h - DAY_START) / (DAY_END - DAY_START)) * 100}%` }}
+                        style={{ left: `${frac(h) * 100}%` }}
                       >
                         {String(h).padStart(2, "0")}:00
                       </span>
@@ -243,33 +319,36 @@ export default function AdminDashboard() {
                     <div key={terrain.id} className="flex items-stretch">
                       <span className="flex w-[112px] shrink-0 flex-col justify-center pe-3">
                         <span className="truncate text-[15px] font-extrabold">{terrain.name}</span>
-                        <span className="text-xs capitalize text-muted-foreground">
-                          {terrain.type}
+                        <span className="text-xs text-muted-foreground">
+                          {terrain.type === "outdoor" ? "Outdoor" : "Indoor"}
                         </span>
                       </span>
                       <div className="relative h-[58px] flex-1 rounded-2xl bg-mist">
                         {slots
                           .filter((s) => s.reservationId)
                           .map((s, col) => {
-                            const st = new Date(s.startTime),
-                              en = new Date(s.endTime);
-                            const h0 = st.getHours() + st.getMinutes() / 60,
-                              h1 = en.getHours() + en.getMinutes() / 60 || 24;
-                            const left = ((h0 - DAY_START) / (DAY_END - DAY_START)) * 100,
-                              width = ((h1 - h0) / (DAY_END - DAY_START)) * 100;
+                            // A match ending at midnight ends at hour 24, not 0
+                            const h0 = clubMinutes(s.startTime) / 60,
+                              h1 = clubMinutes(s.endTime) / 60 || 24;
+                            const left = frac(h0) * 100,
+                              width = (frac(h1) - frac(h0)) * 100;
                             if (left < 0 || left > 100) return null;
                             const tone = s.isPublic
                               ? "bg-ball text-night"
                               : s.status === "full" || s.bookingMode === "full_court"
                                 ? "bg-court text-white"
                                 : "bg-lilac text-night";
+                            const who =
+                              s.creatorName ??
+                              s.players[0]?.name ??
+                              tx({ fr: "Réservé", en: "Booked", ar: "محجوز" });
                             return (
                               <Link
                                 key={s.startTime}
                                 href="/admin/reservations"
-                                title={`${s.creatorName ?? ""} ${format(st, "HH:mm")}–${format(en, "HH:mm")}`}
+                                title={`${who} · ${clubTime(s.startTime)}–${clubTime(s.endTime)} · ${s.filledSpots}/${s.totalSpots}`}
                                 className={cn(
-                                  "grow-x absolute inset-y-1 flex flex-col justify-center overflow-hidden rounded-xl px-2.5 transition-[translate,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md",
+                                  "grow-x absolute inset-y-1 flex flex-col justify-center overflow-hidden rounded-xl px-2 transition-[translate,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md",
                                   tone,
                                 )}
                                 style={{
@@ -279,12 +358,10 @@ export default function AdminDashboard() {
                                 }}
                               >
                                 <span className="truncate text-[13px] font-extrabold">
-                                  {s.creatorName ??
-                                    s.players[0]?.name ??
-                                    tx({ fr: "Réservé", en: "Booked", ar: "محجوز" })}
+                                  {who.split(" ")[0]}
                                 </span>
-                                <span className="truncate text-[11px] opacity-80">
-                                  {s.filledSpots}/{s.totalSpots} · {format(st, "HH:mm")}
+                                <span className="truncate text-[11px] font-semibold opacity-90">
+                                  {clubTime(s.startTime)} · {s.filledSpots}/{s.totalSpots}
                                 </span>
                               </Link>
                             );
@@ -300,7 +377,7 @@ export default function AdminDashboard() {
                     >
                       <span className="absolute -top-5 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-coral px-2 py-0.5 text-[11px] font-extrabold text-night">
                         <LiveDot color="var(--color-night)" className="!size-1.5" />
-                        {format(now, "HH:mm")}
+                        {clubTime(now)}
                       </span>
                     </div>
                   )}
@@ -334,7 +411,7 @@ export default function AdminDashboard() {
                     <span className="flex min-w-0 flex-col">
                       <span className="text-sm font-semibold leading-snug">{a.message}</span>
                       <span className="text-xs text-muted-d">
-                        {format(new Date(a.createdAt), "d MMM · HH:mm", { locale })}
+                        {clubDateTime(a.createdAt, lang, "dayMonth")}
                       </span>
                     </span>
                   </li>
@@ -393,7 +470,13 @@ export default function AdminDashboard() {
                     tx({ fr: "Occupation", en: "Occupancy", ar: "الإشغال" }),
                   ]}
                 />
-                <Bar dataKey="rate" fill="#2E4CF6" radius={[10, 10, 10, 10]} maxBarSize={48} />
+                <Bar
+                  dataKey="rate"
+                  fill="#2E4CF6"
+                  radius={[10, 10, 10, 10]}
+                  maxBarSize={48}
+                  isAnimationActive={!reduceMotion}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>

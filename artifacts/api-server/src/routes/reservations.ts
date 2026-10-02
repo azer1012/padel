@@ -1,4 +1,4 @@
-import { Router, type Request } from "express";
+import { Router } from "express";
 import {
   db,
   reservationsTable,
@@ -6,10 +6,10 @@ import {
   usersTable,
   activityTable,
   reservationPlayersTable,
-  reservationEquipmentTable,
+  type Tx,
 } from "@workspace/db";
 import { eq, and, gte, lt, desc, count, inArray, or } from "drizzle-orm";
-import { requireUser, requireAdmin } from "../lib/auth";
+import { currentUser, requireUser, requireAdmin, type DbUser } from "../lib/auth";
 import { loadActiveRules, priceFor, tokensFor } from "../lib/pricing";
 import { notifyLater } from "../lib/notify";
 import {
@@ -19,18 +19,21 @@ import {
   formatClubDate,
   formatClubTime,
   isClubDate,
-  type Lang,
 } from "../lib/club-time";
-import { EquipmentError, normalizeRequest, reserveEquipment } from "../lib/equipment";
-import { moveTokens, type Tx } from "../lib/ledger";
+import { normalizeRequest, reserveEquipment } from "../lib/equipment";
+import { moveTokens } from "../lib/ledger";
+import {
+  bookingConflict,
+  lateCancellation,
+  refundPlayers,
+  releaseEquipment,
+} from "../lib/bookings";
+import { fullName } from "../lib/members";
 import { assertBookable } from "../lib/slots";
-import { getSettings, scheduleContext, type ClubSettings } from "../lib/settings";
-import { HttpError, cleanText, oneOf, paging, pgCode, requireId, toId } from "../lib/http";
+import { getSettings, scheduleContext } from "../lib/settings";
+import { HttpError, cleanText, oneOf, paging, requireId, toId } from "../lib/http";
 
 const router = Router();
-type DbUser = typeof usersTable.$inferSelect;
-const me = (req: Request) => (req as any).dbUser as DbUser;
-const fullName = (u: DbUser) => `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email;
 
 const withDetails = {
   terrain: true,
@@ -38,6 +41,43 @@ const withDetails = {
   players: { with: { user: true } },
   equipment: { with: { item: true } },
 } as const;
+
+/** What a member may know about another member of the same match: a name, never contact details, balance or auth id. */
+const publicUser = (u: DbUser | null | undefined) =>
+  u
+    ? {
+        id: u.id,
+        firstName: u.firstName,
+        lastName: u.lastName?.trim() ? `${u.lastName.trim().charAt(0)}.` : null,
+        avatarUrl: u.avatarUrl,
+      }
+    : null;
+
+type Detailed = {
+  userId: number | null;
+  guestPhone: string | null;
+  notes: string | null;
+  user: DbUser | null;
+  players: { userId: number; notes: string | null; user: DbUser | null }[];
+};
+
+/**
+ * Admins see everything. A player sees their own row in full and only the public
+ * name of the other players; desk notes and guest phones stay with the booker.
+ */
+function forViewer<T extends Detailed>(r: T, viewer: DbUser) {
+  if (viewer.role === "admin") return r;
+  const booker = r.userId === viewer.id;
+  return {
+    ...r,
+    guestPhone: booker ? r.guestPhone : null,
+    notes: booker ? r.notes : null,
+    user: booker ? r.user : publicUser(r.user),
+    players: r.players.map((p) =>
+      p.userId === viewer.id ? p : { ...p, notes: null, user: publicUser(p.user) },
+    ),
+  };
+}
 
 /** Reservation ids where the user is the creator or a player. */
 async function myReservationIds(userId: number) {
@@ -51,23 +91,8 @@ async function myReservationIds(userId: number) {
     : eq(reservationsTable.userId, userId);
 }
 
-/** Translates database refusals into clear 4xx answers. */
-export function bookingConflict(err: unknown): never {
-  if (err instanceof EquipmentError)
-    throw new HttpError(
-      409,
-      `Not enough ${err.itemName} available (${err.available} left)`,
-      "EQUIPMENT_UNAVAILABLE",
-    );
-  const code = pgCode(err);
-  // 23P01 = reservations_no_overlap, 23505 = same start already confirmed
-  if (code === "23P01" || code === "23505")
-    throw new HttpError(409, "This slot was just booked by someone else", "SLOT_TAKEN");
-  throw err;
-}
-
 router.get("/reservations/upcoming", requireUser, async (req, res) => {
-  const user = me(req);
+  const user = currentUser(req);
   const reservations = await db.query.reservationsTable.findMany({
     where: and(
       gte(reservationsTable.endTime, new Date()),
@@ -78,11 +103,11 @@ router.get("/reservations/upcoming", requireUser, async (req, res) => {
     orderBy: [reservationsTable.startTime],
     limit: 20,
   });
-  res.json(reservations);
+  res.json(reservations.map((r) => forViewer(r, user)));
 });
 
 router.get("/reservations", requireUser, async (req, res) => {
-  const user = me(req);
+  const user = currentUser(req);
   const q = req.query as Record<string, string>;
   const { page, limit, offset } = paging(q, 20, 100);
   const conditions = [];
@@ -110,7 +135,7 @@ router.get("/reservations", requireUser, async (req, res) => {
     limit,
     offset,
   });
-  res.json({ data, total: Number(total), page, limit });
+  res.json({ data: data.map((r) => forViewer(r, user)), total: Number(total), page, limit });
 });
 
 /**
@@ -121,8 +146,8 @@ router.get("/reservations", requireUser, async (req, res) => {
  *          or for a walk-in / phone guest (guestName, no account).
  */
 router.post("/reservations", requireUser, async (req, res) => {
-  const currentUser = me(req);
-  const isAdmin = currentUser.role === "admin";
+  const booker = currentUser(req);
+  const isAdmin = booker.role === "admin";
   const b = req.body ?? {};
 
   const terrainId = requireId(b.terrainId, "court");
@@ -139,7 +164,7 @@ router.post("/reservations", requireUser, async (req, res) => {
   const end = assertBookable(ctx, terrain, start, { isAdmin });
 
   // Who is the booking for, and how is it paid?
-  let member: DbUser | null = currentUser;
+  let member: DbUser | null = booker;
   let paymentMethod: "token" | "cash_club" = "token";
   let guestName: string | null = null;
   let guestPhone: string | null = null;
@@ -198,7 +223,7 @@ router.post("/reservations", requireUser, async (req, res) => {
             delta: -tokensNeeded,
             type: "debit",
             reservationId: reservation.id,
-            adminId: isAdmin ? currentUser.id : null,
+            adminId: isAdmin ? booker.id : null,
             description: `${bookingMode === "own_spot" ? "Own spot" : "Full court"} · ${terrain.name} · ${formatClubDate(start)} ${formatClubTime(start)}`,
           });
         }
@@ -221,7 +246,7 @@ router.post("/reservations", requireUser, async (req, res) => {
 
       await tx.insert(activityTable).values({
         type: "reservation_created",
-        message: `${terrain.name} · ${formatClubDate(start)} ${formatClubTime(start)} (${bookingMode === "own_spot" ? "own spot" : "full court"}${isAdmin ? `, by ${fullName(currentUser)}` : ""})`,
+        message: `${terrain.name} · ${formatClubDate(start)} ${formatClubTime(start)} (${bookingMode === "own_spot" ? "own spot" : "full court"}${isAdmin ? `, by ${fullName(booker)}` : ""})`,
         userId: member?.id ?? null,
         userName: member ? fullName(member) : (guestName ?? "Guest"),
       });
@@ -232,13 +257,12 @@ router.post("/reservations", requireUser, async (req, res) => {
   }
 
   if (member) {
-    const lang = (member.language ?? "fr") as Lang;
     notifyLater(
       member,
       {
         kind: "booking_confirmed",
         terrain: terrain.name,
-        date: formatClubDate(start, lang),
+        date: formatClubDate(start, member.language),
         time: formatClubTime(start),
         tokens: chargeTokens ? tokensNeeded : 0,
         mode: bookingMode,
@@ -252,12 +276,12 @@ router.post("/reservations", requireUser, async (req, res) => {
     where: eq(reservationsTable.id, reservationId),
     with: withDetails,
   });
-  res.status(201).json(full);
+  res.status(201).json(full ? forViewer(full, booker) : full);
 });
 
 router.get("/reservations/:id", requireUser, async (req, res) => {
   const id = requireId(req.params.id);
-  const user = me(req);
+  const user = currentUser(req);
   const reservation = await db.query.reservationsTable.findFirst({
     where: eq(reservationsTable.id, id),
     with: withDetails,
@@ -266,7 +290,7 @@ router.get("/reservations/:id", requireUser, async (req, res) => {
   const isPlayer = reservation.players.some((p) => p.userId === user.id);
   if (user.role !== "admin" && reservation.userId !== user.id && !isPlayer)
     throw new HttpError(403, "Forbidden", "FORBIDDEN");
-  res.json(reservation);
+  res.json(forViewer(reservation, user));
 });
 
 /** Admin: edit notes only. Status changes go through /cancel so refunds always happen. */
@@ -274,34 +298,14 @@ router.patch("/reservations/:id", requireAdmin, async (req, res) => {
   const id = requireId(req.params.id);
   if (req.body?.status !== undefined && req.body.status !== "confirmed")
     throw new HttpError(400, "Use the cancel action to cancel a booking", "USE_CANCEL");
-  const [updated] = await db
-    .update(reservationsTable)
-    .set({ notes: cleanText(req.body?.notes, 500) })
-    .where(eq(reservationsTable.id, id))
-    .returning();
+  // Only what the request carries: a body without notes must not erase them
+  const patch = req.body?.notes === undefined ? {} : { notes: cleanText(req.body.notes, 500) };
+  const [updated] = Object.keys(patch).length
+    ? await db.update(reservationsTable).set(patch).where(eq(reservationsTable.id, id)).returning()
+    : await db.select().from(reservationsTable).where(eq(reservationsTable.id, id));
   if (!updated) throw new HttpError(404, "Reservation not found", "NOT_FOUND");
   res.json(updated);
 });
-
-/**
- * Players may cancel / leave with a full refund until `cancellationNoticeHours` before
- * the match. After that the club setting decides: 'forbid' (call the club) or
- * 'no_refund' (allowed, but the player's own tokens are not given back).
- * Returns true when the cancellation is late and refund-less. Admins are never limited.
- */
-export function lateCancellation(settings: ClubSettings, startTime: Date, now = new Date()) {
-  if (startTime <= now)
-    throw new HttpError(400, "This match has already started", "CANCELLATION_CLOSED");
-  const deadline = startTime.getTime() - settings.cancellationNoticeHours * 3600_000;
-  if (now.getTime() < deadline) return false;
-  if (settings.lateCancellation === "no_refund") return true;
-  throw new HttpError(
-    400,
-    `Cancellations are possible up to ${settings.cancellationNoticeHours} h before the match. Please call the club.`,
-    "CANCELLATION_CLOSED",
-    { cancellationNoticeHours: settings.cancellationNoticeHours },
-  );
-}
 
 /**
  * Cancel a whole booking: creator (within the cancellation rules) or admin (any time).
@@ -310,7 +314,7 @@ export function lateCancellation(settings: ClubSettings, startTime: Date, now = 
  */
 router.post("/reservations/:id/cancel", requireUser, async (req, res) => {
   const id = requireId(req.params.id);
-  const user = me(req);
+  const user = currentUser(req);
   const isAdmin = user.role === "admin";
 
   const check = await db.query.reservationsTable.findFirst({
@@ -341,15 +345,7 @@ router.post("/reservations/:id/cancel", requireUser, async (req, res) => {
       isAdmin ? user.id : null,
       forfeit ? user.id : null,
     );
-    await tx
-      .update(reservationEquipmentTable)
-      .set({ status: "cancelled" })
-      .where(
-        and(
-          eq(reservationEquipmentTable.reservationId, id),
-          eq(reservationEquipmentTable.status, "reserved"),
-        ),
-      );
+    await releaseEquipment(tx, id);
     await tx.insert(activityTable).values({
       type: "reservation_cancelled",
       message: `${check.terrain?.name ?? "Court"} · ${formatClubDate(check.startTime)} ${formatClubTime(check.startTime)} cancelled${isAdmin ? ` by ${fullName(user)}` : ""}`,
@@ -364,18 +360,21 @@ router.post("/reservations/:id/cancel", requireUser, async (req, res) => {
   for (const p of check.players) recipients.set(p.userId, 0);
   if (check.userId) recipients.set(check.userId, recipients.get(check.userId) ?? 0);
   for (const r of refunds) recipients.set(r.userId, (recipients.get(r.userId) ?? 0) + r.amount);
-  for (const [userId, refunded] of recipients) {
-    const u = await db.query.usersTable.findFirst({ where: eq(usersTable.id, userId) });
-    if (!u) continue;
-    const lang = (u.language ?? "fr") as Lang;
+  const members = recipients.size
+    ? await db
+        .select()
+        .from(usersTable)
+        .where(inArray(usersTable.id, [...recipients.keys()]))
+    : [];
+  for (const u of members) {
     notifyLater(
       u,
       {
         kind: "booking_cancelled",
         terrain: check.terrain?.name ?? "",
-        date: formatClubDate(check.startTime, lang),
+        date: formatClubDate(check.startTime, u.language),
         time: formatClubTime(check.startTime),
-        refunded,
+        refunded: recipients.get(u.id) ?? 0,
       },
       `cancel:${id}`,
     );
@@ -387,55 +386,10 @@ router.post("/reservations/:id/cancel", requireUser, async (req, res) => {
   res.json({ ...updated, refundForfeited: forfeit });
 });
 
-/**
- * Refunds every token-paid player of a reservation and marks their rows refunded.
- * `keepUserId`: a late 'no_refund' cancellation — that player's tokens stay with the club.
- */
-export async function refundPlayers(
-  tx: Tx,
-  reservationId: number,
-  description: string,
-  adminId: number | null,
-  keepUserId: number | null = null,
-) {
-  const paid = await tx
-    .select()
-    .from(reservationPlayersTable)
-    .where(
-      and(
-        eq(reservationPlayersTable.reservationId, reservationId),
-        eq(reservationPlayersTable.paymentStatus, "paid"),
-        eq(reservationPlayersTable.paymentType, "token"),
-      ),
-    )
-    .orderBy(reservationPlayersTable.userId)
-    .for("update");
-  const out: { userId: number; amount: number }[] = [];
-  for (const p of paid) {
-    if (p.userId === keepUserId) continue;
-    if (p.tokensCharged > 0) {
-      await moveTokens(tx, {
-        userId: p.userId,
-        delta: p.tokensCharged,
-        type: "credit",
-        reservationId,
-        adminId,
-        description,
-      });
-      out.push({ userId: p.userId, amount: p.tokensCharged });
-    }
-    await tx
-      .update(reservationPlayersTable)
-      .set({ paymentStatus: "refunded" })
-      .where(eq(reservationPlayersTable.id, p.id));
-  }
-  return out;
-}
-
 // ─── Add rental equipment to an existing booking ─────────────────────────────
 router.post("/reservations/:id/equipment", requireUser, async (req, res) => {
   const id = requireId(req.params.id);
-  const user = me(req);
+  const user = currentUser(req);
   const items = normalizeRequest(req.body?.items);
   if (!items.length) throw new HttpError(400, "No equipment selected", "VALIDATION_ERROR");
   const r = await db.query.reservationsTable.findFirst({

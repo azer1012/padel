@@ -1,20 +1,18 @@
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { EnvelopeOpenIcon, GiftIcon, MapPinIcon } from "@/components/icons";
-import {
-  useMyInvites,
-  useDeclineInvite,
-  settingsKeys,
-  apiErrorMessage,
-} from "@workspace/api-client-react";
+import { useMyInvites, useDeclineInvite, settingsKeys } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { useTx } from "@/lib/i18n";
-import { clubDate, clubTime } from "@/lib/club-time";
+import { useI18n, useTx } from "@/lib/i18n";
+import { clubTime, clubDate } from "@/lib/club-time";
+import { playersLabel, plural } from "@/lib/labels";
+import { apiErrorText } from "@/lib/api-errors";
 
 /** Personal match invitations waiting for an answer (hidden when there are none). */
 export function MyInvitations() {
   const tx = useTx();
+  const { lang } = useI18n();
   const { toast } = useToast();
   const qc = useQueryClient();
   const { data: invites } = useMyInvites();
@@ -28,8 +26,8 @@ export function MyInvitations() {
       <h2 className="m-0 flex items-center gap-2 text-xl font-extrabold">
         <EnvelopeOpenIcon className="size-5" />
         {tx({
-          fr: `${invites.length} invitation(s) à un match`,
-          en: `${invites.length} match invitation(s)`,
+          fr: `${invites.length} ${plural(invites.length, "invitation à un match", "invitations à un match")}`,
+          en: `${invites.length} ${plural(invites.length, "match invitation", "match invitations")}`,
           ar: `${invites.length} دعوة إلى مباراة`,
         })}
       </h2>
@@ -53,27 +51,25 @@ export function MyInvitations() {
                   </span>
                 )}
               </span>
-              <span className="flex items-center gap-1 text-sm capitalize">
+              <span className="flex flex-wrap items-center gap-x-1 text-sm">
                 <MapPinIcon className="size-3.5" />
-                {i.reservation.terrainName} ·{" "}
-                {clubDate(i.reservation.startTime, "fr", {
-                  weekday: "short",
-                  day: "numeric",
-                  month: "short",
-                })}{" "}
-                · <span dir="ltr">{clubTime(i.reservation.startTime)}</span>
+                {i.reservation.terrainName} · {clubDate(i.reservation.startTime, lang, "short")} ·{" "}
+                <span dir="ltr">{clubTime(i.reservation.startTime)}</span>
+                {" · "}
+                {playersLabel(tx, i.reservation.filledSpots, i.reservation.totalSpots)}
               </span>
             </span>
             <span className="flex gap-2">
               <Button size="sm" variant="dark" asChild>
                 <Link href={`/join/${i.token}`}>
-                  {tx({ fr: "Répondre", en: "Answer", ar: "الرد" })}
+                  {tx({ fr: "Voir et accepter", en: "View and accept", ar: "عرض وقبول" })}
                 </Link>
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
                 disabled={decline.isPending}
+                loading={decline.isPending && decline.variables === i.token}
                 onClick={() =>
                   decline.mutate(i.token, {
                     onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.myInvites }),
@@ -84,7 +80,7 @@ export function MyInvitations() {
                           en: "Couldn't decline",
                           ar: "تعذر الرفض",
                         }),
-                        description: apiErrorMessage(e, ""),
+                        description: apiErrorText(e, tx),
                         variant: "destructive",
                       }),
                   })

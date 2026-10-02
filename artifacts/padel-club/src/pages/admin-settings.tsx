@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -27,7 +36,6 @@ import {
   useDeleteTokenPackage,
   useListTerrains,
   settingsKeys,
-  apiErrorMessage,
   type AdminSettings,
   type SettingsPatch,
   type SettingsSection,
@@ -43,6 +51,8 @@ import { Field, Pill, Segmented, useConfirm } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
 import { useTx, type Copy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { apiErrorText } from "@/lib/api-errors";
+import { plural, tokenWord, tokensLabel } from "@/lib/labels";
 
 /* ─────────────────────────────── Shared pieces ─────────────────────────────── */
 
@@ -79,18 +89,37 @@ const INTEGER: NumKey[] = [
 ];
 
 function numberError(key: NumKey, raw: string, tx: Tx): string | null {
-  if (raw.trim() === "") return tx({ fr: "Obligatoire", en: "Required" });
+  if (raw.trim() === "") return tx({ fr: "Obligatoire", en: "Required", ar: "مطلوب" });
   const n = Number(raw);
   const [min, max] = LIMITS[key];
-  if (!Number.isFinite(n)) return tx({ fr: "Nombre invalide", en: "Invalid number" });
+  if (!Number.isFinite(n))
+    return tx({ fr: "Nombre invalide", en: "Invalid number", ar: "رقم غير صالح" });
   if (INTEGER.includes(key) && !Number.isInteger(n))
-    return tx({ fr: "Nombre entier", en: "Whole number" });
+    return tx({ fr: "Nombre entier", en: "Whole number", ar: "عدد صحيح فقط" });
   if (n < min || n > max)
-    return tx({ fr: `Entre ${min} et ${max}`, en: `Between ${min} and ${max}` });
+    return tx({
+      fr: `Entre ${min} et ${max}`,
+      en: `Between ${min} and ${max}`,
+      ar: `بين ${min} و ${max}`,
+    });
   if (key === "bookingDurationMinutes" && n % 5 !== 0)
-    return tx({ fr: "Multiple de 5 minutes", en: "Multiple of 5 minutes" });
+    return tx({
+      fr: "Multiple de 5 minutes",
+      en: "Multiple of 5 minutes",
+      ar: "من مضاعفات 5 دقائق",
+    });
   return null;
 }
+
+/**
+ * Phones show one section at a time (the page would otherwise be seven screens long);
+ * from `lg` every section is on the page and the section bar scrolls to it. Hidden
+ * sections stay mounted, so edits in progress are never lost by switching.
+ */
+const SettingsNav = createContext<{
+  active: string;
+  report: (id: string, dirty: boolean) => void;
+}>({ active: "", report: () => {} });
 
 function Section({
   id,
@@ -99,6 +128,7 @@ function Section({
   description,
   children,
   footer,
+  dirty = false,
 }: {
   id: string;
   icon: ReactNode;
@@ -106,11 +136,18 @@ function Section({
   description: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** Unsaved edits: flagged on the section bar. */
+  dirty?: boolean;
 }) {
+  const { active, report } = useContext(SettingsNav);
+  useEffect(() => report(id, dirty), [id, dirty, report]);
   return (
     <section
       id={id}
-      className="enter scroll-mt-24 rounded-[30px] bg-card p-5 shadow-sm sm:p-7"
+      className={cn(
+        "enter scroll-mt-36 rounded-[30px] bg-card p-5 shadow-sm sm:p-7 lg:scroll-mt-20",
+        active !== id && "max-lg:hidden",
+      )}
       aria-labelledby={`${id}-title`}
     >
       <header className="mb-5 flex items-start gap-3">
@@ -267,7 +304,7 @@ function useSettingsSection(
       onError: (e) =>
         toast({
           title: tx({ fr: "Enregistrement impossible", en: "Couldn't save", ar: "تعذر الحفظ" }),
-          description: apiErrorMessage(e, ""),
+          description: apiErrorText(e, tx),
           variant: "destructive",
         }),
     });
@@ -284,7 +321,7 @@ function useSettingsSection(
           }),
         });
       },
-      onError: (e) => toast({ title: apiErrorMessage(e, "Error"), variant: "destructive" }),
+      onError: (e) => toast({ title: apiErrorText(e, tx), variant: "destructive" }),
     });
   const set = (k: keyof SettingsPatch, v: string | boolean) => setDraft((d) => ({ ...d, [k]: v }));
   return { draft, set, dirty, save, resetToDefault, busy: update.isPending || reset.isPending };
@@ -327,24 +364,45 @@ function SectionButtons({
 /* ────────────────────────────────── Page ─────────────────────────────────── */
 
 const NAV = [
-  { id: "courts", icon: CourtIcon, fr: "Terrains", en: "Courts" },
-  { id: "booking", icon: ClockCountdownIcon, fr: "Réservations", en: "Booking" },
-  { id: "pricing", icon: TagIcon, fr: "Tarifs", en: "Pricing" },
-  { id: "tokens", icon: CoinsIcon, fr: "Tokens", en: "Tokens" },
-  { id: "hours", icon: ClockIcon, fr: "Horaires", en: "Opening hours" },
-  { id: "features", icon: ToggleRightIcon, fr: "Fonctionnalités", en: "Features" },
-  { id: "notifications", icon: BellIcon, fr: "Notifications", en: "Notifications" },
+  { id: "courts", icon: CourtIcon, fr: "Terrains", en: "Courts", ar: "الملاعب" },
+  { id: "booking", icon: ClockCountdownIcon, fr: "Réservations", en: "Booking", ar: "الحجوزات" },
+  { id: "pricing", icon: TagIcon, fr: "Tarifs", en: "Pricing", ar: "الأسعار" },
+  { id: "tokens", icon: CoinsIcon, fr: "Tokens", en: "Tokens", ar: "الرصيد" },
+  { id: "hours", icon: ClockIcon, fr: "Horaires", en: "Opening hours", ar: "ساعات العمل" },
+  { id: "features", icon: ToggleRightIcon, fr: "Fonctionnalités", en: "Features", ar: "الميزات" },
+  {
+    id: "notifications",
+    icon: BellIcon,
+    fr: "Notifications",
+    en: "Notifications",
+    ar: "الإشعارات",
+  },
 ] as const;
 
 export default function AdminSettings() {
   const tx = useTx();
   const { data: settings, isLoading } = useAdminSettings();
   const { confirm, dialog } = useConfirm();
+  const [active, setActive] = useState<string>(NAV[0].id);
+  const [unsaved, setUnsaved] = useState<Record<string, boolean>>({});
+  const report = useCallback(
+    (id: string, dirty: boolean) =>
+      setUnsaved((u) => (!!u[id] === dirty ? u : { ...u, [id]: dirty })),
+    [],
+  );
+  const nav = useMemo(() => ({ active, report }), [active, report]);
+  const go = (id: string) => {
+    setActive(id);
+    // After the section is shown (phones) or simply into view (desktop)
+    requestAnimationFrame(() =>
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  };
 
   return (
     <Page wide>
       <PageHeader
-        eyebrow="Admin"
+        eyebrow={tx({ fr: "Admin", en: "Admin", ar: "الإدارة" })}
         title={tx({ fr: "Réglages du club", en: "Club settings", ar: "إعدادات النادي" })}
         subtitle={tx({
           fr: "Les règles de fonctionnement du club. Chaque changement s'applique aux prochaines réservations ; les réservations existantes gardent leurs horaires et leurs prix.",
@@ -353,19 +411,41 @@ export default function AdminSettings() {
         })}
       />
       <nav
-        aria-label={tx({ fr: "Sections", en: "Sections" })}
-        className="hscroll -mx-4 -mt-4 flex gap-2 px-4 sm:mx-0 sm:px-0"
+        aria-label={tx({ fr: "Sections", en: "Sections", ar: "الأقسام" })}
+        className="hscroll sticky top-16 z-30 -mx-4 -my-3 gap-2 bg-background/95 px-4 py-3 backdrop-blur-sm sm:-mx-6 sm:px-6 lg:top-0 lg:-mx-10 lg:px-10"
       >
-        {NAV.map((n) => (
-          <a
-            key={n.id}
-            href={`#${n.id}`}
-            className="flex h-10 shrink-0 items-center gap-2 rounded-full bg-card px-4 text-sm font-bold shadow-sm hover:text-court"
-          >
-            <n.icon className="size-4" />
-            {tx({ fr: n.fr, en: n.en })}
-          </a>
-        ))}
+        {NAV.map((n) => {
+          const on = active === n.id;
+          return (
+            <button
+              key={n.id}
+              type="button"
+              onClick={() => go(n.id)}
+              aria-current={on ? "true" : undefined}
+              className={cn(
+                "flex h-10 shrink-0 items-center gap-2 rounded-full px-4 text-sm font-bold shadow-sm transition-colors",
+                on
+                  ? "bg-ink text-white lg:bg-card lg:text-ink lg:hover:text-court"
+                  : "bg-card hover:text-court",
+              )}
+            >
+              <n.icon className="size-4" />
+              {tx(n)}
+              {unsaved[n.id] && (
+                <>
+                  <span aria-hidden="true" className="size-2 rounded-full bg-coral" />
+                  <span className="sr-only">
+                    {tx({
+                      fr: "modifications non enregistrées",
+                      en: "unsaved changes",
+                      ar: "تعديلات غير محفوظة",
+                    })}
+                  </span>
+                </>
+              )}
+            </button>
+          );
+        })}
       </nav>
       {isLoading || !settings ? (
         <div className="flex flex-col gap-5">
@@ -374,21 +454,24 @@ export default function AdminSettings() {
           ))}
         </div>
       ) : (
-        <div className="flex flex-col gap-6">
-          <CourtsSection />
-          <BookingSection settings={settings} confirm={confirm} />
-          <PricingSection settings={settings} />
-          <TokensSection settings={settings} />
-          <HoursSection settings={settings} />
-          <FeaturesSection settings={settings} />
-          <NotificationsSection settings={settings} />
-          <p className="m-0 text-center text-xs text-muted-foreground">
-            {tx({
-              fr: `Dernière modification : ${new Date(settings.updatedAt).toLocaleString("fr-FR")}`,
-              en: `Last change: ${new Date(settings.updatedAt).toLocaleString("en-GB")}`,
-            })}
-          </p>
-        </div>
+        <SettingsNav.Provider value={nav}>
+          <div className="flex flex-col gap-6">
+            <CourtsSection />
+            <BookingSection settings={settings} confirm={confirm} />
+            <PricingSection settings={settings} />
+            <TokensSection settings={settings} />
+            <HoursSection settings={settings} />
+            <FeaturesSection settings={settings} />
+            <NotificationsSection settings={settings} />
+            <p className="m-0 text-center text-xs text-muted-foreground">
+              {tx({
+                fr: `Dernière modification : ${new Date(settings.updatedAt).toLocaleString("fr-FR")}`,
+                en: `Last change: ${new Date(settings.updatedAt).toLocaleString("en-GB")}`,
+                ar: `آخر تعديل: ${new Date(settings.updatedAt).toLocaleString("ar-TN")}`,
+              })}
+            </p>
+          </div>
+        </SettingsNav.Provider>
       )}
       {dialog}
     </Page>
@@ -410,22 +493,32 @@ function CourtsSection() {
       description={tx({
         fr: "Ajoutez, renommez, réordonnez, mettez en maintenance ou archivez vos terrains. Chaque terrain peut avoir son propre prix ou ses propres horaires.",
         en: "Add, rename, reorder, put under maintenance or archive courts. Each court may have its own price or hours.",
+        ar: "أضف ملاعبك، أعد تسميتها أو ترتيبها، ضعها تحت الصيانة أو أرشفها. يمكن أن يكون لكل ملعب سعره وساعاته الخاصة.",
       })}
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="flex flex-wrap gap-2">
           <Pill tone="lime">
-            {tx({ fr: `${bookable} réservable(s)`, en: `${bookable} bookable` })}
+            {tx({
+              fr: `${bookable} ${plural(bookable, "réservable", "réservables")}`,
+              en: `${bookable} bookable`,
+              ar: `${bookable} قابلة للحجز`,
+            })}
           </Pill>
           {maintenance > 0 && (
             <Pill tone="warning">
-              {tx({ fr: `${maintenance} en maintenance`, en: `${maintenance} under maintenance` })}
+              {tx({
+                fr: `${maintenance} en maintenance`,
+                en: `${maintenance} under maintenance`,
+                ar: `${maintenance} تحت الصيانة`,
+              })}
             </Pill>
           )}
           <Pill>
             {tx({
               fr: `${terrains?.length ?? 0} au total`,
               en: `${terrains?.length ?? 0} in total`,
+              ar: `${terrains?.length ?? 0} في المجموع`,
             })}
           </Pill>
         </span>
@@ -462,7 +555,11 @@ function BookingSection({
   const err = (k: NumKey) => (d[k] === undefined ? null : numberError(k, String(d[k]), tx));
   const playersError =
     !err("minPlayers") && !err("maxPlayers") && Number(d.minPlayers) > Number(d.maxPlayers)
-      ? tx({ fr: "Le minimum dépasse le maximum", en: "Minimum is above maximum" })
+      ? tx({
+          fr: "Le minimum dépasse le maximum",
+          en: "Minimum is above maximum",
+          ar: "الحد الأدنى أكبر من الحد الأقصى",
+        })
       : null;
   const invalid =
     (
@@ -488,12 +585,14 @@ function BookingSection({
         title: tx({
           fr: "Changer la durée ou le nombre de joueurs ?",
           en: "Change duration or players?",
+          ar: "تغيير المدة أو عدد اللاعبين؟",
         }),
         description: tx({
-          fr: `${settings.upcomingBookings} réservation(s) à venir gardent leurs horaires et leur nombre de places. Le nouveau réglage s'applique aux prochaines réservations ; le planning s'adapte automatiquement autour des matchs existants.`,
-          en: `${settings.upcomingBookings} upcoming booking(s) keep their times and spots. The new setting applies to new bookings; the schedule works around existing matches.`,
+          fr: `${settings.upcomingBookings} ${plural(settings.upcomingBookings, "réservation à venir garde", "réservations à venir gardent")} leurs horaires et leur nombre de places. Le nouveau réglage s'applique aux prochaines réservations ; le planning s'adapte automatiquement autour des matchs existants.`,
+          en: `${settings.upcomingBookings} ${plural(settings.upcomingBookings, "upcoming booking keeps", "upcoming bookings keep")} their times and spots. The new setting applies to new bookings; the schedule works around existing matches.`,
+          ar: `${settings.upcomingBookings} حجز قادم يحتفظ بموعده وعدد أماكنه. يُطبَّق الإعداد الجديد على الحجوزات القادمة، ويتكيّف الجدول تلقائيًا مع المباريات الحالية.`,
         }),
-        confirmLabel: tx({ fr: "Appliquer", en: "Apply" }),
+        confirmLabel: tx({ fr: "Appliquer", en: "Apply", ar: "تطبيق" }),
       });
       if (!ok) return;
     }
@@ -503,11 +602,13 @@ function BookingSection({
   return (
     <Section
       id="booking"
+      dirty={s.dirty}
       icon={<ClockCountdownIcon className="size-5" />}
       title={tx({ fr: "Réservations", en: "Booking", ar: "الحجوزات" })}
       description={tx({
         fr: "Durée d'un match, nombre de joueurs, fenêtre de réservation et règles d'annulation.",
         en: "Match length, number of players, booking window and cancellation rules.",
+        ar: "مدة المباراة، عدد اللاعبين، فترة الحجز وقواعد الإلغاء.",
       })}
       footer={
         <SectionButtons
@@ -524,10 +625,11 @@ function BookingSection({
         hint={tx({
           fr: "Le planning est découpé en créneaux de cette durée à partir de l'heure d'ouverture. Ex : 90 min → 08:00, 09:30, 11:00…",
           en: "The schedule is cut into slots of this length from opening time. e.g. 90 min → 08:00, 09:30, 11:00…",
+          ar: "يُقسَّم الجدول إلى فترات بهذه المدة ابتداءً من وقت الفتح. مثال: 90 دقيقة ← 08:00، 09:30، 11:00…",
         })}
       >
         <Segmented
-          label={tx({ fr: "Durée", en: "Duration" })}
+          label={tx({ fr: "Durée", en: "Duration", ar: "المدة" })}
           value={custom || showCustom ? "custom" : String(d.bookingDurationMinutes)}
           onChange={(v) => {
             if (v === "custom") setShowCustom(true);
@@ -538,17 +640,18 @@ function BookingSection({
           }}
           options={[
             ...DURATIONS.map((v) => ({ value: v, label: `${v} min` })),
-            { value: "custom", label: tx({ fr: "Autre", en: "Custom" }) },
+            { value: "custom", label: tx({ fr: "Autre", en: "Custom", ar: "أخرى" }) },
           ]}
         />
       </Field>
       {(custom || showCustom) && (
         <NumberField
           id="set-duration"
-          label={tx({ fr: "Durée personnalisée", en: "Custom duration" })}
+          label={tx({ fr: "Durée personnalisée", en: "Custom duration", ar: "مدة مخصصة" })}
           hint={tx({
             fr: "Entre 30 et 240 minutes, par pas de 5.",
             en: "30 to 240 minutes, in steps of 5.",
+            ar: "من 30 إلى 240 دقيقة، بفواصل 5 دقائق.",
           })}
           suffix="min"
           step="5"
@@ -564,6 +667,7 @@ function BookingSection({
           hint={tx({
             fr: "Indicatif, affiché aux joueurs. Une réservation « ma place » reste possible à 1.",
             en: "For information, shown to players. Booking a single spot stays possible.",
+            ar: "للعلم فقط، يُعرض للاعبين. يبقى حجز مكان واحد ممكنًا.",
           })}
           value={String(d.minPlayers ?? "")}
           onChange={(v) => s.set("minPlayers", v)}
@@ -576,7 +680,11 @@ function BookingSection({
             en: "Maximum players (spots per match)",
             ar: "الحد الأقصى للاعبين",
           })}
-          hint={tx({ fr: "Ex : 4 pour le padel en double.", en: "e.g. 4 for doubles padel." })}
+          hint={tx({
+            fr: "Ex : 4 pour le padel en double.",
+            en: "e.g. 4 for doubles padel.",
+            ar: "مثال: 4 للبادل الزوجي.",
+          })}
           value={String(d.maxPlayers ?? "")}
           onChange={(v) => s.set("maxPlayers", v)}
           error={err("maxPlayers")}
@@ -591,6 +699,7 @@ function BookingSection({
           hint={tx({
             fr: "Minutes avant le début du match. Ex : 30 → un match à 18:00 se réserve jusqu'à 17:30.",
             en: "Minutes before the match starts. e.g. 30 → an 18:00 match can be booked until 17:30.",
+            ar: "دقائق قبل بداية المباراة. مثال: 30 ← مباراة 18:00 تُحجز حتى 17:30.",
           })}
           suffix="min"
           value={String(d.minAdvanceMinutes ?? "")}
@@ -607,8 +716,9 @@ function BookingSection({
           hint={tx({
             fr: "Jours à l'avance. Ex : 14 → deux semaines.",
             en: "Days ahead. e.g. 14 → two weeks.",
+            ar: "عدد الأيام مسبقًا. مثال: 14 ← أسبوعان.",
           })}
-          suffix={tx({ fr: "jours", en: "days" })}
+          suffix={tx({ fr: "jours", en: "days", ar: "يوم" })}
           value={String(d.maxAdvanceDays ?? "")}
           onChange={(v) => s.set("maxAdvanceDays", v)}
           error={err("maxAdvanceDays")}
@@ -619,6 +729,7 @@ function BookingSection({
           hint={tx({
             fr: "Heures avant le match pour annuler avec remboursement des tokens. 0 = jusqu'au début du match.",
             en: "Hours before the match to cancel with a token refund. 0 = until the match starts.",
+            ar: "عدد الساعات قبل المباراة للإلغاء مع استرجاع الرصيد. 0 = حتى بداية المباراة.",
           })}
           suffix="h"
           value={String(d.cancellationNoticeHours ?? "")}
@@ -630,15 +741,19 @@ function BookingSection({
           hint={tx({
             fr: "« Interdire » : le joueur doit appeler le club. « Sans remboursement » : il peut annuler mais ses tokens ne sont pas rendus. L'admin peut toujours annuler et rembourser.",
             en: "“Forbid”: the player calls the club. “No refund”: they may cancel but keep no tokens back. Admins can always cancel and refund.",
+            ar: "«منع»: على اللاعب الاتصال بالنادي. «دون استرجاع»: يمكنه الإلغاء لكن لا يُعاد رصيده. يستطيع المسؤول دائمًا الإلغاء والاسترجاع.",
           })}
         >
           <Segmented
-            label={tx({ fr: "Après le délai", en: "After the deadline" })}
+            label={tx({ fr: "Après le délai", en: "After the deadline", ar: "بعد المهلة" })}
             value={String(d.lateCancellation ?? "forbid") as "forbid" | "no_refund"}
             onChange={(v) => s.set("lateCancellation", v)}
             options={[
-              { value: "forbid", label: tx({ fr: "Interdire", en: "Forbid" }) },
-              { value: "no_refund", label: tx({ fr: "Sans remboursement", en: "No refund" }) },
+              { value: "forbid", label: tx({ fr: "Interdire", en: "Forbid", ar: "منع" }) },
+              {
+                value: "no_refund",
+                label: tx({ fr: "Sans remboursement", en: "No refund", ar: "دون استرجاع" }),
+              },
             ]}
           />
         </Field>
@@ -654,17 +769,23 @@ function PricingSection({ settings }: { settings: AdminSettings }) {
   const err = (k: NumKey) => (d[k] === undefined ? null : numberError(k, String(d[k]), tx));
   const currencyError =
     d.currency !== undefined && !/^[A-Z]{3}$/.test(String(d.currency))
-      ? tx({ fr: "Code à 3 lettres majuscules, ex : TND", en: "3 capital letters, e.g. TND" })
+      ? tx({
+          fr: "Code à 3 lettres majuscules, ex : TND",
+          en: "3 capital letters, e.g. TND",
+          ar: "رمز من 3 أحرف لاتينية كبيرة، مثال: TND",
+        })
       : null;
   const cur = String(d.currency ?? settings.currency);
   return (
     <Section
       id="pricing"
+      dirty={s.dirty}
       icon={<TagIcon className="size-5" />}
       title={tx({ fr: "Tarifs", en: "Pricing", ar: "الأسعار" })}
       description={tx({
         fr: "Prix payés en espèces à l'accueil. Les heures pleines / creuses, week-ends et jours fériés se règlent dans Tarifs → règles (elles sont prioritaires).",
         en: "Cash prices at the desk. Peak / off-peak, weekend and holiday prices are set as pricing rules (they take priority).",
+        ar: "الأسعار المدفوعة نقدًا في الاستقبال. أسعار الذروة وخارجها ونهاية الأسبوع والعطل تُضبط في قواعد الأسعار (ولها الأولوية).",
       })}
       footer={
         <SectionButtons
@@ -680,7 +801,10 @@ function PricingSection({ settings }: { settings: AdminSettings }) {
         <Field
           label={tx({ fr: "Devise", en: "Currency", ar: "العملة" })}
           htmlFor="set-currency"
-          hint={currencyError ?? tx({ fr: "Ex : TND, EUR, MAD", en: "e.g. TND, EUR, MAD" })}
+          hint={
+            currencyError ??
+            tx({ fr: "Ex : TND, EUR, MAD", en: "e.g. TND, EUR, MAD", ar: "مثال: TND، EUR، MAD" })
+          }
         >
           <Input
             id="set-currency"
@@ -693,7 +817,11 @@ function PricingSection({ settings }: { settings: AdminSettings }) {
         <NumberField
           id="set-player-price"
           label={tx({ fr: "Prix par joueur", en: "Price per player", ar: "السعر للاعب" })}
-          hint={tx({ fr: "Ex : 25 pour un match de 90 min.", en: "e.g. 25 for a 90-min match." })}
+          hint={tx({
+            fr: "Ex : 25 pour un match de 90 min.",
+            en: "e.g. 25 for a 90-min match.",
+            ar: "مثال: 25 لمباراة من 90 دقيقة.",
+          })}
           suffix={cur}
           step="0.5"
           value={String(d.playerPrice ?? "")}
@@ -707,7 +835,11 @@ function PricingSection({ settings }: { settings: AdminSettings }) {
             en: "Full court price",
             ar: "سعر الملعب الكامل",
           })}
-          hint={tx({ fr: "Ex : 100 (4 × 25).", en: "e.g. 100 (4 × 25)." })}
+          hint={tx({
+            fr: "Ex : 100 (4 × 25).",
+            en: "e.g. 100 (4 × 25).",
+            ar: "مثال: 100 (4 × 25).",
+          })}
           suffix={cur}
           step="0.5"
           value={String(d.fullCourtPrice ?? "")}
@@ -719,6 +851,7 @@ function PricingSection({ settings }: { settings: AdminSettings }) {
         {tx({
           fr: "Heures pleines, heures creuses, week-end → règles de prix",
           en: "Peak, off-peak, weekend → pricing rules",
+          ar: "ساعات الذروة، خارج الذروة، نهاية الأسبوع ← قواعد الأسعار",
         })}
       </Link>
     </Section>
@@ -744,11 +877,13 @@ function TokensSection({ settings }: { settings: AdminSettings }) {
   return (
     <Section
       id="tokens"
+      dirty={s.dirty}
       icon={<CoinsIcon className="size-5" />}
       title={tx({ fr: "Tokens", en: "Tokens", ar: "الرصيد" })}
       description={tx({
         fr: "Les joueurs paient en espèces à l'accueil, l'admin crédite des tokens, les réservations les débitent. Les tokens n'expirent pas.",
         en: "Players pay cash at the desk, the admin credits tokens, bookings debit them. Tokens do not expire.",
+        ar: "يدفع اللاعبون نقدًا في الاستقبال، يضيف المسؤول الرصيد، وتخصمه الحجوزات. الرصيد لا تنتهي صلاحيته.",
       })}
       footer={
         <SectionButtons
@@ -767,8 +902,9 @@ function TokensSection({ settings }: { settings: AdminSettings }) {
           hint={tx({
             fr: "Ex : 1. Une règle de prix peut le changer selon l'heure.",
             en: "e.g. 1. A pricing rule may change it by time.",
+            ar: "مثال: 1. يمكن لقاعدة سعر تغييره حسب الوقت.",
           })}
-          suffix="tokens"
+          suffix={tokenWord(2)}
           value={String(d.tokenCostPlayer ?? "")}
           onChange={(v) => s.set("tokenCostPlayer", v)}
           error={err("tokenCostPlayer")}
@@ -783,8 +919,9 @@ function TokensSection({ settings }: { settings: AdminSettings }) {
           hint={tx({
             fr: "Ex : 4. Les invités du réservant jouent gratuitement.",
             en: "e.g. 4. The booker's guests play free.",
+            ar: "مثال: 4. ضيوف صاحب الحجز يلعبون مجانًا.",
           })}
-          suffix="tokens"
+          suffix={tokenWord(2)}
           value={String(d.tokenCostFullCourt ?? "")}
           onChange={(v) => s.set("tokenCostFullCourt", v)}
           error={err("tokenCostFullCourt")}
@@ -795,6 +932,7 @@ function TokensSection({ settings }: { settings: AdminSettings }) {
           hint={tx({
             fr: "Prix affiché aux joueurs, hors packs. Ex : 25.",
             en: "Shown to players, outside packs. e.g. 25.",
+            ar: "السعر المعروض للاعبين خارج الباقات. مثال: 25.",
           })}
           suffix={settings.currency}
           step="0.5"
@@ -808,8 +946,9 @@ function TokensSection({ settings }: { settings: AdminSettings }) {
           hint={tx({
             fr: "Pour une vente à l'unité (les cadeaux et corrections ne sont pas limités).",
             en: "For a single-token sale (gifts and corrections aren't limited).",
+            ar: "للبيع بالوحدة (الهدايا والتصحيحات غير محدودة).",
           })}
-          suffix="tokens"
+          suffix={tokenWord(2)}
           value={String(d.tokenMinPurchase ?? "")}
           onChange={(v) => s.set("tokenMinPurchase", v)}
           error={err("tokenMinPurchase")}
@@ -832,8 +971,7 @@ function TokenPackages({ currency }: { currency: string }) {
     qc.invalidateQueries({ queryKey: settingsKeys.packages });
     qc.invalidateQueries({ queryKey: settingsKeys.rules });
   };
-  const fail = (e: unknown) =>
-    toast({ title: apiErrorMessage(e, "Error"), variant: "destructive" });
+  const fail = (e: unknown) => toast({ title: apiErrorText(e, tx), variant: "destructive" });
   const valid =
     draft.name.trim() &&
     Number.isInteger(Number(draft.tokens)) &&
@@ -849,7 +987,11 @@ function TokenPackages({ currency }: { currency: string }) {
   return (
     <div className="flex flex-col gap-3 rounded-2xl bg-mist p-4">
       <span className="font-extrabold">
-        {tx({ fr: "Packs vendus à l'accueil", en: "Packs sold at the desk" })}
+        {tx({
+          fr: "Packs vendus à l'accueil",
+          en: "Packs sold at the desk",
+          ar: "الباقات المباعة في الاستقبال",
+        })}
       </span>
       <ul className="m-0 flex list-none flex-col gap-2 p-0">
         {(packs ?? []).map((p) => (
@@ -861,24 +1003,29 @@ function TokenPackages({ currency }: { currency: string }) {
             )}
           >
             <span className="font-bold">
-              {p.name} · {p.tokens} tokens · {p.price} {currency}
+              {p.name} · {tokensLabel(p.tokens)} · {p.price} {currency}
               <span className="ms-2 text-xs font-normal text-muted-foreground">
                 {tx({
                   fr: `soit ${(p.price / p.tokens).toFixed(2)} ${currency}/token`,
                   en: `${(p.price / p.tokens).toFixed(2)} ${currency}/token`,
+                  ar: `أي ${(p.price / p.tokens).toFixed(2)} ${currency} للرصيد الواحد`,
                 })}
               </span>
             </span>
             <span className="flex items-center gap-2">
               <label className="flex items-center gap-2 text-sm font-bold">
                 <Switch checked={!!p.isActive} onCheckedChange={() => toggle(p)} />
-                {tx({ fr: "En vente", en: "On sale" })}
+                {tx({ fr: "En vente", en: "On sale", ar: "معروضة للبيع" })}
               </label>
               <Button
                 variant="ghost"
                 size="icon-sm"
                 className="text-destructive"
-                aria-label={tx({ fr: `Supprimer ${p.name}`, en: `Delete ${p.name}` })}
+                aria-label={tx({
+                  fr: `Supprimer ${p.name}`,
+                  en: `Delete ${p.name}`,
+                  ar: `حذف ${p.name}`,
+                })}
                 onClick={() => remove.mutate(p.id, { onSuccess: refresh, onError: fail })}
               >
                 <TrashIcon />
@@ -905,7 +1052,9 @@ function TokenPackages({ currency }: { currency: string }) {
               onSuccess: () => {
                 setDraft({ name: "", tokens: "", price: "" });
                 refresh();
-                toast({ title: tx({ fr: "Pack ajouté", en: "Pack added" }) });
+                toast({
+                  title: tx({ fr: "Pack ajouté", en: "Pack added", ar: "تمت إضافة الباقة" }),
+                });
               },
               onError: fail,
             },
@@ -913,27 +1062,27 @@ function TokenPackages({ currency }: { currency: string }) {
         }}
       >
         <Input
-          aria-label={tx({ fr: "Nom du pack", en: "Pack name" })}
-          placeholder={tx({ fr: "Ex : Pack 10", en: "e.g. Pack 10" })}
+          aria-label={tx({ fr: "Nom du pack", en: "Pack name", ar: "اسم الباقة" })}
+          placeholder={tx({ fr: "Ex : Pack 10", en: "e.g. Pack 10", ar: "مثال: باقة 10" })}
           value={draft.name}
           maxLength={60}
           onChange={(e) => setDraft({ ...draft, name: e.target.value })}
         />
         <Input
-          aria-label="Tokens"
+          aria-label={tx({ fr: "Nombre de tokens", en: "Number of tokens", ar: "عدد الرصيد" })}
           type="number"
           min={1}
           max={1000}
-          placeholder="Tokens"
+          placeholder={tx({ fr: "Tokens", en: "Tokens", ar: "الرصيد" })}
           value={draft.tokens}
           onChange={(e) => setDraft({ ...draft, tokens: e.target.value })}
         />
         <Input
-          aria-label={tx({ fr: "Prix", en: "Price" })}
+          aria-label={tx({ fr: "Prix", en: "Price", ar: "السعر" })}
           type="number"
           min={0}
           step="0.5"
-          placeholder={`${tx({ fr: "Prix", en: "Price" })} (${currency})`}
+          placeholder={`${tx({ fr: "Prix", en: "Price", ar: "السعر" })} (${currency})`}
           value={draft.price}
           onChange={(e) => setDraft({ ...draft, price: e.target.value })}
         />
@@ -944,7 +1093,7 @@ function TokenPackages({ currency }: { currency: string }) {
           loading={save.isPending}
         >
           <PlusIcon />
-          {tx({ fr: "Ajouter", en: "Add" })}
+          {tx({ fr: "Ajouter", en: "Add", ar: "إضافة" })}
         </Button>
       </form>
     </div>
@@ -980,7 +1129,11 @@ function HoursSection({ settings }: { settings: AdminSettings }) {
   const dirty = JSON.stringify(days) !== JSON.stringify(settings.openingHours);
   const dayError = (d: OpeningHoursDay) =>
     !d.isClosed && d.openTime >= d.closeTime
-      ? tx({ fr: "La fermeture doit suivre l'ouverture", en: "Closing must be after opening" })
+      ? tx({
+          fr: "La fermeture doit suivre l'ouverture",
+          en: "Closing must be after opening",
+          ar: "يجب أن يكون الإغلاق بعد الفتح",
+        })
       : null;
   const invalid = days.some((d) => dayError(d));
   const setDay = (weekday: number, patch: Partial<OpeningHoursDay>) =>
@@ -993,11 +1146,13 @@ function HoursSection({ settings }: { settings: AdminSettings }) {
   return (
     <Section
       id="hours"
+      dirty={dirty}
       icon={<ClockIcon className="size-5" />}
       title={tx({ fr: "Horaires d'ouverture", en: "Opening hours", ar: "ساعات العمل" })}
       description={tx({
         fr: "Horaires de chaque jour de la semaine, puis les exceptions : jours fériés, fermetures, horaires spéciaux ou maintenance d'un terrain.",
         en: "Hours for each weekday, then exceptions: holidays, closures, special hours or a court's maintenance day.",
+        ar: "ساعات كل يوم من الأسبوع، ثم الاستثناءات: العطل، الإغلاقات، ساعات خاصة أو صيانة ملعب.",
       })}
       footer={
         <SectionButtons
@@ -1016,7 +1171,7 @@ function HoursSection({ settings }: { settings: AdminSettings }) {
                   }),
                 });
               },
-              onError: (e) => toast({ title: apiErrorMessage(e, "Error"), variant: "destructive" }),
+              onError: (e) => toast({ title: apiErrorText(e, tx), variant: "destructive" }),
             })
           }
           onReset={() =>
@@ -1027,6 +1182,7 @@ function HoursSection({ settings }: { settings: AdminSettings }) {
                   title: tx({
                     fr: "Horaires par défaut rétablis (08:00–23:00)",
                     en: "Default hours restored (08:00–23:00)",
+                    ar: "تمت استعادة الساعات الافتراضية (08:00–23:00)",
                   }),
                 });
               },
@@ -1043,7 +1199,7 @@ function HoursSection({ settings }: { settings: AdminSettings }) {
           return (
             <li
               key={w}
-              className="grid grid-cols-[110px_auto_1fr] items-center gap-3 rounded-2xl bg-mist p-3 sm:grid-cols-[140px_150px_1fr]"
+              className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-2xl bg-mist p-3 sm:grid-cols-[140px_150px_1fr]"
             >
               <span className="font-bold">{tx(DAY_NAMES[w])}</span>
               <label className="flex items-center gap-2 text-sm font-bold">
@@ -1051,16 +1207,19 @@ function HoursSection({ settings }: { settings: AdminSettings }) {
                   checked={!d.isClosed}
                   onCheckedChange={(v) => setDay(w, { isClosed: !v })}
                 />
-                {d.isClosed ? tx({ fr: "Fermé", en: "Closed" }) : tx({ fr: "Ouvert", en: "Open" })}
+                {d.isClosed
+                  ? tx({ fr: "Fermé", en: "Closed", ar: "مغلق" })
+                  : tx({ fr: "Ouvert", en: "Open", ar: "مفتوح" })}
               </label>
               {!d.isClosed && (
-                <span className="flex flex-wrap items-center gap-2">
+                <span className="col-span-2 flex flex-wrap items-center gap-2 sm:col-span-1">
                   <Input
                     type="time"
-                    className="w-[120px]"
+                    className="min-w-0 flex-1 sm:w-[120px] sm:flex-none"
                     aria-label={tx({
                       fr: `Ouverture ${tx(DAY_NAMES[w])}`,
                       en: `Opens ${tx(DAY_NAMES[w])}`,
+                      ar: `فتح ${tx(DAY_NAMES[w])}`,
                     })}
                     value={d.openTime}
                     onChange={(e) => setDay(w, { openTime: e.target.value })}
@@ -1068,10 +1227,11 @@ function HoursSection({ settings }: { settings: AdminSettings }) {
                   <span aria-hidden="true">–</span>
                   <Input
                     type="time"
-                    className="w-[120px]"
+                    className="min-w-0 flex-1 sm:w-[120px] sm:flex-none"
                     aria-label={tx({
                       fr: `Fermeture ${tx(DAY_NAMES[w])}`,
                       en: `Closes ${tx(DAY_NAMES[w])}`,
+                      ar: `إغلاق ${tx(DAY_NAMES[w])}`,
                     })}
                     value={d.closeTime === "24:00" ? "00:00" : d.closeTime}
                     onChange={(e) =>
@@ -1081,7 +1241,7 @@ function HoursSection({ settings }: { settings: AdminSettings }) {
                     }
                   />
                   {error && (
-                    <span role="alert" className="text-sm font-semibold text-destructive">
+                    <span role="alert" className="w-full text-sm font-semibold text-destructive">
                       {error}
                     </span>
                   )}
@@ -1095,6 +1255,7 @@ function HoursSection({ settings }: { settings: AdminSettings }) {
         {tx({
           fr: "Astuce : fermeture à 00:00 = minuit.",
           en: "Tip: closing at 00:00 = midnight.",
+          ar: "ملاحظة: الإغلاق عند 00:00 = منتصف الليل.",
         })}
       </p>
       <Exceptions />
@@ -1130,6 +1291,7 @@ function Exceptions() {
         {tx({
           fr: "Exceptions (jours fériés, fermetures, maintenance)",
           en: "Exceptions (holidays, closures, maintenance)",
+          ar: "الاستثناءات (عطل، إغلاقات، صيانة)",
         })}
       </span>
       {list?.length ? (
@@ -1144,12 +1306,14 @@ function Exceptions() {
                   {e.date}
                 </span>
                 <Pill tone={e.isClosed ? "danger" : "info"}>
-                  {e.isClosed ? tx({ fr: "Fermé", en: "Closed" }) : `${e.openTime}–${e.closeTime}`}
+                  {e.isClosed
+                    ? tx({ fr: "Fermé", en: "Closed", ar: "مغلق" })
+                    : `${e.openTime}–${e.closeTime}`}
                 </Pill>
                 <span className="text-sm text-muted-foreground">
                   {e.terrainId
                     ? (courtName.get(e.terrainId) ?? `#${e.terrainId}`)
-                    : tx({ fr: "Tout le club", en: "Whole club" })}
+                    : tx({ fr: "Tout le club", en: "Whole club", ar: "كل النادي" })}
                   {e.reason ? ` · ${e.reason}` : ""}
                 </span>
               </span>
@@ -1157,7 +1321,11 @@ function Exceptions() {
                 variant="ghost"
                 size="icon-sm"
                 className="text-destructive"
-                aria-label={tx({ fr: "Supprimer l'exception", en: "Delete exception" })}
+                aria-label={tx({
+                  fr: "Supprimer l'exception",
+                  en: "Delete exception",
+                  ar: "حذف الاستثناء",
+                })}
                 onClick={() => remove.mutate(e.id, { onSuccess: refresh })}
               >
                 <TrashIcon />
@@ -1167,7 +1335,11 @@ function Exceptions() {
         </ul>
       ) : (
         <p className="m-0 text-sm text-muted-foreground">
-          {tx({ fr: "Aucune exception à venir.", en: "No upcoming exception." })}
+          {tx({
+            fr: "Aucune exception à venir.",
+            en: "No upcoming exception.",
+            ar: "لا استثناءات قادمة.",
+          })}
         </p>
       )}
       <form
@@ -1188,26 +1360,32 @@ function Exceptions() {
               onSuccess: () => {
                 refresh();
                 setForm((f) => ({ ...f, date: "", reason: "" }));
-                toast({ title: tx({ fr: "Exception ajoutée", en: "Exception added" }) });
+                toast({
+                  title: tx({
+                    fr: "Exception ajoutée",
+                    en: "Exception added",
+                    ar: "تمت إضافة الاستثناء",
+                  }),
+                });
               },
-              onError: (e) => toast({ title: apiErrorMessage(e, "Error"), variant: "destructive" }),
+              onError: (e) => toast({ title: apiErrorText(e, tx), variant: "destructive" }),
             },
           );
         }}
       >
         <Input
           type="date"
-          aria-label="Date"
+          aria-label={tx({ fr: "Date", en: "Date", ar: "التاريخ" })}
           value={form.date}
           onChange={(e) => setForm({ ...form, date: e.target.value })}
         />
         <select
-          aria-label={tx({ fr: "Terrain concerné", en: "Court" })}
+          aria-label={tx({ fr: "Terrain concerné", en: "Court", ar: "الملعب المعني" })}
           className="h-12 rounded-2xl border-2 border-[#E4E8F7] bg-card px-3 text-sm font-semibold"
           value={form.terrainId}
           onChange={(e) => setForm({ ...form, terrainId: e.target.value })}
         >
-          <option value="">{tx({ fr: "Tout le club", en: "Whole club" })}</option>
+          <option value="">{tx({ fr: "Tout le club", en: "Whole club", ar: "كل النادي" })}</option>
           {(terrains ?? []).map((t) => (
             <option key={t.id} value={t.id}>
               {t.name}
@@ -1215,37 +1393,41 @@ function Exceptions() {
           ))}
         </select>
         <Segmented
-          label={tx({ fr: "Type d'exception", en: "Exception type" })}
+          label={tx({ fr: "Type d'exception", en: "Exception type", ar: "نوع الاستثناء" })}
           value={form.isClosed ? "closed" : "hours"}
           onChange={(v) => setForm({ ...form, isClosed: v === "closed" })}
           options={[
-            { value: "closed", label: tx({ fr: "Fermé", en: "Closed" }) },
-            { value: "hours", label: tx({ fr: "Horaires spéciaux", en: "Special hours" }) },
+            { value: "closed", label: tx({ fr: "Fermé", en: "Closed", ar: "مغلق" }) },
+            {
+              value: "hours",
+              label: tx({ fr: "Horaires spéciaux", en: "Special hours", ar: "ساعات خاصة" }),
+            },
           ]}
         />
         {!form.isClosed && (
           <span className="flex items-center gap-2">
             <Input
               type="time"
-              aria-label={tx({ fr: "Ouverture", en: "Opens" })}
+              aria-label={tx({ fr: "Ouverture", en: "Opens", ar: "الفتح" })}
               value={form.openTime}
               onChange={(e) => setForm({ ...form, openTime: e.target.value })}
             />
             <span aria-hidden="true">–</span>
             <Input
               type="time"
-              aria-label={tx({ fr: "Fermeture", en: "Closes" })}
+              aria-label={tx({ fr: "Fermeture", en: "Closes", ar: "الإغلاق" })}
               value={form.closeTime}
               onChange={(e) => setForm({ ...form, closeTime: e.target.value })}
             />
           </span>
         )}
         <Input
-          aria-label={tx({ fr: "Motif", en: "Reason" })}
+          aria-label={tx({ fr: "Motif", en: "Reason", ar: "السبب" })}
           maxLength={120}
           placeholder={tx({
             fr: "Motif (ex : Aïd, tournoi, nouveau gazon)",
             en: "Reason (e.g. holiday, tournament)",
+            ar: "السبب (مثال: العيد، بطولة، عشب جديد)",
           })}
           value={form.reason}
           onChange={(e) => setForm({ ...form, reason: e.target.value })}
@@ -1257,7 +1439,7 @@ function Exceptions() {
           loading={create.isPending}
         >
           <PlusIcon />
-          {tx({ fr: "Ajouter l'exception", en: "Add exception" })}
+          {tx({ fr: "Ajouter l'exception", en: "Add exception", ar: "إضافة الاستثناء" })}
         </Button>
       </form>
     </div>
@@ -1275,11 +1457,13 @@ function FeaturesSection({ settings }: { settings: AdminSettings }) {
   return (
     <Section
       id="features"
+      dirty={s.dirty}
       icon={<ToggleRightIcon className="size-5" />}
       title={tx({ fr: "Fonctionnalités", en: "Features", ar: "الميزات" })}
       description={tx({
         fr: "Activez seulement ce que votre club utilise. Une fonction désactivée disparaît de l'app et est refusée par le serveur.",
         en: "Turn on only what your club uses. A disabled feature disappears from the app and is refused by the server.",
+        ar: "فعّل فقط ما يستخدمه ناديك. الخاصية المعطّلة تختفي من التطبيق ويرفضها الخادم.",
       })}
       footer={
         <SectionButtons
@@ -1292,28 +1476,35 @@ function FeaturesSection({ settings }: { settings: AdminSettings }) {
     >
       <ToggleRow
         testId="toggle-open-matches"
-        label={tx({ fr: "Open matches", en: "Open matches" })}
+        label={tx({ fr: "Open matches", en: "Open matches", ar: "مباريات مفتوحة" })}
         hint={tx({
           fr: "Les joueurs peuvent rejoindre la place libre d'un match publié par un autre membre.",
           en: "Players can join a free spot in a match published by another member.",
+          ar: "يمكن للاعبين أخذ مكان شاغر في مباراة نشرها عضو آخر.",
         })}
         checked={!!d.openMatchesEnabled}
         onChange={(v) => s.set("openMatchesEnabled", v)}
       />
       <ToggleRow
-        label={tx({ fr: "Invitations", en: "Invitations" })}
+        label={tx({ fr: "Invitations", en: "Invitations", ar: "الدعوات" })}
         hint={tx({
           fr: "Lien, QR code et invitation d'un membre dans l'app (accepter / refuser).",
           en: "Link, QR code and in-app member invitation (accept / decline).",
+          ar: "رابط، رمز QR ودعوة عضو داخل التطبيق (قبول / رفض).",
         })}
         checked={!!d.invitationsEnabled}
         onChange={(v) => s.set("invitationsEnabled", v)}
       />
       <ToggleRow
-        label={tx({ fr: "Paiement au club (partiel)", en: "Pay at the club (partial payments)" })}
+        label={tx({
+          fr: "Paiement au club (partiel)",
+          en: "Pay at the club (partial payments)",
+          ar: "الدفع في النادي (جزئي)",
+        })}
         hint={tx({
           fr: "Un joueur peut réserver sa place et la payer en espèces à l'accueil. Désactivé : tokens uniquement.",
           en: "A player may hold a spot and pay cash at the desk. Off: tokens only.",
+          ar: "يمكن للاعب حجز مكانه ودفعه نقدًا في الاستقبال. عند التعطيل: الرصيد فقط.",
         })}
         checked={!!d.cashPaymentEnabled}
         onChange={(v) => s.set("cashPaymentEnabled", v)}
@@ -1341,52 +1532,69 @@ function NotificationsSection({ settings }: { settings: AdminSettings }) {
   const rows: [keyof SettingsPatch, Copy, Copy][] = [
     [
       "bookingConfirmationNotificationsEnabled",
-      { fr: "Confirmation de réservation", en: "Booking confirmation" },
-      { fr: "Après chaque réservation ou place prise.", en: "After each booking or joined spot." },
+      { fr: "Confirmation de réservation", en: "Booking confirmation", ar: "تأكيد الحجز" },
+      {
+        fr: "Après chaque réservation ou place prise.",
+        en: "After each booking or joined spot.",
+        ar: "بعد كل حجز أو مكان محجوز.",
+      },
     ],
     [
       "cancellationNotificationsEnabled",
-      { fr: "Annulation", en: "Cancellation" },
+      { fr: "Annulation", en: "Cancellation", ar: "الإلغاء" },
       {
         fr: "À tous les joueurs du match, avec le remboursement.",
         en: "To every player of the match, with the refund.",
+        ar: "لكل لاعبي المباراة، مع الاسترجاع.",
       },
     ],
     [
       "invitationNotificationsEnabled",
-      { fr: "Invitation à un match", en: "Match invitation" },
-      { fr: "Quand un membre est invité dans l'app.", en: "When a member is invited in the app." },
+      { fr: "Invitation à un match", en: "Match invitation", ar: "دعوة إلى مباراة" },
+      {
+        fr: "Quand un membre est invité dans l'app.",
+        en: "When a member is invited in the app.",
+        ar: "عند دعوة عضو داخل التطبيق.",
+      },
     ],
     [
       "tokenNotificationsEnabled",
-      { fr: "Tokens crédités", en: "Tokens credited" },
-      { fr: "Quand l'accueil crédite des tokens.", en: "When the desk credits tokens." },
+      { fr: "Tokens crédités", en: "Tokens credited", ar: "إضافة رصيد" },
+      {
+        fr: "Quand l'accueil crédite des tokens.",
+        en: "When the desk credits tokens.",
+        ar: "عندما يضيف الاستقبال رصيدًا.",
+      },
     ],
     [
       "matchFinishedNotificationsEnabled",
-      { fr: "Après le match", en: "After the match" },
+      { fr: "Après le match", en: "After the match", ar: "بعد المباراة" },
       {
         fr: "Remerciement et invitation à réserver le suivant.",
         en: "Thank-you and invitation to book the next one.",
+        ar: "شكر ودعوة لحجز المباراة التالية.",
       },
     ],
     [
       "remindersEnabled",
-      { fr: "Rappel avant le match", en: "Reminder before the match" },
+      { fr: "Rappel avant le match", en: "Reminder before the match", ar: "تذكير قبل المباراة" },
       {
         fr: "Envoyé à chaque joueur avant le début.",
         en: "Sent to every player before the start.",
+        ar: "يُرسل لكل لاعب قبل البداية.",
       },
     ],
   ];
   return (
     <Section
       id="notifications"
+      dirty={s.dirty}
       icon={<BellIcon className="size-5" />}
       title={tx({ fr: "Notifications", en: "Notifications", ar: "الإشعارات" })}
       description={tx({
         fr: "Messages envoyés par le club (dans l'app, par e-mail et en push selon les préférences de chaque membre).",
         en: "Messages sent by the club (in-app, e-mail and push, per each member's preferences).",
+        ar: "الرسائل التي يرسلها النادي (داخل التطبيق، بالبريد الإلكتروني والإشعارات حسب تفضيلات كل عضو).",
       })}
       footer={
         <SectionButtons
@@ -1410,10 +1618,11 @@ function NotificationsSection({ settings }: { settings: AdminSettings }) {
       {!!d.remindersEnabled && (
         <NumberField
           id="set-reminder-lead"
-          label={tx({ fr: "Envoyer le rappel", en: "Send the reminder" })}
+          label={tx({ fr: "Envoyer le rappel", en: "Send the reminder", ar: "إرسال التذكير" })}
           hint={tx({
             fr: "Minutes avant le match. Ex : 120 = 2 h avant.",
             en: "Minutes before the match. e.g. 120 = 2 h before.",
+            ar: "دقائق قبل المباراة. مثال: 120 = ساعتان قبلها.",
           })}
           suffix="min"
           value={String(d.reminderLeadMinutes ?? "")}

@@ -7,14 +7,15 @@ import {
   activityTable,
   terrainsTable,
 } from "@workspace/db";
-import { gte, lt, count, and, sql, desc, eq, isNull } from "drizzle-orm";
+import { gte, lt, count, and, sql, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { requireAdmin } from "../lib/auth";
 import { loadActiveRules, priceFor } from "../lib/pricing";
 import { dayHours, gridStarts } from "../lib/slots";
 import { getSettings, scheduleContext } from "../lib/settings";
 import { addDays, clubInstant, clubParts, isClubDate } from "../lib/club-time";
 import { env } from "../config/env";
-import { paging } from "../lib/http";
+import { countUpcomingBookings, isBlockedSlot } from "../lib/bookings";
+import { HttpError, paging } from "../lib/http";
 
 const router = Router();
 
@@ -58,7 +59,7 @@ async function bookedValue(from: Date, to: Date) {
   const [rules, settings] = await Promise.all([loadActiveRules(), getSettings()]);
   let total = 0;
   for (const r of rows) {
-    if (!r.terrain || r.guestName?.startsWith("[")) continue; // maintenance blocks
+    if (!r.terrain || isBlockedSlot(r)) continue; // maintenance blocks earn nothing
     const p = priceFor(rules, settings, r.terrain, r.startTime);
     total +=
       r.bookingMode === "full_court" ? p.fullCourtPrice : r.players.length * p.pricePerPerson;
@@ -83,17 +84,9 @@ router.get("/dashboard/stats", requireAdmin, async (req, res) => {
     .select({ tokensIssued: sql<number>`coalesce(sum(${tokenTransactionsTable.amount}), 0)` })
     .from(tokenTransactionsTable)
     .where(
-      and(
-        eq(tokenTransactionsTable.type, "credit"),
-        sql`${tokenTransactionsTable.adminId} is not null`,
-      ),
+      and(eq(tokenTransactionsTable.type, "credit"), isNotNull(tokenTransactionsTable.adminId)),
     );
-  const [{ upcoming }] = await db
-    .select({ upcoming: count() })
-    .from(reservationsTable)
-    .where(
-      and(gte(reservationsTable.startTime, new Date()), eq(reservationsTable.status, "confirmed")),
-    );
+  const upcoming = await countUpcomingBookings();
 
   res.json({
     totalReservationsToday: day.count,
@@ -102,7 +95,7 @@ router.get("/dashboard/stats", requireAdmin, async (req, res) => {
     // Tokens sold at the desk (admin credits; refunds excluded)
     totalTokensIssued: Number(tokensIssued),
     occupancyRateToday: perDay ? Number(Math.min(100, (day.count / perDay) * 100).toFixed(1)) : 0,
-    upcomingReservations: Number(upcoming),
+    upcomingReservations: upcoming,
     revenueEquivalentToday: day.value,
     revenueEquivalentMonth: month.value,
     slotsPerDay: perDay,
@@ -112,7 +105,7 @@ router.get("/dashboard/stats", requireAdmin, async (req, res) => {
 router.get("/dashboard/peak-hours", requireAdmin, async (_req, res) => {
   // start_time is stored in UTC: convert to club-local time before bucketing
   const tz = env.clubTimezone;
-  const rows = await db.execute(sql`
+  const rows = await db.execute<{ hour: number; day_of_week: number; booking_count: number }>(sql`
     select extract(hour from (start_time at time zone 'UTC') at time zone ${tz})::int as hour,
            extract(dow from (start_time at time zone 'UTC') at time zone ${tz})::int as day_of_week,
            count(*)::int as booking_count
@@ -122,7 +115,7 @@ router.get("/dashboard/peak-hours", requireAdmin, async (_req, res) => {
     order by 2, 1
   `);
   res.json(
-    rows.rows.map((r: any) => ({
+    rows.rows.map((r) => ({
       hour: r.hour,
       dayOfWeek: r.day_of_week,
       bookingCount: r.booking_count,
@@ -144,13 +137,11 @@ router.get("/dashboard/occupancy", requireAdmin, async (req, res) => {
   const { startDate, endDate } = req.query as Record<string, string>;
   const to = isClubDate(endDate) ? endDate : clubParts(new Date()).date;
   const from = isClubDate(startDate) ? startDate : addDays(to, -30);
-  if (from > to || addDays(from, 366) < to) {
-    res.status(400).json({ error: "Invalid date range", code: "VALIDATION_ERROR" });
-    return;
-  }
+  if (from > to || addDays(from, 366) < to)
+    throw new HttpError(400, "Invalid date range", "VALIDATION_ERROR");
   const tz = env.clubTimezone;
   const perDay = await slotsPerDay(from, to);
-  const rows = await db.execute(sql`
+  const rows = await db.execute<{ date: string; booked_slots: number }>(sql`
     select to_char((start_time at time zone 'UTC') at time zone ${tz}, 'YYYY-MM-DD') as date,
            count(*)::int as booked_slots
     from reservations
@@ -159,10 +150,10 @@ router.get("/dashboard/occupancy", requireAdmin, async (req, res) => {
     order by 1
   `);
   res.json(
-    rows.rows.map((r: any) => {
-      const total = perDay.get(String(r.date)) ?? 0;
+    rows.rows.map((r) => {
+      const total = perDay.get(r.date) ?? 0;
       return {
-        date: String(r.date),
+        date: r.date,
         totalSlots: total,
         bookedSlots: r.booked_slots,
         occupancyRate: total ? Number(Math.min(100, (r.booked_slots / total) * 100).toFixed(1)) : 0,

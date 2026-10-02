@@ -38,6 +38,16 @@ function hoursSummary(days: ClubRules["openingHours"]) {
   return { hoursLabel: `${first} – ${last}`, openEveryDay: open.length === 7 };
 }
 
+/** First and last hour the club is open in a week (hour rows of the admin grids). */
+export function openingHourBounds(days: ClubRules["openingHours"]) {
+  const open = days.filter((d) => !d.isClosed);
+  if (!open.length) return { firstHour: 8, lastHour: 24 };
+  const minutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+  const firstHour = Math.floor(Math.min(...open.map((d) => minutes(d.openTime))) / 60);
+  const lastHour = Math.ceil(Math.max(...open.map((d) => minutes(d.closeTime))) / 60);
+  return { firstHour, lastHour: Math.max(lastHour, firstHour + 1) };
+}
+
 /** The club's operational rules (admin → Réglages), shared by every screen. */
 export function useClubRules() {
   const { data, isLoading } = useClubRulesQuery();
