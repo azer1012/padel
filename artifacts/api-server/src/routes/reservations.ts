@@ -33,6 +33,7 @@ import { fullName } from "../lib/members";
 import { assertBookable } from "../lib/slots";
 import { getSettings, scheduleContext } from "../lib/settings";
 import { HttpError, cleanText, oneOf, paging, requireId, toId } from "../lib/http";
+import { earnLoyalty, loyaltyFor } from "../lib/loyalty";
 
 const router = Router();
 
@@ -192,6 +193,9 @@ router.post("/reservations", requireUser, async (req, res) => {
   const isPublic = bookingMode === "own_spot" && b.isPublic === true && settings.openMatchesEnabled;
   const equipmentReq = normalizeRequest(b.equipment);
   let gear: { name: string; quantity: number; price: number }[] = [];
+  // Fidélité: only a booking paid with tokens earns a reward
+  const loyaltyEarned = chargeTokens ? loyaltyFor(settings, tokensNeeded) : 0;
+  let loyaltyCredited = 0;
 
   let reservationId: number;
   try {
@@ -234,6 +238,12 @@ router.post("/reservations", requireUser, async (req, res) => {
           paymentType: chargeTokens ? "token" : "cash_club",
           paymentStatus: chargeTokens ? "paid" : "pending",
           tokensCharged: chargeTokens ? tokensNeeded : 0,
+          loyaltyEarned,
+        });
+        loyaltyCredited = await earnLoyalty(tx, {
+          userId: member.id,
+          earned: loyaltyEarned,
+          reservationId: reservation.id,
         });
       }
 
@@ -272,12 +282,36 @@ router.post("/reservations", requireUser, async (req, res) => {
       },
       `booking:${reservationId}`,
     );
+    // The reward reached a whole token: it is in the wallet, say so
+    if (loyaltyCredited > 0)
+      notifyLater(
+        member,
+        {
+          kind: "tokens_added",
+          amount: loyaltyCredited,
+          balance: member.tokenBalance - (chargeTokens ? tokensNeeded : 0) + loyaltyCredited,
+          reason:
+            member.language === "en"
+              ? "Loyalty reward"
+              : member.language === "ar"
+                ? "مكافأة الوفاء"
+                : "Récompense fidélité",
+        },
+        `loyalty:${reservationId}`,
+      );
   }
   const full = await db.query.reservationsTable.findFirst({
     where: eq(reservationsTable.id, reservationId),
     with: withDetails,
   });
-  res.status(201).json(full ? forViewer(full, booker) : full);
+  res.status(201).json(
+    full
+      ? {
+          ...forViewer(full, booker),
+          loyalty: { earned: loyaltyEarned, credited: loyaltyCredited },
+        }
+      : full,
+  );
 });
 
 router.get("/reservations/:id", requireUser, async (req, res) => {

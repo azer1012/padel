@@ -1,9 +1,14 @@
-import { useGetTokenBalance, useListTokenTransactions } from "@workspace/api-client-react";
+import {
+  useGetMe,
+  useGetTokenBalance,
+  useListTokenTransactions,
+} from "@workspace/api-client-react";
 import {
   ArrowDownLeftIcon,
   ArrowUpRightIcon,
   ArrowsClockwiseIcon,
   CoinsIcon,
+  GiftIcon,
   PhoneIcon,
   WhatsappLogoIcon,
 } from "@/components/icons";
@@ -15,7 +20,7 @@ import { CLUB } from "@/config/club";
 import { cn } from "@/lib/utils";
 import { useClubRules } from "@/hooks/use-club-rules";
 import { clubDateTime } from "@/lib/club-time";
-import { ledgerLabel, plural, tokenWord, tokensLabel } from "@/lib/labels";
+import { ledgerLabel, plural, tokenAmount, tokenWord, tokensLabel } from "@/lib/labels";
 
 export default function Wallet() {
   const rules = useClubRules();
@@ -30,6 +35,9 @@ export default function Wallet() {
   const bal = balance?.balance ?? 0;
   const fullCourts = Math.floor(bal / Math.max(1, rules.tokenCostFullCourt));
   const spots = Math.floor(bal / Math.max(1, rules.tokenCostPlayer));
+  const { data: me } = useGetMe();
+  /** Reward earned and not yet a whole token (below zero: owed after a refunded booking) */
+  const loyalty = me?.loyaltyBalance ?? 0;
 
   return (
     <Page>
@@ -114,6 +122,65 @@ export default function Wallet() {
           </div>
         </section>
       </div>
+
+      {(rules.loyaltyEnabled || loyalty > 0) && (
+        <section
+          data-testid="loyalty-card"
+          className="enter flex flex-col gap-4 rounded-[28px] bg-card p-6 shadow-sm sm:flex-row sm:items-center sm:gap-6"
+        >
+          <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-ball text-night">
+            <GiftIcon className="size-7" weight="duotone" />
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <span className="label text-court">
+              {tx({ fr: "Fidélité", en: "Loyalty", ar: "الوفاء" })}
+            </span>
+            <span className="text-[17px] font-extrabold">
+              {tx({
+                fr: `${tokenAmount(Math.max(0, loyalty))} / 1 token de récompense`,
+                en: `${tokenAmount(Math.max(0, loyalty))} / 1 reward token`,
+                ar: `${tokenAmount(Math.max(0, loyalty))} / 1 رصيد مكافأة`,
+              })}
+            </span>
+            <span
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(Math.min(1, Math.max(0, loyalty)) * 100)}
+              aria-label={tx({
+                fr: "Progression vers le prochain token offert",
+                en: "Progress to the next free token",
+                ar: "التقدم نحو الرصيد المجاني القادم",
+              })}
+              className="h-2.5 overflow-hidden rounded-full bg-secondary"
+            >
+              <span
+                className="block h-full rounded-full bg-court transition-[width] duration-700"
+                style={{ width: `${Math.min(1, Math.max(0, loyalty)) * 100}%` }}
+              />
+            </span>
+            <span className="text-sm text-muted-foreground">
+              {rules.loyaltyEnabled
+                ? tx({
+                    fr: `Chaque réservation payée en tokens vous rapporte ${tokenAmount(rules.loyaltyRewardTokens)} token pour ${tokensLabel(rules.loyaltySpendTokens)} ${plural(rules.loyaltySpendTokens, "dépensé", "dépensés")}. À 1, un token est ajouté à votre solde.`,
+                    en: `Every booking paid with tokens earns you ${tokenAmount(rules.loyaltyRewardTokens)} token per ${tokensLabel(rules.loyaltySpendTokens)} spent. At 1, a token is added to your balance.`,
+                    ar: `كل حجز مدفوع بالرصيد يمنحك ${tokenAmount(rules.loyaltyRewardTokens)} رصيد مقابل كل ${tokensLabel(rules.loyaltySpendTokens)} مُنفق. عند بلوغ 1 يُضاف رصيد إلى حسابك.`,
+                  })
+                : tx({
+                    fr: "Le programme de fidélité est en pause : votre progression est conservée.",
+                    en: "The loyalty programme is paused: your progress is kept.",
+                    ar: "برنامج الوفاء متوقف مؤقتًا: تقدمك محفوظ.",
+                  })}
+              {loyalty < 0 &&
+                ` ${tx({
+                  fr: `Une réservation remboursée avait déjà rapporté un token : il reste ${tokenAmount(-loyalty)} à regagner avant la prochaine récompense.`,
+                  en: `A refunded booking had already earned a token: ${tokenAmount(-loyalty)} is left to earn back before the next reward.`,
+                  ar: `حجز مُسترد كان قد منح رصيدًا: بقي ${tokenAmount(-loyalty)} لتعويضه قبل المكافأة القادمة.`,
+                })}`}
+            </span>
+          </div>
+        </section>
+      )}
 
       <div className="stagger grid grid-cols-2 gap-3">
         <div className="rounded-[24px] bg-card p-5 shadow-sm">

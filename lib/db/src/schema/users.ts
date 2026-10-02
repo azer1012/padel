@@ -1,4 +1,13 @@
-import { pgTable, serial, text, integer, timestamp, pgEnum, boolean } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  serial,
+  text,
+  integer,
+  timestamp,
+  pgEnum,
+  boolean,
+  numeric,
+} from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("role", ["admin", "player"]);
 export const languageEnum = pgEnum("language", ["fr", "ar", "en"]);
@@ -15,6 +24,13 @@ export const usersTable = pgTable("users", {
   role: roleEnum("role").notNull().default("player"),
   avatarUrl: text("avatar_url"),
   tokenBalance: integer("token_balance").notNull().default(0),
+  /**
+   * Loyalty reward earned and not yet turned into a token (fractions of a token).
+   * Below zero when a refunded booking's reward had already become a token.
+   */
+  loyaltyBalance: numeric("loyalty_balance", { precision: 10, scale: 2, mode: "number" })
+    .notNull()
+    .default(0),
   language: languageEnum("language").notNull().default("fr"),
   emailNotifications: boolean("email_notifications").notNull().default(true),
   pushNotifications: boolean("push_notifications").notNull().default(true),

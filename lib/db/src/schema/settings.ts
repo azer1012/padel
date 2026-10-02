@@ -56,6 +56,17 @@ export const clubSettingsTable = pgTable(
     cashPaymentEnabled: boolean("cash_payment_enabled").notNull().default(true),
     shopEnabled: boolean("shop_enabled").notNull().default(true),
 
+    /** Fidélité: every `loyaltySpendTokens` tokens spent on a booking earn `loyaltyRewardTokens`. */
+    loyaltyEnabled: boolean("loyalty_enabled").notNull().default(false),
+    loyaltySpendTokens: integer("loyalty_spend_tokens").notNull().default(1),
+    loyaltyRewardTokens: numeric("loyalty_reward_tokens", {
+      precision: 6,
+      scale: 2,
+      mode: "number",
+    })
+      .notNull()
+      .default(0.1),
+
     bookingConfirmationNotificationsEnabled: boolean("booking_confirmation_notifications_enabled")
       .notNull()
       .default(true),

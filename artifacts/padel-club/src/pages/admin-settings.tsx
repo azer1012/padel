@@ -18,6 +18,7 @@ import {
   CoinsIcon,
   CourtIcon,
   FloppyDiskIcon,
+  GiftIcon,
   PlusIcon,
   TagIcon,
   ToggleRightIcon,
@@ -73,6 +74,8 @@ const LIMITS = {
   tokenUnitPrice: [0, 100000],
   tokenMinPurchase: [1, 1000],
   reminderLeadMinutes: [15, 1440],
+  loyaltySpendTokens: [1, 1000],
+  loyaltyRewardTokens: [0.01, 100],
 } as const satisfies Partial<Record<keyof SettingsPatch, readonly [number, number]>>;
 type NumKey = keyof typeof LIMITS;
 const INTEGER: NumKey[] = [
@@ -86,6 +89,7 @@ const INTEGER: NumKey[] = [
   "tokenCostFullCourt",
   "tokenMinPurchase",
   "reminderLeadMinutes",
+  "loyaltySpendTokens",
 ];
 
 function numberError(key: NumKey, raw: string, tx: Tx): string | null {
@@ -101,6 +105,12 @@ function numberError(key: NumKey, raw: string, tx: Tx): string | null {
       fr: `Entre ${min} et ${max}`,
       en: `Between ${min} and ${max}`,
       ar: `بين ${min} و ${max}`,
+    });
+  if (key === "loyaltyRewardTokens" && Math.abs(n * 100 - Math.round(n * 100)) > 1e-6)
+    return tx({
+      fr: "2 décimales au maximum",
+      en: "At most 2 decimals",
+      ar: "خانتان عشريتان كحد أقصى",
     });
   if (key === "bookingDurationMinutes" && n % 5 !== 0)
     return tx({
@@ -368,6 +378,7 @@ const NAV = [
   { id: "booking", icon: ClockCountdownIcon, fr: "Réservations", en: "Booking", ar: "الحجوزات" },
   { id: "pricing", icon: TagIcon, fr: "Tarifs", en: "Pricing", ar: "الأسعار" },
   { id: "tokens", icon: CoinsIcon, fr: "Tokens", en: "Tokens", ar: "الرصيد" },
+  { id: "loyalty", icon: GiftIcon, fr: "Fidélité", en: "Loyalty", ar: "الوفاء" },
   { id: "hours", icon: ClockIcon, fr: "Horaires", en: "Opening hours", ar: "ساعات العمل" },
   { id: "features", icon: ToggleRightIcon, fr: "Fonctionnalités", en: "Features", ar: "الميزات" },
   {
@@ -460,6 +471,7 @@ export default function AdminSettings() {
             <BookingSection settings={settings} confirm={confirm} />
             <PricingSection settings={settings} />
             <TokensSection settings={settings} />
+            <LoyaltySection settings={settings} />
             <HoursSection settings={settings} />
             <FeaturesSection settings={settings} />
             <NotificationsSection settings={settings} />
@@ -1110,6 +1122,99 @@ const DAY_NAMES: Record<number, Copy> = {
   5: { fr: "Vendredi", en: "Friday", ar: "الجمعة" },
   6: { fr: "Samedi", en: "Saturday", ar: "السبت" },
 };
+
+function LoyaltySection({ settings }: { settings: AdminSettings }) {
+  const tx = useTx();
+  const s = useSettingsSection(settings, "loyalty", [
+    "loyaltyEnabled",
+    "loyaltySpendTokens",
+    "loyaltyRewardTokens",
+  ]);
+  const d = s.draft;
+  const err = (k: NumKey) => (d[k] === undefined ? null : numberError(k, String(d[k]), tx));
+  const keys: NumKey[] = ["loyaltySpendTokens", "loyaltyRewardTokens"];
+  const invalid = keys.some((k) => err(k));
+  const spend = Number(d.loyaltySpendTokens);
+  const reward = Number(d.loyaltyRewardTokens);
+  // What the rule means for the two bookings a member can make
+  const earns = (tokens: number) =>
+    String(Math.round((tokens * Math.round(reward * 100)) / spend) / 100);
+  return (
+    <Section
+      id="loyalty"
+      dirty={s.dirty}
+      icon={<GiftIcon className="size-5" />}
+      title={tx({ fr: "Fidélité", en: "Loyalty", ar: "الوفاء" })}
+      description={tx({
+        fr: "Récompensez les joueurs qui réservent : chaque réservation payée en tokens leur rapporte une fraction de token. Dès qu'elles atteignent 1 token, il est ajouté à leur solde. Une réservation remboursée reprend sa récompense.",
+        en: "Reward the players who book: every booking paid with tokens earns them a fraction of a token. As soon as the fractions reach 1 token, it is added to their balance. A refunded booking takes its reward back.",
+        ar: "كافئ اللاعبين الذين يحجزون: كل حجز مدفوع بالرصيد يمنحهم جزءًا من رصيد. عند بلوغ 1 يُضاف إلى حسابهم. الحجز المُسترد تُسحب مكافأته.",
+      })}
+      footer={
+        <SectionButtons
+          dirty={s.dirty}
+          busy={s.busy}
+          invalid={invalid}
+          onSave={() => s.save()}
+          onReset={s.resetToDefault}
+        />
+      }
+    >
+      <ToggleRow
+        testId="toggle-loyalty"
+        label={tx({ fr: "Programme de fidélité", en: "Loyalty programme", ar: "برنامج الوفاء" })}
+        hint={tx({
+          fr: "Désactivé : plus aucune récompense n'est gagnée ; ce que les joueurs ont déjà gagné est conservé.",
+          en: "Off: no more reward is earned; what players already earned is kept.",
+          ar: "عند التعطيل: لا مكافآت جديدة؛ ما كسبه اللاعبون يبقى محفوظًا.",
+        })}
+        checked={!!d.loyaltyEnabled}
+        onChange={(v) => s.set("loyaltyEnabled", v)}
+      />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <NumberField
+          id="set-loyalty-spend"
+          label={tx({ fr: "Tokens dépensés", en: "Tokens spent", ar: "الرصيد المُنفق" })}
+          hint={tx({
+            fr: "Pour combien de tokens dépensés en réservation la récompense est donnée. Ex : 1.",
+            en: "For how many tokens spent on a booking the reward is given. e.g. 1.",
+            ar: "مقابل كم رصيد مُنفق في الحجز تُمنح المكافأة. مثال: 1.",
+          })}
+          suffix={tokenWord(2)}
+          value={String(d.loyaltySpendTokens ?? "")}
+          onChange={(v) => s.set("loyaltySpendTokens", v)}
+          error={err("loyaltySpendTokens")}
+        />
+        <NumberField
+          id="set-loyalty-reward"
+          label={tx({ fr: "Récompense", en: "Reward", ar: "المكافأة" })}
+          hint={tx({
+            fr: "Tokens offerts à chaque fois. Ex : 0.1 (un token offert tous les 10 tokens dépensés).",
+            en: "Tokens given each time. e.g. 0.1 (one free token every 10 tokens spent).",
+            ar: "الرصيد الممنوح في كل مرة. مثال: 0.1 (رصيد مجاني لكل 10 مُنفقة).",
+          })}
+          suffix={tokenWord(2)}
+          step="0.01"
+          value={String(d.loyaltyRewardTokens ?? "")}
+          onChange={(v) => s.set("loyaltyRewardTokens", v)}
+          error={err("loyaltyRewardTokens")}
+        />
+      </div>
+      {!invalid && spend > 0 && reward > 0 && (
+        <p
+          data-testid="loyalty-example"
+          className="m-0 rounded-2xl bg-ball/50 px-4 py-3 text-sm font-semibold text-night"
+        >
+          {tx({
+            fr: `Avec cette règle : une place (${tokensLabel(settings.tokenCostPlayer)}) rapporte ${earns(settings.tokenCostPlayer)} token, un terrain complet (${tokensLabel(settings.tokenCostFullCourt)}) rapporte ${earns(settings.tokenCostFullCourt)} token.`,
+            en: `With this rule: one spot (${tokensLabel(settings.tokenCostPlayer)}) earns ${earns(settings.tokenCostPlayer)} token, a full court (${tokensLabel(settings.tokenCostFullCourt)}) earns ${earns(settings.tokenCostFullCourt)} token.`,
+            ar: `بهذه القاعدة: المكان (${tokensLabel(settings.tokenCostPlayer)}) يمنح ${earns(settings.tokenCostPlayer)} رصيد، والملعب الكامل (${tokensLabel(settings.tokenCostFullCourt)}) يمنح ${earns(settings.tokenCostFullCourt)} رصيد.`,
+          })}
+        </p>
+      )}
+    </Section>
+  );
+}
 
 function HoursSection({ settings }: { settings: AdminSettings }) {
   const tx = useTx();

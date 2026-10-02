@@ -23,6 +23,9 @@ const LOADING: ClubRules = {
   invitationsEnabled: true,
   cashPaymentEnabled: true,
   shopEnabled: true,
+  loyaltyEnabled: false,
+  loyaltySpendTokens: 1,
+  loyaltyRewardTokens: 0.1,
   openingHours: [],
   tokenPackages: [],
 };

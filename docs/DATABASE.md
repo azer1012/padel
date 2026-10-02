@@ -149,18 +149,19 @@ They hold even if the API had a bug, and are tested by
 
 ## Migrations
 
-| File                                                        | What                                                                          |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `20260527180000_drop_legacy_uuid_schema.sql`                | Removes an old empty prototype schema if present; refuses if it holds data.   |
-| `20260527190000_production_schema.sql`                      | Base schema.                                                                  |
-| `20260610000000_align_schema_with_drizzle.sql`              | Alignment with the Drizzle model.                                             |
-| `20261001000000_pricing_equipment_series_notifications.sql` | Pricing rules, equipment, recurring bookings, notifications.                  |
-| `20261002000000_security_and_integrity.sql`                 | Lockdown, overlap constraint, capacity, ledger guards, payment states.        |
-| `20261003000000_club_settings.sql`                          | Club settings, opening hours, exceptions, packs, court fields, invitations.   |
-| `20261004000000_user_gender.sql`                            | Player gender, copied from signup metadata by the auth trigger.               |
-| `20261005000000_audit_trail_types.sql`                      | Audit-trail types (cash, roles, courts, pricing rules) and two indexes.       |
-| `20261006000000_drop_unused_legacy_tables.sql`              | Drops the empty `clubs`, `staff_roles` and `terrains.capacity` (guarded).     |
-| `20261007000000_shop.sql`                                   | Boutique: `shop_products`, `shop_orders`, `shop_order_items`, `shop_enabled`. |
+| File                                                        | What                                                                                                  |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `20260527180000_drop_legacy_uuid_schema.sql`                | Removes an old empty prototype schema if present; refuses if it holds data.                           |
+| `20260527190000_production_schema.sql`                      | Base schema.                                                                                          |
+| `20260610000000_align_schema_with_drizzle.sql`              | Alignment with the Drizzle model.                                                                     |
+| `20261001000000_pricing_equipment_series_notifications.sql` | Pricing rules, equipment, recurring bookings, notifications.                                          |
+| `20261002000000_security_and_integrity.sql`                 | Lockdown, overlap constraint, capacity, ledger guards, payment states.                                |
+| `20261003000000_club_settings.sql`                          | Club settings, opening hours, exceptions, packs, court fields, invitations.                           |
+| `20261004000000_user_gender.sql`                            | Player gender, copied from signup metadata by the auth trigger.                                       |
+| `20261005000000_audit_trail_types.sql`                      | Audit-trail types (cash, roles, courts, pricing rules) and two indexes.                               |
+| `20261006000000_drop_unused_legacy_tables.sql`              | Drops the empty `clubs`, `staff_roles` and `terrains.capacity` (guarded).                             |
+| `20261007000000_shop.sql`                                   | Boutique: `shop_products`, `shop_orders`, `shop_order_items`, `shop_enabled`.                         |
+| `20261008000000_loyalty.sql`                                | Fidélité: the rule in `club_settings`, `users.loyalty_balance`, `reservation_players.loyalty_earned`. |
 
 All migrations are additive or guarded; none deletes club data. Apply them with
 `pnpm --filter @workspace/scripts run db:migrate` (or `supabase db push`, or the

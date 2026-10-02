@@ -372,6 +372,10 @@ export type ClubRules = {
   invitationsEnabled: boolean;
   cashPaymentEnabled: boolean;
   shopEnabled: boolean;
+  /** Fidélité: every `loyaltySpendTokens` tokens spent on a booking earn `loyaltyRewardTokens` */
+  loyaltyEnabled: boolean;
+  loyaltySpendTokens: number;
+  loyaltyRewardTokens: number;
   openingHours: OpeningHoursDay[];
   tokenPackages: TokenPackage[];
 };
@@ -395,6 +399,7 @@ export type SettingsSection =
   | "pricing"
   | "tokens"
   | "features"
+  | "loyalty"
   | "notifications"
   | "openingHours";
 export type ScheduleException = {

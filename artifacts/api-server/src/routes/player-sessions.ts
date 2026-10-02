@@ -24,6 +24,7 @@ import { blockedGuestName, bookingConflict, lateCancellation, removePlayer } fro
 import { fullName, publicName } from "../lib/members";
 import { logActivity } from "../lib/activity";
 import { readRateLimit } from "../middleware/rate-limit";
+import { earnLoyalty, loyaltyFor } from "../lib/loyalty";
 import { env } from "../config/env";
 
 const router = Router();
@@ -74,6 +75,9 @@ async function addPlayer(
     throw new HttpError(400, "This match is no longer active", "MATCH_INACTIVE");
 
   const free = r.bookingMode === "full_court";
+  const paysTokens = !free && method === "token";
+  // Fidélité: a spot paid with tokens earns the club's reward, like a booking
+  const loyaltyEarned = paysTokens ? loyaltyFor(await getSettings(), tokensPerSpot) : 0;
   const [row] = await tx
     .insert(reservationPlayersTable)
     .values({
@@ -81,11 +85,12 @@ async function addPlayer(
       userId,
       paymentType: free ? "invited_free" : method,
       paymentStatus: free || method === "token" || opts.cashPaid ? "paid" : "pending",
-      tokensCharged: !free && method === "token" ? tokensPerSpot : 0,
+      tokensCharged: paysTokens ? tokensPerSpot : 0,
+      loyaltyEarned,
     })
     .returning();
 
-  if (!free && method === "token") {
+  if (paysTokens) {
     await moveTokens(tx, {
       userId,
       delta: -tokensPerSpot,
@@ -94,6 +99,7 @@ async function addPlayer(
       adminId: opts.adminId ?? null,
       description: `${opts.viaInvite ? "Joined via invite" : "Joined match"} · ${r.terrainName} · ${formatClubStamp(r.startTime)}`,
     });
+    await earnLoyalty(tx, { userId, earned: loyaltyEarned, reservationId: r.id });
   }
   return row;
 }

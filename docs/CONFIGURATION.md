@@ -102,6 +102,11 @@ the activity feed with the admin and the old → new values. Each section has
 
 - **Token expiry**: tokens never expire. The API refuses a credit that carries an
   expiry date, and no screen announces one (the `expires_at` column is unused).
+- **Fidélité** (Réglages → Fidélité, off by default): every N tokens spent on a booking
+  earn R tokens (e.g. 1 → 0.1). Fractions add up per member; each whole token is
+  credited to the wallet through the ledger. A refunded booking takes its reward back,
+  so booking and cancelling earns nothing. Cash payments and free invited spots earn
+  nothing.
 - **Online payment in the boutique**: an order is never paid on the site. The club
   calls the member to confirm it and is paid in cash on delivery or at the desk.
 - **Minimum players** never blocks a booking: a player can always book only their

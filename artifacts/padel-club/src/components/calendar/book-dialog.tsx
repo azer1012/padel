@@ -27,7 +27,14 @@ import { useToast } from "@/hooks/use-toast";
 import { useI18n, useTx } from "@/lib/i18n";
 import { clubDate, clubTime } from "@/lib/club-time";
 import { downloadIcs } from "@/lib/ics";
-import { inviteShareText, plural, tokensLabel } from "@/lib/labels";
+import {
+  inviteShareText,
+  loyaltyFor,
+  plural,
+  tokenAmount,
+  tokenWord,
+  tokensLabel,
+} from "@/lib/labels";
 import { cn } from "@/lib/utils";
 import { EquipmentPicker } from "@/components/smash/equipment-picker";
 import { InvitePanel } from "@/components/smash/invite-panel";
@@ -532,6 +539,16 @@ export function BookDialog({
                   {tokensLabel(after)}
                 </>
               )}
+            </dd>
+          </div>
+        )}
+        {paysTokens && loyaltyFor(rules, cost) > 0 && (
+          <div className="flex justify-between gap-4" data-testid="loyalty-line">
+            <dt className="text-muted-foreground">
+              {tx({ fr: "Fidélité", en: "Loyalty", ar: "الوفاء" })}
+            </dt>
+            <dd className="m-0 text-end font-bold text-[#0F6B3C]">
+              +{tokenAmount(loyaltyFor(rules, cost))} {tokenWord(loyaltyFor(rules, cost))}
             </dd>
           </div>
         )}

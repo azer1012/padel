@@ -47,6 +47,8 @@ export interface User {
   /** @nullable */
   avatarUrl?: string | null;
   tokenBalance?: number;
+  /** Loyalty reward earned and not yet turned into a token (fractions of a token) */
+  loyaltyBalance?: number;
   language?: UserLanguage;
   emailNotifications?: boolean;
   pushNotifications?: boolean;

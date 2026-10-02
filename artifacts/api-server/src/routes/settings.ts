@@ -46,6 +46,13 @@ const settingsPatch = z
     invitationsEnabled: z.boolean(),
     cashPaymentEnabled: z.boolean(),
     shopEnabled: z.boolean(),
+    loyaltyEnabled: z.boolean(),
+    loyaltySpendTokens: int(1, 1000),
+    loyaltyRewardTokens: z
+      .number()
+      .min(0.01)
+      .max(100)
+      .refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, "At most 2 decimals"),
     bookingConfirmationNotificationsEnabled: z.boolean(),
     remindersEnabled: z.boolean(),
     reminderLeadMinutes: int(15, 1440),
@@ -73,6 +80,7 @@ const SECTIONS: Record<string, SettingKey[]> = {
   pricing: ["currency", "playerPrice", "fullCourtPrice"],
   tokens: ["tokenCostPlayer", "tokenCostFullCourt", "tokenUnitPrice", "tokenMinPurchase"],
   features: ["openMatchesEnabled", "invitationsEnabled", "cashPaymentEnabled", "shopEnabled"],
+  loyalty: ["loyaltyEnabled", "loyaltySpendTokens", "loyaltyRewardTokens"],
   notifications: [
     "bookingConfirmationNotificationsEnabled",
     "remindersEnabled",

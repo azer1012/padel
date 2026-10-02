@@ -10,6 +10,7 @@ import { and, asc, count, eq, gt, type SQL } from "drizzle-orm";
 import { EquipmentError } from "./equipment";
 import { HttpError, pgCode } from "./http";
 import { moveTokens } from "./ledger";
+import { revokeLoyalty } from "./loyalty";
 import type { ClubSettings } from "./settings";
 
 // ─── Blocked slots ───────────────────────────────────────────────────────────
@@ -113,9 +114,11 @@ export async function refundPlayers(
       });
       refunds.push({ userId: p.userId, amount: p.tokensCharged });
     }
+    // The tokens come back, so does the loyalty reward they had earned
+    await revokeLoyalty(tx, p.userId, p.loyaltyEarned);
     await tx
       .update(reservationPlayersTable)
-      .set({ paymentStatus: "refunded" })
+      .set({ paymentStatus: "refunded", loyaltyEarned: 0 })
       .where(eq(reservationPlayersTable.id, p.id));
   }
   return refunds;
@@ -168,6 +171,7 @@ export async function removePlayer(
       description: opts.refundDescription,
     });
     refunded = paidTokens;
+    await revokeLoyalty(tx, row.userId, row.loyaltyEarned);
   }
   await releaseEquipment(tx, reservation.id, row.userId);
 

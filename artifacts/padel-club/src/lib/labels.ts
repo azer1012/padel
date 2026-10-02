@@ -101,6 +101,8 @@ export function ledgerLabel(tx: ReturnType<typeof useTx>, description: string) {
       return withTail(
         tx({ fr: "Match rejoint sur invitation", en: "Joined by invitation", ar: "انضمام بدعوة" }),
       );
+    case "Loyalty reward":
+      return withTail(tx({ fr: "Récompense fidélité", en: "Loyalty reward", ar: "مكافأة الوفاء" }));
     case "Refund": {
       const refund = tx({ fr: "Remboursement", en: "Refund", ar: "استرداد" });
       if (rest[0] === "left match")
@@ -342,3 +344,21 @@ export function activityLabel(tx: ReturnType<typeof useTx>, message: string) {
     });
   return message;
 }
+
+/**
+ * What a booking of `tokens` earns under the club's loyalty rule, for display before
+ * confirming (the API decides the real amount). 0 when the club has no loyalty rule.
+ */
+export function loyaltyFor(
+  rules: { loyaltyEnabled: boolean; loyaltySpendTokens: number; loyaltyRewardTokens: number },
+  tokens: number,
+) {
+  if (!rules.loyaltyEnabled || tokens <= 0) return 0;
+  return (
+    Math.round((tokens * Math.round(rules.loyaltyRewardTokens * 100)) / rules.loyaltySpendTokens) /
+    100
+  );
+}
+
+/** "0.4", "1", "0.25": an amount of tokens without needless decimals. */
+export const tokenAmount = (n: number) => String(Math.round(n * 100) / 100);

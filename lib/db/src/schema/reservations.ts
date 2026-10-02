@@ -2,6 +2,7 @@ import {
   pgTable,
   serial,
   integer,
+  numeric,
   timestamp,
   text,
   pgEnum,
@@ -104,6 +105,10 @@ export const reservationPlayersTable = pgTable("reservation_players", {
   paymentType: playerPaymentTypeEnum("payment_type").notNull().default("token"),
   paymentStatus: playerPaymentStatusEnum("payment_status").notNull().default("paid"),
   tokensCharged: integer("tokens_charged").notNull().default(1),
+  /** Loyalty reward this paid spot earned: a refund takes back exactly that. */
+  loyaltyEarned: numeric("loyalty_earned", { precision: 10, scale: 2, mode: "number" })
+    .notNull()
+    .default(0),
   notes: text("notes"),
   joinedAt: timestamp("joined_at").notNull().defaultNow(),
 });

@@ -79,6 +79,9 @@ export function publicSettings(s: ClubSettings, hours: OpeningHoursRow[]) {
     invitationsEnabled: s.invitationsEnabled,
     cashPaymentEnabled: s.cashPaymentEnabled,
     shopEnabled: s.shopEnabled,
+    loyaltyEnabled: s.loyaltyEnabled,
+    loyaltySpendTokens: s.loyaltySpendTokens,
+    loyaltyRewardTokens: s.loyaltyRewardTokens,
     openingHours: hours.map((h) => ({
       weekday: h.weekday,
       isClosed: h.isClosed,
