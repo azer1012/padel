@@ -1,6 +1,7 @@
 import type { ShopOrderStatus } from "@workspace/api-client-react";
 import type { Tone } from "@/components/smash/admin";
 import { useTx } from "@/lib/i18n";
+import { money } from "@/lib/labels";
 
 /** How a boutique order's state is worded and coloured, for the member and the desk. */
 export function useOrderStatus() {
@@ -43,4 +44,4 @@ export function useShopCategories() {
 }
 
 /** "349.90" or "18": an amount without needless decimals. */
-export const shopMoney = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
+export const shopMoney = money;

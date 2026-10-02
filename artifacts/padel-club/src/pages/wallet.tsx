@@ -20,7 +20,15 @@ import { CLUB } from "@/config/club";
 import { cn } from "@/lib/utils";
 import { useClubRules } from "@/hooks/use-club-rules";
 import { clubDateTime } from "@/lib/club-time";
-import { ledgerLabel, plural, tokenAmount, tokenWord, tokensLabel } from "@/lib/labels";
+import {
+  ledgerLabel,
+  money,
+  packSaving,
+  plural,
+  tokenAmount,
+  tokenWord,
+  tokensLabel,
+} from "@/lib/labels";
 
 export default function Wallet() {
   const rules = useClubRules();
@@ -102,6 +110,33 @@ export default function Wallet() {
               ar: "ادفع نقدًا في استقبال النادي. يظهر الرصيد هنا فورًا.",
             })}
           </span>
+          {rules.tokenPackages.length > 0 && (
+            <ul data-testid="wallet-packs" className="m-0 flex list-none flex-col gap-1.5 p-0">
+              {rules.tokenPackages.map((p) => {
+                const saving = packSaving(p, rules.tokenUnitPrice);
+                return (
+                  <li
+                    key={p.id}
+                    className="flex items-center justify-between gap-3 rounded-2xl bg-white/55 px-4 py-2.5"
+                  >
+                    <span className="min-w-0 font-bold">
+                      {p.name} · {tokensLabel(p.tokens)}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2 text-sm">
+                      {saving && saving.percent >= 1 && (
+                        <span className="rounded-full bg-night px-2 py-0.5 text-xs font-extrabold text-ball">
+                          −{saving.percent} %
+                        </span>
+                      )}
+                      <span className="font-extrabold">
+                        {money(p.price)} {rules.currency}
+                      </span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
           <div className="mt-auto flex flex-wrap gap-2">
             {CLUB.phoneHref && (
               <Button asChild variant="dark" size="sm">

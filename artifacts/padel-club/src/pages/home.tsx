@@ -25,7 +25,7 @@ import { CLUB, CLUB_PHOTOS, PHOTOS } from "@/config/club";
 import { cn } from "@/lib/utils";
 import { clubTime, clubDate } from "@/lib/club-time";
 import { useClubRules } from "@/hooks/use-club-rules";
-import { plural, tokensLabel } from "@/lib/labels";
+import { money, packSaving, plural, tokenWord, tokensLabel } from "@/lib/labels";
 import { EventCover } from "@/components/smash/cover";
 import { scrollToSection } from "@/lib/scroll";
 
@@ -57,6 +57,13 @@ export default function Home() {
   const indoor = active.filter((t) => t.type === "indoor").length;
   const outdoor = active.filter((t) => t.type === "outdoor").length;
   const tokenPrice = rules.tokenUnitPrice || null;
+  const packs = rules.tokenPackages;
+  // The pack with the lowest price per token, when one is cheaper than the others
+  const bestPack = useMemo(() => {
+    const each = (p: (typeof packs)[number]) => p.price / p.tokens;
+    const sorted = [...packs].sort((a, b) => each(a) - each(b));
+    return sorted.length > 1 && each(sorted[0]) < each(sorted[1]) ? sorted[0].id : null;
+  }, [packs]);
   const upcomingTournaments = (tournaments ?? [])
     .filter((t) => t.status === "open" || t.status === "upcoming")
     .slice(0, 3);
@@ -947,14 +954,97 @@ export default function Home() {
             </article>
           ))}
         </div>
+        {packs.length > 0 && (
+          <div
+            data-testid="home-packs"
+            className="flex w-full max-w-[1080px] flex-col gap-6 self-center"
+          >
+            <div className="flex flex-col items-start gap-2 lg:items-center lg:text-center">
+              <h3 data-reveal="" className="disp m-0 text-[clamp(30px,3.6vw,48px)] leading-none">
+                {tx({ fr: "Packs de tokens", en: "Token packs", ar: "باقات الرصيد" })}
+              </h3>
+              <p data-reveal="" className="m-0 text-base text-muted-foreground lg:text-lg">
+                {tx({
+                  fr: "Plus vous prenez de tokens, moins chaque partie coûte.",
+                  en: "The more tokens you take, the less each game costs.",
+                  ar: "كلما أخذت رصيدًا أكثر، قلّت تكلفة كل مباراة.",
+                })}
+              </p>
+            </div>
+            <ul className="stagger m-0 grid list-none gap-4 p-0 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(230px,300px))] lg:justify-center">
+              {packs.map((p) => {
+                const saving = tokenPrice ? packSaving(p, tokenPrice) : null;
+                const best = p.id === bestPack;
+                return (
+                  <li
+                    key={p.id}
+                    data-reveal="late"
+                    className={cn(
+                      "lift relative flex flex-col gap-4 rounded-[28px] p-6 lg:p-7",
+                      best ? "bg-ball text-night" : "bg-mist",
+                    )}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="label">{p.name}</span>
+                      {saving && saving.percent >= 1 && (
+                        <span
+                          className={cn(
+                            "rounded-full px-3 py-1 text-sm font-extrabold",
+                            best ? "bg-night text-ball" : "bg-ball text-night",
+                          )}
+                        >
+                          −{saving.percent} %
+                        </span>
+                      )}
+                    </span>
+                    <p className="m-0 flex items-baseline gap-2">
+                      <span className="disp text-[72px] leading-[0.85] tracking-[-0.04em]">
+                        {p.tokens}
+                      </span>
+                      <span className="disp text-2xl">{tokenWord(p.tokens)}</span>
+                    </p>
+                    <p className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                      <span className="text-[28px] font-extrabold leading-none">
+                        {money(p.price)} {rules.currency}
+                      </span>
+                      {saving && (
+                        <span className={best ? "text-night/70" : "text-muted-foreground"}>
+                          {tx({ fr: "au lieu de", en: "instead of", ar: "بدلًا من" })}{" "}
+                          <s>
+                            {money(saving.regular)} {rules.currency}
+                          </s>
+                        </span>
+                      )}
+                    </p>
+                    <span
+                      className={cn("text-sm", best ? "text-night/70" : "text-muted-foreground")}
+                    >
+                      {best && packs.length > 1
+                        ? tx({
+                            fr: `Le meilleur prix : ${money(p.price / p.tokens)} ${rules.currency} le token`,
+                            en: `Best price: ${money(p.price / p.tokens)} ${rules.currency} per token`,
+                            ar: `أفضل سعر: ${money(p.price / p.tokens)} ${rules.currency} للرصيد`,
+                          })
+                        : tx({
+                            fr: `Soit ${money(p.price / p.tokens)} ${rules.currency} le token`,
+                            en: `${money(p.price / p.tokens)} ${rules.currency} per token`,
+                            ar: `أي ${money(p.price / p.tokens)} ${rules.currency} للرصيد`,
+                          })}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
         <p
           data-reveal="late"
           className="m-0 self-center text-center text-[15px] text-muted-foreground"
         >
           {tx({
-            fr: "Les tokens se rechargent à l'accueil du club. Annulation = token remboursé.",
-            en: "Top up tokens at the club front desk. Cancel and your token is refunded.",
-            ar: "يُشحن الرصيد في استقبال النادي. الإلغاء يعيد الرصيد.",
+            fr: "Les tokens et les packs se paient à l'accueil du club. Annulation = token remboursé.",
+            en: "Tokens and packs are paid at the club front desk. Cancel and your token is refunded.",
+            ar: "يُدفع الرصيد والباقات في استقبال النادي. الإلغاء يعيد الرصيد.",
           })}
         </p>
       </section>

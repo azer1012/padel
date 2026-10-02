@@ -362,3 +362,20 @@ export function loyaltyFor(
 
 /** "0.4", "1", "0.25": an amount of tokens without needless decimals. */
 export const tokenAmount = (n: number) => String(Math.round(n * 100) / 100);
+
+/** "200", "12.50": a price, with cents only when there are some. */
+export const money = (n: number) => {
+  const r = Math.round(n * 100) / 100;
+  return Number.isInteger(r) ? String(r) : r.toFixed(2);
+};
+
+/**
+ * What a pack saves against buying its tokens one by one at the club's token price:
+ * 10 tokens for 200 at 25 each → { regular: 250, percent: 20 }. null when it saves nothing
+ * (or the club shows no token price).
+ */
+export function packSaving(pack: { tokens: number; price: number }, unitPrice: number) {
+  const regular = Math.round(pack.tokens * unitPrice * 100) / 100;
+  if (!(unitPrice > 0) || pack.price >= regular) return null;
+  return { regular, percent: Math.round((1 - pack.price / regular) * 100) };
+}

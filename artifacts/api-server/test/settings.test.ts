@@ -626,6 +626,49 @@ describe("tokens: packs, cash and minimum purchase", () => {
     );
   });
 
+  test("packs: the admin adds, changes and deletes them; players see those on sale", async () => {
+    const add = (body: Record<string, unknown>) =>
+      call("POST", "/admin/token-packages", { token: admin.token, body });
+    for (const body of [
+      { name: "Free", tokens: 10, price: 0 },
+      { name: "Negative", tokens: 10, price: -5 },
+      { name: "", tokens: 10, price: 200 },
+      { name: "Zero", tokens: 0, price: 200 },
+      { name: "Half", tokens: 2.5, price: 50 },
+    ]) {
+      const bad = await add(body);
+      assert.equal(bad.status, 400, JSON.stringify(body));
+    }
+    const created = await add({ name: "Promo 10", tokens: 10, price: 200 });
+    assert.equal(created.status, 201);
+    const id = created.body.id;
+    const shown = async () =>
+      (await call("GET", "/settings")).body.tokenPackages.find((p: any) => p.id === id);
+    assert.deepEqual(await shown(), { id, name: "Promo 10", tokens: 10, price: 200 });
+
+    const edit = await call("PATCH", `/admin/token-packages/${id}`, {
+      token: admin.token,
+      body: { name: "Promo 12", tokens: 12, price: 230 },
+    });
+    assert.equal(edit.status, 200);
+    assert.deepEqual(await shown(), { id, name: "Promo 12", tokens: 12, price: 230 });
+    const zero = await call("PATCH", `/admin/token-packages/${id}`, {
+      token: admin.token,
+      body: { price: 0 },
+    });
+    assert.equal(zero.status, 400);
+    assert.equal((await shown()).price, 230, "unchanged");
+
+    // Never sold → it can be deleted, and players no longer see it
+    const del = await call("DELETE", `/admin/token-packages/${id}`, { token: admin.token });
+    assert.equal(del.status, 204);
+    assert.equal(await shown(), undefined);
+    assert.equal(
+      (await call("DELETE", `/admin/token-packages/${id}`, { token: admin.token })).status,
+      404,
+    );
+  });
+
   test("minimum purchase applies to sales, not to gifts", async () => {
     await setSettings({ tokenMinPurchase: 5 });
     const sale = await call("POST", "/tokens/admin/adjust", {

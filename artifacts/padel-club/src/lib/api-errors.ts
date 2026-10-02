@@ -134,6 +134,16 @@ const BY_CODE: Record<string, Copy> = {
     en: "Paying at the club is not available: use your tokens.",
     ar: "الدفع في النادي غير متاح: استخدم رصيدك.",
   },
+  PACKAGE_USED: {
+    fr: "Ce pack a déjà été vendu : il reste dans l'historique. Retirez-le de la vente à la place.",
+    en: "This pack has already been sold and stays in the history. Take it off sale instead.",
+    ar: "بيعت هذه الباقة من قبل وتبقى في السجل. أوقف بيعها بدلًا من ذلك.",
+  },
+  PACKAGE_UNAVAILABLE: {
+    fr: "Ce pack n'est plus en vente. Actualisez la page.",
+    en: "This pack is no longer on sale. Refresh the page.",
+    ar: "لم تعد هذه الباقة معروضة للبيع. حدّث الصفحة.",
+  },
   FEATURE_DISABLED: {
     fr: "Cette fonctionnalité n'est pas activée dans ce club.",
     en: "This feature is switched off at this club.",

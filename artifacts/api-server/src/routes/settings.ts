@@ -317,7 +317,8 @@ function packInput(b: Body, creating: boolean) {
   }
   if (creating || b?.price !== undefined) {
     const price = toMoney(b?.price, 1_000_000);
-    if (price === null) throw new HttpError(400, "Invalid price", "VALIDATION_ERROR");
+    // A pack is a sale: a free one would be a gift, which is a credit without a pack
+    if (price === null || price <= 0) throw new HttpError(400, "Invalid price", "VALIDATION_ERROR");
     out.price = price;
   }
   if (typeof b?.isActive === "boolean") out.isActive = b.isActive;

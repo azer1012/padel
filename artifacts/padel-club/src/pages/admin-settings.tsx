@@ -13,16 +13,19 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowCounterClockwiseIcon,
   BellIcon,
+  CheckIcon,
   ClockCountdownIcon,
   ClockIcon,
   CoinsIcon,
   CourtIcon,
   FloppyDiskIcon,
   GiftIcon,
+  PencilSimpleIcon,
   PlusIcon,
   TagIcon,
   ToggleRightIcon,
   TrashIcon,
+  XIcon,
 } from "@/components/icons";
 import {
   useAdminSettings,
@@ -53,7 +56,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTx, type Copy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { apiErrorText } from "@/lib/api-errors";
-import { plural, tokenWord, tokensLabel } from "@/lib/labels";
+import { money, packSaving, plural, tokenWord, tokensLabel } from "@/lib/labels";
 
 /* ─────────────────────────────── Shared pieces ─────────────────────────────── */
 
@@ -966,119 +969,101 @@ function TokensSection({ settings }: { settings: AdminSettings }) {
           error={err("tokenMinPurchase")}
         />
       </div>
-      <TokenPackages currency={settings.currency} />
+      <TokenPackages currency={settings.currency} unitPrice={settings.tokenUnitPrice} />
     </Section>
   );
 }
 
-function TokenPackages({ currency }: { currency: string }) {
+type PackDraft = { name: string; tokens: string; price: string };
+const packValid = (d: PackDraft) =>
+  !!d.name.trim() &&
+  Number.isInteger(Number(d.tokens)) &&
+  Number(d.tokens) >= 1 &&
+  Number(d.tokens) <= 1000 &&
+  d.price !== "" &&
+  Number(d.price) > 0;
+
+/** "au lieu de 250 TND (−20 %)", or the price of one token when the pack saves nothing. */
+function PackPrice({
+  tokens,
+  price,
+  unitPrice,
+  currency,
+}: {
+  tokens: number;
+  price: number;
+  unitPrice: number;
+  currency: string;
+}) {
   const tx = useTx();
-  const { toast } = useToast();
-  const qc = useQueryClient();
-  const { data: packs } = useAdminTokenPackages();
-  const save = useSaveTokenPackage();
-  const remove = useDeleteTokenPackage();
-  const [draft, setDraft] = useState({ name: "", tokens: "", price: "" });
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: settingsKeys.packages });
-    qc.invalidateQueries({ queryKey: settingsKeys.rules });
-  };
-  const fail = (e: unknown) => toast({ title: apiErrorText(e, tx), variant: "destructive" });
-  const valid =
-    draft.name.trim() &&
-    Number.isInteger(Number(draft.tokens)) &&
-    Number(draft.tokens) >= 1 &&
-    Number(draft.tokens) <= 1000 &&
-    draft.price !== "" &&
-    Number(draft.price) >= 0;
-  const toggle = (p: TokenPackage) =>
-    save.mutate(
-      { id: p.id, data: { isActive: !p.isActive } },
-      { onSuccess: refresh, onError: fail },
+  const saving = packSaving({ tokens, price }, unitPrice);
+  const each = money(price / tokens);
+  if (saving)
+    return (
+      <span className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <span>
+          {tx({ fr: "au lieu de", en: "instead of", ar: "بدلًا من" })}{" "}
+          <s>
+            {money(saving.regular)} {currency}
+          </s>
+        </span>
+        {saving.percent >= 1 && <Pill tone="lime">−{saving.percent} %</Pill>}
+        <span>
+          {tx({
+            fr: `soit ${each} ${currency}/token`,
+            en: `${each} ${currency}/token`,
+            ar: `أي ${each} ${currency} للرصيد`,
+          })}
+        </span>
+      </span>
     );
   return (
-    <div className="flex flex-col gap-3 rounded-2xl bg-mist p-4">
-      <span className="font-extrabold">
-        {tx({
-          fr: "Packs vendus à l'accueil",
-          en: "Packs sold at the desk",
-          ar: "الباقات المباعة في الاستقبال",
-        })}
-      </span>
-      <ul className="m-0 flex list-none flex-col gap-2 p-0">
-        {(packs ?? []).map((p) => (
-          <li
-            key={p.id}
-            className={cn(
-              "flex flex-wrap items-center justify-between gap-2 rounded-xl bg-card px-3 py-2",
-              !p.isActive && "opacity-60",
-            )}
-          >
-            <span className="font-bold">
-              {p.name} · {tokensLabel(p.tokens)} · {p.price} {currency}
-              <span className="ms-2 text-xs font-normal text-muted-foreground">
-                {tx({
-                  fr: `soit ${(p.price / p.tokens).toFixed(2)} ${currency}/token`,
-                  en: `${(p.price / p.tokens).toFixed(2)} ${currency}/token`,
-                  ar: `أي ${(p.price / p.tokens).toFixed(2)} ${currency} للرصيد الواحد`,
-                })}
-              </span>
-            </span>
-            <span className="flex items-center gap-2">
-              <label className="flex items-center gap-2 text-sm font-bold">
-                <Switch checked={!!p.isActive} onCheckedChange={() => toggle(p)} />
-                {tx({ fr: "En vente", en: "On sale", ar: "معروضة للبيع" })}
-              </label>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="text-destructive"
-                aria-label={tx({
-                  fr: `Supprimer ${p.name}`,
-                  en: `Delete ${p.name}`,
-                  ar: `حذف ${p.name}`,
-                })}
-                onClick={() => remove.mutate(p.id, { onSuccess: refresh, onError: fail })}
-              >
-                <TrashIcon />
-              </Button>
-            </span>
-          </li>
-        ))}
-      </ul>
-      <form
-        className="grid gap-2 sm:grid-cols-[1fr_110px_130px_auto]"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!valid) return;
-          save.mutate(
-            {
-              data: {
-                name: draft.name.trim(),
-                tokens: Number(draft.tokens),
-                price: Number(draft.price),
-                sortOrder: (packs?.length ?? 0) + 1,
-              },
-            },
-            {
-              onSuccess: () => {
-                setDraft({ name: "", tokens: "", price: "" });
-                refresh();
-                toast({
-                  title: tx({ fr: "Pack ajouté", en: "Pack added", ar: "تمت إضافة الباقة" }),
-                });
-              },
-              onError: fail,
-            },
-          );
-        }}
-      >
+    <span className="text-sm text-muted-foreground">
+      {tx({
+        fr: `soit ${each} ${currency}/token, sans réduction`,
+        en: `${each} ${currency}/token, no discount`,
+        ar: `أي ${each} ${currency} للرصيد، بدون تخفيض`,
+      })}
+    </span>
+  );
+}
+
+function PackForm({
+  initial,
+  currency,
+  unitPrice,
+  busy,
+  submitLabel,
+  onSubmit,
+  onCancel,
+}: {
+  initial: PackDraft;
+  currency: string;
+  unitPrice: number;
+  busy: boolean;
+  submitLabel: string;
+  onSubmit: (d: PackDraft, reset: () => void) => void;
+  onCancel?: () => void;
+}) {
+  const tx = useTx();
+  const [d, setD] = useState(initial);
+  const valid = packValid(d);
+  return (
+    <form
+      data-testid={onCancel ? "pack-edit" : "pack-new"}
+      className="flex flex-col gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (valid) onSubmit(d, () => setD({ name: "", tokens: "", price: "" }));
+      }}
+    >
+      <div className="grid gap-2 sm:grid-cols-[1fr_110px_140px_auto]">
         <Input
           aria-label={tx({ fr: "Nom du pack", en: "Pack name", ar: "اسم الباقة" })}
           placeholder={tx({ fr: "Ex : Pack 10", en: "e.g. Pack 10", ar: "مثال: باقة 10" })}
-          value={draft.name}
+          value={d.name}
           maxLength={60}
-          onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+          onChange={(e) => setD({ ...d, name: e.target.value })}
         />
         <Input
           aria-label={tx({ fr: "Nombre de tokens", en: "Number of tokens", ar: "عدد الرصيد" })}
@@ -1086,28 +1071,240 @@ function TokenPackages({ currency }: { currency: string }) {
           min={1}
           max={1000}
           placeholder={tx({ fr: "Tokens", en: "Tokens", ar: "الرصيد" })}
-          value={draft.tokens}
-          onChange={(e) => setDraft({ ...draft, tokens: e.target.value })}
+          value={d.tokens}
+          onChange={(e) => setD({ ...d, tokens: e.target.value })}
         />
         <Input
-          aria-label={tx({ fr: "Prix", en: "Price", ar: "السعر" })}
+          aria-label={tx({
+            fr: `Prix du pack (${currency})`,
+            en: `Pack price (${currency})`,
+            ar: `سعر الباقة (${currency})`,
+          })}
           type="number"
-          min={0}
+          min={0.5}
           step="0.5"
+          inputMode="decimal"
           placeholder={`${tx({ fr: "Prix", en: "Price", ar: "السعر" })} (${currency})`}
-          value={draft.price}
-          onChange={(e) => setDraft({ ...draft, price: e.target.value })}
+          value={d.price}
+          onChange={(e) => setD({ ...d, price: e.target.value })}
         />
-        <Button
-          type="submit"
-          variant="outline"
-          disabled={!valid || save.isPending}
-          loading={save.isPending}
-        >
-          <PlusIcon />
-          {tx({ fr: "Ajouter", en: "Add", ar: "إضافة" })}
-        </Button>
-      </form>
+        <span className="flex gap-2">
+          <Button
+            type="submit"
+            variant={onCancel ? "default" : "outline"}
+            disabled={!valid || busy}
+            loading={busy}
+            className="flex-1"
+          >
+            {onCancel ? <CheckIcon /> : <PlusIcon />}
+            {submitLabel}
+          </Button>
+          {onCancel && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onCancel}
+              aria-label={tx({ fr: "Annuler", en: "Cancel", ar: "إلغاء" })}
+            >
+              <XIcon />
+            </Button>
+          )}
+        </span>
+      </div>
+      {valid && (
+        <PackPrice
+          tokens={Number(d.tokens)}
+          price={Number(d.price)}
+          unitPrice={unitPrice}
+          currency={currency}
+        />
+      )}
+    </form>
+  );
+}
+
+function TokenPackages({ currency, unitPrice }: { currency: string; unitPrice: number }) {
+  const tx = useTx();
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const { confirm, dialog } = useConfirm();
+  const { data: packs } = useAdminTokenPackages();
+  const save = useSaveTokenPackage();
+  const remove = useDeleteTokenPackage();
+  const [editing, setEditing] = useState<number | null>(null);
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: settingsKeys.packages });
+    qc.invalidateQueries({ queryKey: settingsKeys.rules });
+  };
+  const fail = (e: unknown) => toast({ title: apiErrorText(e, tx), variant: "destructive" });
+  const fields = (d: PackDraft) => ({
+    name: d.name.trim(),
+    tokens: Number(d.tokens),
+    price: Number(d.price),
+  });
+  const toggle = (p: TokenPackage) =>
+    save.mutate(
+      { id: p.id, data: { isActive: !p.isActive } },
+      { onSuccess: refresh, onError: fail },
+    );
+  async function del(p: TokenPackage) {
+    const ok = await confirm({
+      title: tx({
+        fr: `Supprimer « ${p.name} » ?`,
+        en: `Delete “${p.name}”?`,
+        ar: `حذف «${p.name}»؟`,
+      }),
+      description: tx({
+        fr: "Il disparaît des tarifs et de la vente à l'accueil. Un pack déjà vendu ne peut pas être supprimé : retirez-le de la vente.",
+        en: "It leaves the prices and the desk. A pack already sold can't be deleted: take it off sale instead.",
+        ar: "تختفي من الأسعار ومن البيع في الاستقبال. لا يمكن حذف باقة بيعت من قبل: أوقف بيعها.",
+      }),
+      confirmLabel: tx({ fr: "Supprimer", en: "Delete", ar: "حذف" }),
+      destructive: true,
+    });
+    if (!ok) return;
+    remove.mutate(p.id, {
+      onSuccess: () => {
+        refresh();
+        toast({ title: tx({ fr: "Pack supprimé", en: "Pack deleted", ar: "تم حذف الباقة" }) });
+      },
+      onError: fail,
+    });
+  }
+  return (
+    <div data-testid="token-packs" className="flex flex-col gap-3 rounded-2xl bg-mist p-4">
+      <span className="flex flex-col gap-1">
+        <span className="font-extrabold">
+          {tx({ fr: "Packs de tokens", en: "Token packs", ar: "باقات الرصيد" })}
+        </span>
+        <span className="text-sm text-muted-foreground">
+          {tx({
+            fr: "Plusieurs tokens à prix réduit, vendus à l'accueil. Les packs en vente sont affichés aux joueurs dans les tarifs de la page d'accueil et dans leur portefeuille.",
+            en: "Several tokens at a lower price, sold at the desk. Packs on sale are shown to players in the home page prices and in their wallet.",
+            ar: "عدة أرصدة بسعر مخفّض تُباع في الاستقبال. تظهر الباقات المعروضة للاعبين في أسعار الصفحة الرئيسية وفي محفظتهم.",
+          })}
+        </span>
+      </span>
+      {packs && packs.length === 0 && (
+        <span className="rounded-xl bg-card px-3 py-3 text-sm text-muted-foreground">
+          {tx({
+            fr: "Aucun pack : les tokens se vendent à l'unité.",
+            en: "No packs: tokens are sold one by one.",
+            ar: "لا توجد باقات: يُباع الرصيد بالوحدة.",
+          })}
+        </span>
+      )}
+      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+        {(packs ?? []).map((p) =>
+          editing === p.id ? (
+            <li key={p.id} className="rounded-xl bg-card px-3 py-3">
+              <PackForm
+                initial={{ name: p.name, tokens: String(p.tokens), price: String(p.price) }}
+                currency={currency}
+                unitPrice={unitPrice}
+                busy={save.isPending}
+                submitLabel={tx({ fr: "Enregistrer", en: "Save", ar: "حفظ" })}
+                onCancel={() => setEditing(null)}
+                onSubmit={(d) =>
+                  save.mutate(
+                    { id: p.id, data: fields(d) },
+                    {
+                      onSuccess: () => {
+                        setEditing(null);
+                        refresh();
+                        toast({
+                          title: tx({
+                            fr: "Pack modifié",
+                            en: "Pack updated",
+                            ar: "تم تعديل الباقة",
+                          }),
+                        });
+                      },
+                      onError: fail,
+                    },
+                  )
+                }
+              />
+            </li>
+          ) : (
+            <li
+              key={p.id}
+              data-testid="pack-row"
+              className={cn(
+                "flex flex-wrap items-center justify-between gap-2 rounded-xl bg-card px-3 py-2",
+                !p.isActive && "opacity-60",
+              )}
+            >
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="font-bold">
+                  {p.name} · {tokensLabel(p.tokens)} · {money(p.price)} {currency}
+                </span>
+                <PackPrice
+                  tokens={p.tokens}
+                  price={p.price}
+                  unitPrice={unitPrice}
+                  currency={currency}
+                />
+              </span>
+              <span className="flex items-center gap-1">
+                <label className="me-1 flex items-center gap-2 text-sm font-bold">
+                  <Switch checked={!!p.isActive} onCheckedChange={() => toggle(p)} />
+                  {tx({ fr: "En vente", en: "On sale", ar: "معروضة للبيع" })}
+                </label>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={tx({
+                    fr: `Modifier ${p.name}`,
+                    en: `Edit ${p.name}`,
+                    ar: `تعديل ${p.name}`,
+                  })}
+                  onClick={() => setEditing(p.id)}
+                >
+                  <PencilSimpleIcon />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-destructive"
+                  aria-label={tx({
+                    fr: `Supprimer ${p.name}`,
+                    en: `Delete ${p.name}`,
+                    ar: `حذف ${p.name}`,
+                  })}
+                  onClick={() => del(p)}
+                >
+                  <TrashIcon />
+                </Button>
+              </span>
+            </li>
+          ),
+        )}
+      </ul>
+      <PackForm
+        initial={{ name: "", tokens: "", price: "" }}
+        currency={currency}
+        unitPrice={unitPrice}
+        busy={save.isPending && editing === null}
+        submitLabel={tx({ fr: "Ajouter", en: "Add", ar: "إضافة" })}
+        onSubmit={(d, reset) =>
+          save.mutate(
+            { data: { ...fields(d), sortOrder: (packs?.length ?? 0) + 1 } },
+            {
+              onSuccess: () => {
+                reset();
+                refresh();
+                toast({
+                  title: tx({ fr: "Pack ajouté", en: "Pack added", ar: "تمت إضافة الباقة" }),
+                });
+              },
+              onError: fail,
+            },
+          )
+        }
+      />
+      {dialog}
     </div>
   );
 }
