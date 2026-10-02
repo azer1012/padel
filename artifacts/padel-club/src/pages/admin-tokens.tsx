@@ -28,7 +28,7 @@ import {
 import { TokenAdjustDialog } from "@/components/smash/token-adjust";
 import { useTx, useI18n } from "@/lib/i18n";
 import { clubDateTime } from "@/lib/club-time";
-import { memberName } from "@/lib/labels";
+import { ledgerLabel, memberName } from "@/lib/labels";
 
 const PAGE = 25;
 
@@ -109,7 +109,7 @@ export default function AdminTokens() {
       hideBelow: "md",
       cell: (t) => (
         <span className="flex max-w-[320px] flex-col">
-          <span className="truncate text-sm font-semibold">{t.description}</span>
+          <span className="truncate text-sm font-semibold">{ledgerLabel(tx, t.description)}</span>
           {t.notes && <span className="truncate text-xs text-muted-foreground">{t.notes}</span>}
         </span>
       ),

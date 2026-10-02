@@ -184,3 +184,48 @@ Then on the real site:
 - [ ] book a full court → invite a friend (link and member invitation) → cancel
 - [ ] an admin sells a pack and marks a cash payment; the wallet updates
 - [ ] `select count(*) from token_ledger_audit` → 0
+
+---
+
+## 6. Checklists
+
+Tick every line for each club. A line that can't be ticked is a reason not to launch.
+
+### Before deployment
+
+- [ ] **Database migration**: every file of `supabase/migrations` is in the project's history (`pnpm --filter @workspace/scripts run db:migrate -- --dry-run` lists nothing to apply)
+- [ ] **RLS**: Supabase → Advisors → Security shows only "RLS enabled, no policy" notices; the `curl` of `docs/TESTING.md` prints 401
+- [ ] **Environment**: every `<…>` of `.env.example` is filled on the hosts; `CORS_ORIGIN` and `FRONTEND_URL` are the club's `https://` address; `NODE_ENV=production`
+- [ ] **Auth**: Site URL and Redirect URLs are the club's domain; Confirm email on; leaked-password protection on
+- [ ] **SMTP**: custom SMTP saved in Supabase; a test e-mail arrived (`docs/EMAIL_CONFIGURATION.md`)
+- [ ] **Google** (if sold): client ID and secret saved in Supabase; `VITE_AUTH_GOOGLE_ENABLED=true` (`docs/GOOGLE_AUTH_CONFIGURATION.md`)
+- [ ] **Storage**: no bucket holds private files; club images are in `artifacts/padel-club/public/`
+- [ ] **Domain**: DNS points to the website and the API hosts (`docs/DOMAIN_SETUP.md`)
+- [ ] **HTTPS**: both hosts answer on `https://` with a valid certificate; `http://` redirects
+- [ ] **Build**: `pnpm run build` succeeds with the club's environment
+- [ ] **Tests**: `pnpm run typecheck && pnpm run lint && pnpm test && pnpm run test:e2e` all green on the release being deployed
+
+### Security before launch
+
+- [ ] No secret in the repository (`git grep` for the service-role key and the database password finds nothing)
+- [ ] No service-role key, database URL or password in the built website (`grep -r` in `artifacts/padel-club/dist/public`)
+- [ ] API authorization, IDOR, admin routes, token and price manipulation, duplicate booking and duplicate debit: covered by `access.test.ts`, `hardening.test.ts` and `integrity.test.ts`, green
+- [ ] `CORS_ORIGIN` lists only the club's origin(s) (the API refuses to start without it)
+- [ ] `TRUST_PROXY=true` behind a proxy, so the write limiter counts real visitors
+- [ ] Errors shown to a visitor never contain a stack trace (`{ error, code }` only)
+- [ ] The first admin is the owner's own account; no test account is left
+
+### After deployment (on the real site)
+
+- [ ] **Homepage** loads on the club's domain, with the club's name, logo and colours
+- [ ] **Sign-up**: a new address receives the confirmation e-mail and lands signed in
+- [ ] **Login** and sign-out; the session survives a reload
+- [ ] **Password reset** from the e-mail to the new password
+- [ ] **Google** sign-in (if enabled)
+- [ ] **Booking**: a full court, then "just my spot"; the slot shows as taken to another account
+- [ ] **Tokens**: the desk credits a pack; the wallet shows it; a booking debits it; `select count(*) from token_ledger_audit` → 0
+- [ ] **Invitations**: the link and a member invitation both bring a second account into the match
+- [ ] **Admin**: Réglages and Terrains show the club's values; a player account is refused on `/admin`
+- [ ] **Mobile**: the whole booking on a phone; the site installs to the home screen
+- [ ] **Notifications**: the booking e-mail arrives; the reminder arrives before a test match
+- [ ] **Errors**: an unknown address shows the "page not found" screen; the API log has no error

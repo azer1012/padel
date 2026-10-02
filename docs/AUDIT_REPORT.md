@@ -1,10 +1,36 @@
 # Audit and hardening report — reusable padel club product
 
-Four passes on `main`: (1) production audit and hardening of the platform,
+Five passes on `main`: (1) production audit and hardening of the platform,
 (2) turning it into a reusable product sold one club at a time, with every
 operational rule configurable by the club, (3) a full re-audit against the code
 and the live database (2026-10-02), (4) a code-level review and refactor
-(2026-10-02). This report covers the current state.
+(2026-10-02), (5) an end-to-end verification pass (2026-10-02). This report
+covers the current state.
+
+## Pass 5 (2026-10-02): end-to-end verification
+
+Re-read the booking, token, invitation, calendar and sign-in code, re-ran every
+suite, and compared the hosted database with the migrations column by column,
+constraint by constraint and index by index: identical, except `users.gender`
+(below). Hosted data: ledger reconciled, no negative balance, no overlap, no orphan
+row; REST, RPC and Storage calls with the public key all refused.
+
+No P0 / P1 found. Fixed:
+
+| Found                                                                                                                              | Now                                                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Token expiry was half-built: a credit could carry an expiry date and the member was told "these tokens expire on…", nothing did it | Tokens never expire: the API refuses an expiry date, the e-mail line and the dead screens went |
+| Two admins removing each other's admin access at the same instant could leave the club without an admin                            | Checked under a lock, tested                                                                   |
+| Wallet and token history showed the API's English wording ("Full court · …") in French and Arabic, with a French date for everyone | Shown in the reader's language; the stored date is numeric (`03/10/2026 18:30`)                |
+| The booking grid took up to a second to finish appearing                                                                           | Under half a second                                                                            |
+
+Tests this pass (local Postgres 18, real API, Chromium): typecheck 0 errors, lint
+clean, **99 / 99** API tests (92 + 7 new in `integrity.test.ts`), **11 / 11**
+database blocks, browser suites all green (one new step), production build OK,
+`pnpm audit --prod` clean.
+
+Still open, for the owner: the items listed under pass 4 and pass 3 below, except
+token expiry (closed). The admin activity feed is still written in English.
 
 ## Pass 4 (2026-10-02): code review and refactor
 
@@ -44,9 +70,7 @@ tests are now type-checked too), lint clean, **82 / 82** API tests (75 + 7 new),
 
 Open, for the owner:
 
-- **Token expiry** is half-built: the API stores an expiry date on a credit and the
-  screens can show "tokens expire soon", but nothing ever expires a token and the
-  admin form does not offer the field. Build it or remove it.
+- ~~Token expiry is half-built~~: removed in pass 5 (tokens never expire).
 - **Tournament unregistration**, **adding equipment to an existing booking** and
   **marking one notification read** exist in the API but have no button.
 - The legacy tables `clubs`, `staff_roles` and the column `terrains.capacity` are

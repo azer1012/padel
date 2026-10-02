@@ -431,7 +431,7 @@ export default function CourtCalendar({
                                   slot.isPast && st !== "past" && "opacity-60",
                                 )}
                                 style={{
-                                  animationDelay: `${Math.min(row * 30 + col * 20, 500)}ms`,
+                                  animationDelay: `${Math.min(row * 18 + col * 12, 240)}ms`,
                                 }}
                                 data-state={st}
                                 data-public={slot.isPublic || undefined}

@@ -65,3 +65,42 @@ export function memberName(
   if (!u) return "";
   return `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email || "";
 }
+
+/**
+ * A token ledger entry in the reader's language. The API files its own movements
+ * under fixed English wordings ("Full court · Court 2 · 03/10/2026 18:30"); a reason
+ * typed by the front desk is shown as written.
+ */
+export function ledgerLabel(tx: ReturnType<typeof useTx>, description: string) {
+  const [head, ...rest] = description.split(" · ");
+  const tail = rest.join(" · ");
+  const withTail = (label: string) => (tail ? `${label} · ${tail}` : label);
+  switch (head) {
+    case "Full court":
+      return withTail(tx({ fr: "Terrain complet", en: "Full court", ar: "ملعب كامل" }));
+    case "Own spot":
+      return withTail(tx({ fr: "Ma place", en: "My spot", ar: "مكاني" }));
+    case "Joined match":
+      return withTail(tx({ fr: "Match rejoint", en: "Joined a match", ar: "انضمام إلى مباراة" }));
+    case "Joined via invite":
+      return withTail(
+        tx({ fr: "Match rejoint sur invitation", en: "Joined by invitation", ar: "انضمام بدعوة" }),
+      );
+    case "Refund": {
+      const refund = tx({ fr: "Remboursement", en: "Refund", ar: "استرداد" });
+      if (rest[0] === "left match")
+        return `${refund} · ${tx({ fr: "match quitté", en: "left the match", ar: "مغادرة المباراة" })} · ${rest.slice(1).join(" · ")}`;
+      if (rest[0] === "removed from match")
+        return `${refund} · ${tx({ fr: "retiré du match", en: "removed from the match", ar: "إزالة من المباراة" })} · ${rest.slice(1).join(" · ")}`;
+      if (tail.endsWith(" cancelled"))
+        return `${refund} · ${tx({
+          fr: `${tail.slice(0, -" cancelled".length)} annulé`,
+          en: tail,
+          ar: `إلغاء ${tail.slice(0, -" cancelled".length)}`,
+        })}`;
+      return withTail(refund);
+    }
+    default:
+      return description;
+  }
+}

@@ -17,6 +17,7 @@ import {
   clubInstant,
   clubParts,
   formatClubDate,
+  formatClubStamp,
   formatClubTime,
   isClubDate,
 } from "../lib/club-time";
@@ -224,7 +225,7 @@ router.post("/reservations", requireUser, async (req, res) => {
             type: "debit",
             reservationId: reservation.id,
             adminId: isAdmin ? booker.id : null,
-            description: `${bookingMode === "own_spot" ? "Own spot" : "Full court"} · ${terrain.name} · ${formatClubDate(start)} ${formatClubTime(start)}`,
+            description: `${bookingMode === "own_spot" ? "Own spot" : "Full court"} · ${terrain.name} · ${formatClubStamp(start)}`,
           });
         }
         await tx.insert(reservationPlayersTable).values({

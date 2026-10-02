@@ -233,10 +233,6 @@ export interface ReservationListResponse {
 export interface TokenBalance {
   userId: number;
   balance: number;
-  /** @nullable */
-  pendingExpiry?: number | null;
-  /** @nullable */
-  nextExpiryDate?: string | null;
 }
 
 export type TokenTransactionType = (typeof TokenTransactionType)[keyof typeof TokenTransactionType];
@@ -260,8 +256,6 @@ export interface TokenTransaction {
   description: string;
   /** @nullable */
   notes?: string | null;
-  /** @nullable */
-  expiresAt?: string | null;
   user?: User;
   createdAt: string;
 }
@@ -280,7 +274,6 @@ export interface TokenAdjustment {
   type: TokenAdjustmentType;
   description: string;
   notes?: string;
-  expiresAt?: string;
   /** One per dialog: a double click or a retried request credits once */
   idempotencyKey?: string;
   /** Credit only: sells this pack (tokens and price come from the pack) */

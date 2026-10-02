@@ -14,7 +14,7 @@ import crypto from "node:crypto";
 import { currentUser, requireUser, requireAdmin } from "../lib/auth";
 import { loadActiveRules, priceFor, quote } from "../lib/pricing";
 import { notifyLater } from "../lib/notify";
-import { clubParts, formatClubDate, formatClubTime } from "../lib/club-time";
+import { clubParts, formatClubDate, formatClubStamp, formatClubTime } from "../lib/club-time";
 import { normalizeRequest, reserveEquipment } from "../lib/equipment";
 import { moveTokens } from "../lib/ledger";
 import { assertBookable } from "../lib/slots";
@@ -92,7 +92,7 @@ async function addPlayer(
       type: "debit",
       reservationId: r.id,
       adminId: opts.adminId ?? null,
-      description: `${opts.viaInvite ? "Joined via invite" : "Joined match"} · ${r.terrainName} · ${formatClubDate(r.startTime)} ${formatClubTime(r.startTime)}`,
+      description: `${opts.viaInvite ? "Joined via invite" : "Joined match"} · ${r.terrainName} · ${formatClubStamp(r.startTime)}`,
     });
   }
   return row;

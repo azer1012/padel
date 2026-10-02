@@ -81,3 +81,13 @@ export function formatClubTime(date: Date) {
     hourCycle: "h23",
   }).format(date);
 }
+
+/**
+ * "03/10/2026 18:30": a date the three interface languages read the same way. Used
+ * in texts stored once and shown to everyone (token ledger entries).
+ */
+export function formatClubStamp(date: Date) {
+  const { date: day, time } = clubParts(date);
+  const [y, m, d] = day.split("-");
+  return `${d}/${m}/${y} ${time}`;
+}

@@ -11,7 +11,6 @@ type Movement = {
   reservationId?: number | null;
   adminId?: number | null;
   notes?: string | null;
-  expiresAt?: Date | null;
   idempotencyKey?: string | null;
   /** Cash received at the desk for a credit (accounting). */
   cashAmount?: number | null;
@@ -61,7 +60,6 @@ export async function moveTokens(tx: Tx, m: Movement) {
       balanceAfter,
       description: m.description,
       notes: m.notes ?? null,
-      expiresAt: m.expiresAt ?? null,
       idempotencyKey: m.idempotencyKey ?? null,
       cashAmount: m.cashAmount ?? null,
       packageId: m.packageId ?? null,

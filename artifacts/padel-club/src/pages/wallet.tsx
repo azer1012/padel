@@ -1,6 +1,5 @@
 import { useGetTokenBalance, useListTokenTransactions } from "@workspace/api-client-react";
 import {
-  AlarmIcon,
   ArrowDownLeftIcon,
   ArrowUpRightIcon,
   ArrowsClockwiseIcon,
@@ -15,8 +14,8 @@ import { useI18n, useTx } from "@/lib/i18n";
 import { CLUB } from "@/config/club";
 import { cn } from "@/lib/utils";
 import { useClubRules } from "@/hooks/use-club-rules";
-import { clubDate, clubDateTime } from "@/lib/club-time";
-import { plural, tokenWord, tokensLabel } from "@/lib/labels";
+import { clubDateTime } from "@/lib/club-time";
+import { ledgerLabel, plural, tokenWord, tokensLabel } from "@/lib/labels";
 
 export default function Wallet() {
   const rules = useClubRules();
@@ -31,7 +30,6 @@ export default function Wallet() {
   const bal = balance?.balance ?? 0;
   const fullCourts = Math.floor(bal / Math.max(1, rules.tokenCostFullCourt));
   const spots = Math.floor(bal / Math.max(1, rules.tokenCostPlayer));
-  const expiring = balance?.pendingExpiry ?? 0;
 
   return (
     <Page>
@@ -78,23 +76,6 @@ export default function Wallet() {
               })}
             </span>
           </div>
-          {expiring ? (
-            <span className="relative flex items-center gap-2 rounded-2xl bg-coral px-4 py-3 text-sm font-bold text-night">
-              <AlarmIcon className="size-4" />
-              {tx({
-                fr: `${tokensLabel(expiring)} ${plural(expiring, "expire", "expirent")}`,
-                en: `${tokensLabel(expiring)} ${plural(expiring, "expires", "expire")}`,
-                ar: `${expiring} رصيد ينتهي`,
-              })}
-              {balance?.nextExpiryDate
-                ? tx({
-                    fr: ` le ${clubDate(balance.nextExpiryDate, lang, "dayMonthLong")}`,
-                    en: ` on ${clubDate(balance.nextExpiryDate, lang, "dayMonthLong")}`,
-                    ar: ` في ${clubDate(balance.nextExpiryDate, lang, "dayMonthLong")}`,
-                  })
-                : ""}
-            </span>
-          ) : null}
         </section>
 
         <section className="enter delay-1 flex flex-col gap-4 rounded-[32px] bg-ball p-7 text-night">
@@ -200,7 +181,9 @@ export default function Wallet() {
                     )}
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="line-clamp-2 font-bold leading-snug">{x.description}</span>
+                    <span className="line-clamp-2 font-bold leading-snug">
+                      {ledgerLabel(tx, x.description)}
+                    </span>
                     <span className="text-sm text-muted-foreground">
                       {credit
                         ? tx({ fr: "Crédit", en: "Credit", ar: "إضافة" })

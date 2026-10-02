@@ -1533,11 +1533,6 @@ components:
           type: integer
         balance:
           type: integer
-        pendingExpiry:
-          type: ["integer", "null"]
-        nextExpiryDate:
-          type: ["string", "null"]
-          format: date-time
 
     TokenTransaction:
       type: object
@@ -1562,9 +1557,6 @@ components:
           type: string
         notes:
           type: ["string", "null"]
-        expiresAt:
-          type: ["string", "null"]
-          format: date-time
         user:
           $ref: "#/components/schemas/User"
         createdAt:
@@ -1586,9 +1578,6 @@ components:
           type: string
         notes:
           type: string
-        expiresAt:
-          type: string
-          format: date-time
 
     TokenTransactionListResponse:
       type: object

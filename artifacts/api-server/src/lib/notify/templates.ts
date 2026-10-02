@@ -38,7 +38,6 @@ export type NotificationEvent =
       amount: number;
       balance: number;
       reason: string;
-      expiresOn?: string | null;
     };
 
 /** Club rules quoted in messages (from the settings, never hard-coded). */
@@ -330,16 +329,6 @@ function copy(e: NotificationEvent, lang: Lang, f: ClubFacts): Copy {
             `New balance: ${e.balance} token(s).`,
             `الرصيد الجديد: ${e.balance}.`,
           ),
-          ...(e.expiresOn
-            ? [
-                t(
-                  lang,
-                  `Ces tokens expirent le ${e.expiresOn}.`,
-                  `These tokens expire on ${e.expiresOn}.`,
-                  `ينتهي هذا الرصيد في ${e.expiresOn}.`,
-                ),
-              ]
-            : []),
         ],
         cta: {
           label: t(lang, "Réserver un terrain", "Book a court", "احجز ملعبًا"),

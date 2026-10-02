@@ -9,7 +9,6 @@
 import { createContext, forwardRef, useContext, type ReactNode } from "react";
 import type { Icon, IconProps, IconWeight } from "@phosphor-icons/react";
 import {
-  AlarmIcon as AlarmBase,
   ArchiveIcon as ArchiveBase,
   ArrowCounterClockwiseIcon as ArrowCounterClockwiseBase,
   ArrowDownIcon as ArrowDownBase,
@@ -132,7 +131,6 @@ function icon(Base: Icon): Icon {
   return Wrapped as Icon;
 }
 
-export const AlarmIcon = icon(AlarmBase);
 export const ArchiveIcon = icon(ArchiveBase);
 export const ArrowCounterClockwiseIcon = icon(ArrowCounterClockwiseBase);
 export const ArrowDownIcon = icon(ArrowDownBase);

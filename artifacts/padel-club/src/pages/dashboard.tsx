@@ -26,7 +26,7 @@ import { useJoinMatch } from "@/hooks/use-join-match";
 import { InstallBanner } from "@/components/smash/install-banner";
 import { useTx, useDateLocale, useI18n } from "@/lib/i18n";
 import { clubTime, clubDate, clubDateTime } from "@/lib/club-time";
-import { playersLabel, plural, tokensLabel } from "@/lib/labels";
+import { ledgerLabel, playersLabel, plural, tokensLabel } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 import { useClubRules } from "@/hooks/use-club-rules";
 import { MyInvitations } from "@/components/smash/my-invitations";
@@ -58,7 +58,6 @@ export default function Dashboard() {
         : tx({ fr: "Bonsoir", en: "Good evening", ar: "مساء الخير" });
   const bal = balance?.balance ?? 0;
   const fullCourts = Math.floor(bal / Math.max(1, rules.tokenCostFullCourt));
-  const expiring = balance?.pendingExpiry ?? 0;
   const minsToNext = next ? differenceInMinutes(new Date(next.startTime), new Date()) : null;
 
   const quick = [
@@ -229,15 +228,6 @@ export default function Dashboard() {
                     ar: "اشحن في الاستقبال",
                   })}
           </span>
-          {expiring ? (
-            <span className="text-sm font-semibold">
-              {tx({
-                fr: `${tokensLabel(expiring)} ${plural(expiring, "expire", "expirent")} bientôt`,
-                en: `${tokensLabel(expiring)} ${plural(expiring, "expires", "expire")} soon`,
-                ar: `${expiring} رصيد ينتهي قريبًا`,
-              })}
-            </span>
-          ) : null}
         </Link>
       </div>
 
@@ -366,7 +356,7 @@ export default function Dashboard() {
             {recent.map((x) => (
               <li key={x.id} className="flex items-center gap-4 py-3.5">
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate font-bold">{x.description}</span>
+                  <span className="truncate font-bold">{ledgerLabel(tx, x.description)}</span>
                   <span className="text-sm text-muted-foreground">
                     {clubDateTime(x.createdAt, lang)}
                   </span>

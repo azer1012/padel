@@ -100,8 +100,8 @@ the activity feed with the admin and the old → new values. Each section has
 
 ### Not implemented (documented on purpose)
 
-- **Token expiry**: tokens never expire. The ledger has an `expires_at` field that
-  the desk can fill as information, but balances are not reduced automatically.
+- **Token expiry**: tokens never expire. The API refuses a credit that carries an
+  expiry date, and no screen announces one (the `expires_at` column is unused).
 - **Minimum players** is informational: a player can always book only their spot.
 - **Automatic refund of cash already paid** for a cancelled match: staff handle it
   at the desk (token payments are refunded automatically).

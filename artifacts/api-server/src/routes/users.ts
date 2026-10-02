@@ -2,7 +2,7 @@ import { Router } from "express";
 import { notifyLater } from "../lib/notify";
 import { db, usersTable } from "@workspace/db";
 import { logActivity } from "../lib/activity";
-import { and, count, desc, eq, ilike, ne, or } from "drizzle-orm";
+import { count, desc, eq, ilike, or } from "drizzle-orm";
 import {
   authIdentity,
   currentUser,
@@ -152,21 +152,26 @@ router.patch("/users/:id", requireAdmin, async (req, res) => {
   const role =
     req.body?.role === undefined ? undefined : oneOf(req.body.role, ["admin", "player"] as const);
   if (role === null) throw new HttpError(400, "Invalid role", "VALIDATION_ERROR");
-  if (role === "player") {
-    if (id === admin.id)
-      throw new HttpError(400, "You can't remove your own admin access", "SELF_DEMOTE");
-    const [{ admins }] = await db
-      .select({ admins: count() })
-      .from(usersTable)
-      .where(and(eq(usersTable.role, "admin"), ne(usersTable.id, id)));
-    if (Number(admins) === 0)
-      throw new HttpError(400, "The club needs at least one admin", "LAST_ADMIN");
-  }
-  const [updated] = await db
-    .update(usersTable)
-    .set({ ...patch, ...(role ? { role } : {}), updatedAt: new Date() })
-    .where(eq(usersTable.id, id))
-    .returning();
+  if (role === "player" && id === admin.id)
+    throw new HttpError(400, "You can't remove your own admin access", "SELF_DEMOTE");
+  const [updated] = await db.transaction(async (tx) => {
+    if (role === "player") {
+      // Locks the admin rows: two admins demoting each other at the same instant
+      // are checked one after the other, so the club always keeps one
+      const admins = await tx
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(eq(usersTable.role, "admin"))
+        .for("no key update");
+      if (!admins.some((a) => a.id !== id))
+        throw new HttpError(400, "The club needs at least one admin", "LAST_ADMIN");
+    }
+    return tx
+      .update(usersTable)
+      .set({ ...patch, ...(role ? { role } : {}), updatedAt: new Date() })
+      .where(eq(usersTable.id, id))
+      .returning();
+  });
   if (!updated) throw new HttpError(404, "User not found", "NOT_FOUND");
   if (role) await logActivity(req, "role_changed", `${updated.email} is now ${role}`, updated);
   res.json(updated);

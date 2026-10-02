@@ -179,6 +179,13 @@ await step("a full court costs 4 tokens and holds the 4 spots", async () => {
   );
 });
 
+await step("the wallet lists both debits in the member's language, with a date", async () => {
+  await a.page.goto(`${WEB}/wallet`);
+  await a.page.getByText(/^Terrain complet · Court 2 · \d{2}\/\d{2}\/\d{4} 18:30$/).waitFor();
+  await a.page.getByText(/^Ma place · Court Central · \d{2}\/\d{2}\/\d{4} 18:30$/).waitFor();
+  equal(await a.page.getByText(/Full court|Own spot/).count(), 0, "English ledger wording");
+});
+
 await step("without enough tokens the booking is refused before and after the click", async () => {
   const b = await as(B);
   await b.page.goto(`${WEB}/terrains`);

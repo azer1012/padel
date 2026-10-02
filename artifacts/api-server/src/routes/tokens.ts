@@ -10,7 +10,6 @@ import { eq, desc, count, and, sql, type SQL } from "drizzle-orm";
 import { currentUser, requireUser, requireAdmin } from "../lib/auth";
 import { fullName } from "../lib/members";
 import { notifyLater } from "../lib/notify";
-import { formatClubDate } from "../lib/club-time";
 import { moveTokens } from "../lib/ledger";
 import { getSettings } from "../lib/settings";
 import { HttpError, cleanText, oneOf, paging, pgCode, requireId, toId } from "../lib/http";
@@ -22,8 +21,6 @@ router.get("/tokens/balance", requireUser, async (req, res) => {
   res.json({
     userId: user.id,
     balance: user.tokenBalance,
-    pendingExpiry: null,
-    nextExpiryDate: null,
   });
 });
 
@@ -104,9 +101,9 @@ router.post("/tokens/admin/adjust", requireAdmin, async (req, res) => {
         { tokenMinPurchase },
       );
   }
-  const expiresAt = b.expiresAt ? new Date(b.expiresAt) : null;
-  if (expiresAt && Number.isNaN(expiresAt.getTime()))
-    throw new HttpError(400, "Invalid expiry date", "VALIDATION_ERROR");
+  // Tokens never expire at this club: refuse a date nothing would enforce
+  if (b.expiresAt !== undefined && b.expiresAt !== null && b.expiresAt !== "")
+    throw new HttpError(400, "Tokens do not expire: remove the expiry date", "VALIDATION_ERROR");
 
   if (idempotencyKey) {
     const [already] = await db
@@ -142,7 +139,6 @@ router.post("/tokens/admin/adjust", requireAdmin, async (req, res) => {
           type === "adjustment"
             ? [`${target.tokenBalance} → ${amount}`, notes].filter(Boolean).join(" · ")
             : notes,
-        expiresAt,
         idempotencyKey,
         cashAmount,
         packageId,
@@ -178,7 +174,6 @@ router.post("/tokens/admin/adjust", requireAdmin, async (req, res) => {
         amount: result.delta,
         balance: result.balanceAfter,
         reason: description,
-        expiresOn: expiresAt ? formatClubDate(expiresAt, result.target.language) : null,
       },
       `tx:${result.row.id}`,
     );
