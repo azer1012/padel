@@ -63,7 +63,9 @@ export function Logo({
         <BallMark />
       </span>
       {!compact && (
-        <span className="disp text-[20px] tracking-[-0.02em] lg:text-[22px]">{CLUB.name}</span>
+        <span className="disp whitespace-nowrap text-[20px] tracking-[-0.02em] lg:text-[22px]">
+          {CLUB.name}
+        </span>
       )}
     </Link>
   );

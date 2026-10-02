@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
   useGetOpenMatches,
@@ -11,6 +11,9 @@ import {
   CalendarDotsIcon,
   CheckIcon,
   CoinsIcon,
+  DeviceMobileIcon,
+  MoneyIcon,
+  PhoneIcon,
   UsersIcon,
 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
@@ -18,12 +21,13 @@ import { LiveBoard, useTonight } from "@/components/smash/live-board";
 import { BallIcon } from "@/components/smash/brand";
 import { Avatar, Eyebrow, LiveDot } from "@/components/smash/primitives";
 import { useTx, useI18n } from "@/lib/i18n";
-import { CLUB, PHOTOS } from "@/config/club";
+import { CLUB, CLUB_PHOTOS, PHOTOS } from "@/config/club";
 import { cn } from "@/lib/utils";
 import { clubTime, clubDate } from "@/lib/club-time";
 import { useClubRules } from "@/hooks/use-club-rules";
 import { plural, tokensLabel } from "@/lib/labels";
 import { EventCover } from "@/components/smash/cover";
+import { scrollToSection } from "@/lib/scroll";
 
 const signInTo = (path: string) => `/sign-in?redirect=${encodeURIComponent(path)}`;
 
@@ -94,6 +98,12 @@ export default function Home() {
     return items;
   }, [matches, tonight, upcomingTournaments, tx]);
 
+  // "/#about" opened directly (a shared link, a bookmark): go to the section once drawn
+  useEffect(() => {
+    const section = window.location.hash.slice(1);
+    if (section === "about" || section === "how") scrollToSection(section, "auto");
+  }, []);
+
   return (
     <>
       {/* ─────────── HERO ─────────── */}
@@ -102,7 +112,12 @@ export default function Home() {
           src={PHOTOS.hero}
           alt=""
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 size-full object-cover opacity-[.14] mix-blend-luminosity"
+          className="pointer-events-none absolute inset-0 size-full object-cover"
+        />
+        {/* Keeps the text readable over the photo: darker where the words are */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgb(10_16_48/.82)_0%,rgb(10_16_48/.66)_45%,rgb(10_16_48/.9)_100%)] lg:bg-[linear-gradient(90deg,rgb(10_16_48/.92)_0%,rgb(10_16_48/.7)_48%,rgb(10_16_48/.38)_100%)]"
         />
         <div
           aria-hidden="true"
@@ -214,32 +229,140 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ─────────── JOURNEY ─────────── */}
-      <section className="relative flex flex-col gap-16 overflow-clip bg-mist px-5 py-24 lg:gap-[90px] lg:px-16 lg:pb-40 lg:pt-[150px]">
+      {/* ─────────── HOW IT WORKS (nav: Comment ça marche) ─────────── */}
+      <section
+        id="how"
+        aria-labelledby="how-title"
+        className="relative flex -scroll-mt-6 flex-col gap-16 overflow-clip bg-mist px-5 py-24 lg:-scroll-mt-3 lg:gap-[90px] lg:px-16 lg:pb-40 lg:pt-[150px]"
+      >
         <div className="flex flex-col items-start gap-5 lg:items-center lg:text-center">
           <span data-reveal="" className="label text-court">
-            {tx({ fr: "Comment ça marche", en: "How booking works", ar: "كيف يعمل الحجز" })}
+            {tx({ fr: "Comment ça marche", en: "How it works", ar: "كيف يعمل" })}
           </span>
           <h2
+            id="how-title"
             data-reveal=""
             className="disp m-0 max-w-[1100px] text-[clamp(46px,7.2vw,104px)] leading-[0.92]"
           >
             {tx({
-              fr: "Du canapé au terrain.",
-              en: "From the sofa to the court.",
-              ar: "من الأريكة إلى الملعب.",
+              fr: "Deux façons de réserver.",
+              en: "Two ways to book.",
+              ar: "طريقتان للحجز.",
             })}
           </h2>
           <p
             data-reveal="late"
-            className="m-0 max-w-[560px] text-lg text-muted-foreground lg:text-[21px]"
+            className="m-0 max-w-[620px] text-lg text-muted-foreground lg:text-[21px]"
           >
             {tx({
-              fr: "Trois taps. Pas d'appel, pas d'attente.",
-              en: "Three taps. No calls, no waiting.",
-              ar: "ثلاث نقرات. بلا اتصال ولا انتظار.",
+              fr: "Un coup de fil au club, ou quelques taps sur le site. À vous de choisir.",
+              en: "A call to the club, or a few taps on the site. Your choice.",
+              ar: "اتصال بالنادي، أو بضع نقرات على الموقع. الخيار لك.",
             })}
           </p>
+        </div>
+
+        <div className="grid gap-5 lg:grid-cols-2 lg:gap-6">
+          <article
+            data-reveal=""
+            className="lift flex flex-col gap-5 rounded-[36px] bg-white p-7 shadow-[0_40px_70px_-50px_rgb(16_26_77/.5)] lg:p-10"
+          >
+            <span className="flex items-center gap-3">
+              <span className="flex size-12 items-center justify-center rounded-2xl bg-mist text-court">
+                <PhoneIcon className="size-6" weight="duotone" />
+              </span>
+              <span className="label text-muted-foreground">
+                {tx({ fr: "Option 1", en: "Option 1", ar: "الخيار 1" })}
+              </span>
+            </span>
+            <h3 className="disp m-0 text-[34px] leading-none lg:text-[44px]">
+              {tx({ fr: "Par téléphone", en: "By phone", ar: "عبر الهاتف" })}
+            </h3>
+            <p className="m-0 max-w-[460px] text-[17px] leading-relaxed text-body">
+              {tx({
+                fr: "Appelez le club : on bloque votre terrain à l'heure qui vous arrange.",
+                en: "Call the club: we hold your court at the time that suits you.",
+                ar: "اتصل بالنادي: نحجز لك الملعب في الوقت الذي يناسبك.",
+              })}
+            </p>
+            <span className="flex items-center gap-2.5 text-[15px] font-bold">
+              <MoneyIcon className="size-5 text-[#0F6B3C]" />
+              {tx({
+                fr: "Paiement en espèces à l'accueil, le jour du match.",
+                en: "Pay cash at the front desk on match day.",
+                ar: "الدفع نقدًا في الاستقبال يوم المباراة.",
+              })}
+            </span>
+            <div className="mt-auto pt-2">
+              {CLUB.phone ? (
+                <Button asChild variant="dark" size="lg" className="w-full sm:w-auto">
+                  <a href={CLUB.phoneHref}>
+                    <PhoneIcon className="size-5" />
+                    <span dir="ltr">{CLUB.phone}</span>
+                  </a>
+                </Button>
+              ) : (
+                <Button asChild variant="dark" size="lg" className="w-full sm:w-auto">
+                  <Link href="/contact">
+                    {tx({ fr: "Contacter le club", en: "Contact the club", ar: "اتصل بالنادي" })}
+                    <ArrowRightIcon className="btn-ic" />
+                  </Link>
+                </Button>
+              )}
+            </div>
+          </article>
+          <article
+            data-reveal="late"
+            className="on-dark lift flex flex-col gap-5 rounded-[36px] bg-night p-7 text-white lg:p-10"
+          >
+            <span className="flex items-center gap-3">
+              <span className="flex size-12 items-center justify-center rounded-2xl bg-white/10 text-ball">
+                <DeviceMobileIcon className="size-6" weight="duotone" />
+              </span>
+              <span className="label text-muted-d">
+                {tx({ fr: "Option 2", en: "Option 2", ar: "الخيار 2" })}
+              </span>
+            </span>
+            <h3 className="disp m-0 text-[34px] leading-none lg:text-[44px]">
+              {tx({ fr: "Sur le site", en: "On the site", ar: "عبر الموقع" })}
+            </h3>
+            <p className="m-0 max-w-[460px] text-[17px] leading-relaxed text-soft-d">
+              {tx({
+                fr: "Réservez vous-même, à toute heure, depuis votre téléphone. Sans appel ni attente.",
+                en: "Book by yourself, at any hour, from your phone. No call, no waiting.",
+                ar: "احجز بنفسك في أي وقت من هاتفك. بلا اتصال ولا انتظار.",
+              })}
+            </p>
+            <span className="flex items-center gap-2.5 text-[15px] font-bold">
+              <CoinsIcon className="size-5 text-ball" />
+              {tx({
+                fr: `Paiement en tokens : ${tokensLabel(rules.tokenCostPlayer)} par place.`,
+                en: `Pay with tokens: ${tokensLabel(rules.tokenCostPlayer)} per spot.`,
+                ar: `الدفع بالرصيد: ${tokensLabel(rules.tokenCostPlayer)} لكل مكان.`,
+              })}
+            </span>
+            <div className="mt-auto pt-2">
+              <Button asChild variant="lime" size="lg" className="w-full sm:w-auto">
+                <Link href="/terrains">
+                  {tx({ fr: "Voir les créneaux", en: "See available slots", ar: "شاهد المواعيد" })}
+                  <ArrowRightIcon className="btn-ic" />
+                </Link>
+              </Button>
+            </div>
+          </article>
+        </div>
+
+        <div className="flex flex-col items-start gap-3 lg:items-center lg:text-center">
+          <span data-reveal="" className="label text-court">
+            {tx({ fr: "Sur le site", en: "On the site", ar: "عبر الموقع" })}
+          </span>
+          <h3 data-reveal="" className="disp m-0 text-[40px] leading-none lg:text-[64px]">
+            {tx({
+              fr: "Quatre étapes, et vous jouez.",
+              en: "Four steps, and you play.",
+              ar: "أربع خطوات وتلعب.",
+            })}
+          </h3>
         </div>
         <ol className="relative m-0 flex list-none flex-col gap-20 p-0 lg:gap-[110px]">
           <li
@@ -251,11 +374,49 @@ export default function Home() {
           {[
             {
               n: 1,
-              title: tx({ fr: "Choisissez l'heure", en: "Pick a time", ar: "اختر الوقت" }),
+              title: tx({
+                fr: "Rechargez vos tokens",
+                en: "Top up your tokens",
+                ar: "اشحن رصيدك",
+              }),
               text: tx({
-                fr: "Tous les terrains, tous les créneaux de la semaine sur un seul écran. Les créneaux libres s'allument.",
-                en: "Every court and slot of the week on one screen. Free slots light up.",
-                ar: "كل الملاعب والمواعيد في شاشة واحدة. المواعيد المتاحة تضيء.",
+                fr: `Passez à l'accueil et payez en espèces : vos tokens arrivent sur votre compte dans la minute. ${tokensLabel(rules.tokenCostPlayer)} = une place de joueur.`,
+                en: `Stop by the front desk and pay cash: your tokens land on your account within the minute. ${tokensLabel(rules.tokenCostPlayer)} = one player spot.`,
+                ar: `مرّ على الاستقبال وادفع نقدًا: يصل رصيدك إلى حسابك خلال دقيقة. ${tokensLabel(rules.tokenCostPlayer)} = مكان لاعب واحد.`,
+              }),
+              visual: (
+                <div className="flex flex-col gap-5 rounded-[36px] bg-ball p-7 text-night lg:p-8">
+                  <div className="flex items-center justify-between">
+                    <span className="label">
+                      {tx({ fr: "Votre solde", en: "Your balance", ar: "رصيدك" })}
+                    </span>
+                    <CoinsIcon className="size-7" weight="duotone" />
+                  </div>
+                  <span className="disp text-[84px] leading-none" dir="ltr">
+                    10
+                  </span>
+                  <span className="pop-in flex items-center gap-2 self-start rounded-full bg-night px-4 py-2 text-[15px] font-extrabold text-white">
+                    <MoneyIcon className="size-4 text-ball" />
+                    {tx({
+                      fr: "+10 tokens · payé à l'accueil",
+                      en: "+10 tokens · paid at the desk",
+                      ar: "+10 رصيد · مدفوع في الاستقبال",
+                    })}
+                  </span>
+                </div>
+              ),
+            },
+            {
+              n: 2,
+              title: tx({
+                fr: "Repérez un terrain libre",
+                en: "Spot a free court",
+                ar: "اختر ملعبًا متاحًا",
+              }),
+              text: tx({
+                fr: "Tous les terrains et tous les créneaux de la semaine sur un seul écran. Ceux qui sont libres s'allument : touchez le vôtre.",
+                en: "Every court and every slot of the week on one screen. The free ones light up: tap yours.",
+                ar: "كل الملاعب والمواعيد في شاشة واحدة. المتاح منها يضيء: اضغط على موعدك.",
               }),
               visual: (
                 <div className="flex flex-col gap-4 rounded-[36px] bg-white p-6 shadow-[0_40px_70px_-50px_rgb(16_26_77/.5)] lg:p-8">
@@ -294,16 +455,16 @@ export default function Home() {
               ),
             },
             {
-              n: 2,
+              n: 3,
               title: tx({
-                fr: "Invitez vos partenaires",
-                en: "Invite your partners",
-                ar: "ادعُ شركاءك",
+                fr: "Votre place, ou tout le terrain",
+                en: "Your spot, or the whole court",
+                ar: "مكانك، أو الملعب كله",
               }),
               text: tx({
-                fr: "Un lien sur WhatsApp. Vos amis rejoignent la réservation et paient leur place, ou vous prenez le terrain complet.",
-                en: "One WhatsApp link. Friends join and pay their spot, or you take the full court.",
-                ar: "رابط واحد على واتساب. ينضم أصدقاؤك ويدفع كل منهم مكانه.",
+                fr: `Réservez seulement votre place (${tokensLabel(rules.tokenCostPlayer)}) et envoyez le lien à vos amis : chacun prend la sienne. Ou prenez le terrain complet (${tokensLabel(rules.tokenCostFullCourt)}) et invitez qui vous voulez.`,
+                en: `Book just your spot (${tokensLabel(rules.tokenCostPlayer)}) and send the link to your friends: each takes their own. Or take the full court (${tokensLabel(rules.tokenCostFullCourt)}) and invite whoever you like.`,
+                ar: `احجز مكانك فقط (${tokensLabel(rules.tokenCostPlayer)}) وأرسل الرابط لأصدقائك: كل واحد يأخذ مكانه. أو احجز الملعب كاملًا (${tokensLabel(rules.tokenCostFullCourt)}) وادعُ من تشاء.`,
               }),
               visual: (
                 <div className="on-dark relative h-[300px] overflow-hidden rounded-[36px] bg-ink p-8 text-white">
@@ -338,12 +499,12 @@ export default function Home() {
               ),
             },
             {
-              n: 3,
-              title: tx({ fr: "Venez jouer", en: "Show up and play", ar: "تعال والعب" }),
+              n: 4,
+              title: tx({ fr: "Jouez, profitez", en: "Play and enjoy", ar: "العب واستمتع" }),
               text: tx({
-                fr: "Un rappel arrive avant le match avec votre terrain. Les lumières sont déjà allumées.",
-                en: "A reminder arrives before the match with your court. The lights are already on.",
-                ar: "يصلك تذكير قبل المباراة مع رقم ملعبك.",
+                fr: "Un rappel arrive avant le match avec votre terrain. Les lumières sont allumées : il ne vous reste qu'à vous amuser.",
+                en: "A reminder arrives before the match with your court. The lights are on: all that's left is to have fun.",
+                ar: "يصلك تذكير قبل المباراة مع رقم ملعبك. الأضواء مضاءة: لم يبقَ إلا أن تستمتع.",
               }),
               visual: (
                 <div className="flex flex-col gap-4 rounded-[36px] bg-night p-7">
@@ -371,9 +532,9 @@ export default function Home() {
               >
                 <span className="label text-muted-foreground">
                   {tx({
-                    fr: `Étape ${step.n} sur 3`,
-                    en: `Step ${step.n} of 3`,
-                    ar: `الخطوة ${step.n} من 3`,
+                    fr: `Étape ${step.n} sur 4`,
+                    en: `Step ${step.n} of 4`,
+                    ar: `الخطوة ${step.n} من 4`,
                   })}
                 </span>
                 <h3 className="disp m-0 text-[40px] leading-none lg:text-[56px]">{step.title}</h3>
@@ -387,14 +548,6 @@ export default function Home() {
             </li>
           ))}
         </ol>
-        <div data-reveal="" className="flex lg:justify-center">
-          <Button asChild size="xl" className="w-full lg:w-auto">
-            <Link href="/terrains">
-              {tx({ fr: "Voir les créneaux", en: "See available slots", ar: "شاهد المواعيد" })}
-              <ArrowRightIcon className="btn-ic" />
-            </Link>
-          </Button>
-        </div>
       </section>
 
       {/* ─────────── OPEN MATCHES ─────────── */}
@@ -564,19 +717,29 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ─────────── THE CLUB ─────────── */}
-      <section className="on-dark relative flex flex-col gap-12 overflow-clip bg-night px-5 py-24 text-white lg:gap-14 lg:px-16 lg:pb-[150px] lg:pt-[140px]">
+      {/* ─────────── THE CLUB (courts and photos; reachable at /#about) ─────────── */}
+      <section
+        id="about"
+        aria-labelledby="about-title"
+        className="on-dark relative flex -scroll-mt-6 flex-col gap-12 overflow-clip bg-night px-5 py-24 text-white lg:-scroll-mt-3 lg:gap-14 lg:px-16 lg:pb-[150px] lg:pt-[140px]"
+      >
         <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
-          <h2
-            data-reveal=""
-            className="disp m-0 max-w-[820px] text-[clamp(46px,7.2vw,104px)] leading-[0.92]"
-          >
-            {tx({
-              fr: "Un club taillé pour le prochain match.",
-              en: "A club built for the next match.",
-              ar: "نادٍ مصمم للمباراة القادمة.",
-            })}
-          </h2>
+          <div className="flex flex-col gap-5">
+            <span data-reveal="" className="label text-ball">
+              {tx({ fr: "Terrains", en: "Courts", ar: "الملاعب" })}
+            </span>
+            <h2
+              id="about-title"
+              data-reveal=""
+              className="disp m-0 max-w-[820px] text-[clamp(46px,7.2vw,104px)] leading-[0.92]"
+            >
+              {tx({
+                fr: "Un club taillé pour le prochain match.",
+                en: "A club built for the next match.",
+                ar: "نادٍ مصمم للمباراة القادمة.",
+              })}
+            </h2>
+          </div>
           <p data-reveal="late" className="m-0 max-w-[400px] text-lg leading-relaxed text-muted-d">
             {tx({
               fr: "Des terrains indoor pour tous les temps, de l'outdoor pour les beaux soirs.",
@@ -585,51 +748,73 @@ export default function Home() {
             })}
           </p>
         </div>
-        <figure className="photo parallax zoom-in m-0 h-[420px] rounded-[32px] lg:h-[620px] lg:rounded-[40px]">
-          <img
-            src={PHOTOS.hero}
-            alt={tx({
-              fr: "Terrain du club la nuit",
-              en: "Club court at night",
-              ar: "ملعب النادي ليلًا",
-            })}
-            loading="lazy"
-            decoding="async"
-            className="photo-layer"
-          />
-          {active.length > 0 && (
-            <div className="absolute end-4 top-4 grid grid-cols-3 gap-2.5 rounded-[28px] bg-night/75 p-2.5 backdrop-blur-sm lg:end-7 lg:top-7">
-              <Counter
-                value={active.length}
-                label={tx({ fr: "terrains", en: "courts", ar: "ملاعب" })}
-              />
-              <Counter value={indoor} label="indoor" />
-              <Counter value={outdoor} label="outdoor" />
-            </div>
-          )}
-        </figure>
         <div className="grid gap-5 lg:grid-cols-12 lg:gap-6">
-          <figure className="photo parallax m-0 h-[320px] rounded-[32px] lg:col-span-5 lg:h-[420px]">
+          <figure className="photo photo-fx parallax zoom-in m-0 h-[420px] rounded-[32px] lg:col-span-8 lg:h-[620px] lg:rounded-[40px]">
             <img
-              src={PHOTOS.indoor}
+              {...CLUB_PHOTOS.main}
+              sizes="(min-width: 1024px) 64vw, 100vw"
+              alt={tx({
+                fr: "Les terrains du club",
+                en: "The club's courts",
+                ar: "ملاعب النادي",
+              })}
+              loading="lazy"
+              decoding="async"
+              className="photo-layer"
+            />
+            {active.length > 0 && (
+              <div className="absolute end-4 top-4 grid grid-cols-3 gap-2.5 rounded-[28px] bg-night/75 p-2.5 backdrop-blur-sm lg:end-7 lg:top-7">
+                <Counter
+                  value={active.length}
+                  label={tx({ fr: "terrains", en: "courts", ar: "ملاعب" })}
+                />
+                <Counter value={indoor} label="indoor" />
+                <Counter value={outdoor} label="outdoor" />
+              </div>
+            )}
+          </figure>
+          <figure className="photo photo-fx photo-wipe parallax m-0 h-[420px] rounded-[32px] lg:col-span-4 lg:h-[620px] lg:rounded-[40px]">
+            <img
+              {...CLUB_PHOTOS.detail}
+              sizes="(min-width: 1024px) 32vw, 100vw"
+              alt={tx({
+                fr: "Raquette et balles sur le terrain",
+                en: "Racket and balls on the court",
+                ar: "مضرب وكرات على الملعب",
+              })}
+              loading="lazy"
+              decoding="async"
+              className="photo-layer"
+            />
+            <figcaption className="photo-cap absolute bottom-4 start-4 rounded-full bg-night/75 px-4 py-2 text-sm font-bold">
+              {tx({ fr: "Prêt à jouer", en: "Ready to play", ar: "جاهز للعب" })}
+            </figcaption>
+          </figure>
+        </div>
+        <div className="grid gap-5 lg:grid-cols-12 lg:gap-6">
+          <figure className="photo photo-fx photo-wipe parallax m-0 h-[320px] rounded-[32px] lg:col-span-5 lg:h-[420px]">
+            <img
+              {...CLUB_PHOTOS.indoor}
+              sizes="(min-width: 1024px) 40vw, 100vw"
               alt="Indoor"
               loading="lazy"
               decoding="async"
               className="photo-layer"
             />
-            <figcaption className="absolute bottom-4 start-4 rounded-full bg-night/75 px-4 py-2 text-sm font-bold">
+            <figcaption className="photo-cap absolute bottom-4 start-4 rounded-full bg-night/75 px-4 py-2 text-sm font-bold">
               Indoor
             </figcaption>
           </figure>
-          <figure className="photo parallax m-0 h-[320px] rounded-[32px] lg:col-span-4 lg:mt-[70px] lg:h-[420px]">
+          <figure className="photo photo-fx photo-wipe photo-wipe-late parallax m-0 h-[320px] rounded-[32px] lg:col-span-4 lg:mt-[70px] lg:h-[420px]">
             <img
-              src={PHOTOS.outdoor}
+              {...CLUB_PHOTOS.outdoor}
+              sizes="(min-width: 1024px) 32vw, 100vw"
               alt="Outdoor"
               loading="lazy"
               decoding="async"
               className="photo-layer"
             />
-            <figcaption className="absolute bottom-4 start-4 rounded-full bg-night/75 px-4 py-2 text-sm font-bold">
+            <figcaption className="photo-cap absolute bottom-4 start-4 rounded-full bg-night/75 px-4 py-2 text-sm font-bold">
               Outdoor
             </figcaption>
           </figure>

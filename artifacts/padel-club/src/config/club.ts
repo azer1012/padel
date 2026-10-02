@@ -36,7 +36,22 @@ export const CLUB = {
 } as const;
 
 export const PHOTOS = {
-  hero: "/hero-padel.webp",
+  hero: "/hero-court.webp",
   indoor: "/terrain-indoor.webp",
   outdoor: "/terrain-outdoor.webp",
+} as const;
+
+/**
+ * Photos of the courts section of the home page: `public/<name>-<width>.webp` in
+ * three widths, the largest one for 4K screens. The browser picks the one it needs.
+ */
+const sized = (name: string, widths: readonly [number, number, number]) => ({
+  src: `/${name}-${widths[1]}.webp`,
+  srcSet: widths.map((w) => `/${name}-${w}.webp ${w}w`).join(", "),
+});
+export const CLUB_PHOTOS = {
+  main: sized("club-main", [960, 1920, 3642]),
+  detail: sized("club-detail", [960, 1920, 3648]),
+  indoor: sized("club-indoor", [960, 1920, 3840]),
+  outdoor: sized("club-outdoor", [960, 1920, 3840]),
 } as const;

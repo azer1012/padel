@@ -45,6 +45,7 @@ import type { AppIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Logo } from "@/components/smash/brand";
+import { AmivioCredit } from "@/components/smash/amivio-credit";
 import { CountUp, LiveDot } from "@/components/smash/primitives";
 import { cn } from "@/lib/utils";
 import { useI18n, useTx, useDateLocale, type Lang } from "@/lib/i18n";
@@ -53,6 +54,12 @@ import { useRevealFallback } from "@/hooks/use-reveal";
 import { CLUB } from "@/config/club";
 import { useClubRules } from "@/hooks/use-club-rules";
 import { tokenWord } from "@/lib/labels";
+import { cancelSectionScroll, scrollToSection } from "@/lib/scroll";
+
+/** The "how booking works" section of the home page. */
+const HOW_HREF = "/#how";
+/** Nav links that are sections of the home page: href → id of the section. */
+const HOME_SECTIONS: Record<string, string> = { [HOW_HREF]: "how" };
 
 const LANGS: { value: Lang; label: string; short: string }[] = [
   { value: "fr", label: "Français", short: "FR" },
@@ -102,7 +109,7 @@ function LangSwitch({ dark = true, className }: { dark?: boolean; className?: st
 function PublicShell({ children }: { children: ReactNode }) {
   const tx = useTx();
   const { t } = useI18n();
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const [open, setOpen] = useState(false);
   const menuBtn = useRef<HTMLButtonElement>(null);
   const overHero = location === "/";
@@ -126,7 +133,8 @@ function PublicShell({ children }: { children: ReactNode }) {
 
   const { openMatchesEnabled } = useClubRules();
   const links = [
-    { href: "/terrains", label: tx({ fr: "Réserver", en: "Book a court", ar: "احجز ملعبًا" }) },
+    { href: "/", label: t("home") },
+    { href: HOW_HREF, label: tx({ fr: "Comment ça marche", en: "How it works", ar: "كيف يعمل" }) },
     ...(openMatchesEnabled
       ? [
           {
@@ -139,6 +147,30 @@ function PublicShell({ children }: { children: ReactNode }) {
     { href: "/news", label: t("news") },
     { href: "/contact", label: t("contact") },
   ];
+
+  /**
+   * Some links stay on the home page: "Comment ça marche" scrolls to its section
+   * (going home first if needed) and "Accueil", already at home, goes back to the top.
+   */
+  const onNavClick = (href: string) => (event: React.MouseEvent) => {
+    // A scroll still settling must not pull the page back after another choice
+    cancelSectionScroll();
+    const section = HOME_SECTIONS[href];
+    if (section) {
+      event.preventDefault();
+      setOpen(false);
+      if (location !== "/") navigate("/");
+      window.history.replaceState(null, "", `${import.meta.env.BASE_URL}#${section}`);
+      scrollToSection(section);
+    } else if (href === "/" && location === "/") {
+      event.preventDefault();
+      setOpen(false);
+      window.history.replaceState(null, "", import.meta.env.BASE_URL);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+  const isCurrent = (href: string) =>
+    href === "/" ? location === "/" : !HOME_SECTIONS[href] && location.startsWith(href);
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-background">
@@ -155,13 +187,14 @@ function PublicShell({ children }: { children: ReactNode }) {
         )}
       >
         <Logo />
-        {/* The full menu needs 1180px: narrower laptops and tablets get the menu button */}
-        <nav aria-label="Main" className="hidden items-center gap-8 min-[1180px]:flex">
+        {/* The full menu needs 1320px with a club name of about 15 letters: narrower laptops and tablets get the menu button */}
+        <nav aria-label="Main" className="hidden items-center gap-7 min-[1320px]:flex">
           {links.map((l) => (
             <Link
               key={l.href}
               href={l.href}
-              aria-current={location.startsWith(l.href) ? "page" : undefined}
+              onClick={onNavClick(l.href)}
+              aria-current={isCurrent(l.href) ? "page" : undefined}
               className="ulink whitespace-nowrap text-[15px] font-semibold text-white/80 transition-colors hover:text-white aria-[current=page]:text-white"
             >
               {l.label}
@@ -174,7 +207,7 @@ function PublicShell({ children }: { children: ReactNode }) {
             asChild
             variant="outline-dark"
             size="sm"
-            className="hidden min-[1180px]:inline-flex"
+            className="hidden min-[1320px]:inline-flex"
           >
             <Link href="/sign-in">{t("signIn")}</Link>
           </Button>
@@ -192,7 +225,7 @@ function PublicShell({ children }: { children: ReactNode }) {
                 ? tx({ fr: "Fermer le menu", en: "Close menu", ar: "إغلاق القائمة" })
                 : tx({ fr: "Ouvrir le menu", en: "Open menu", ar: "فتح القائمة" })
             }
-            className="flex size-11 items-center justify-center rounded-full bg-white/10 min-[1180px]:hidden"
+            className="flex size-11 items-center justify-center rounded-full bg-white/10 min-[1320px]:hidden"
           >
             {open ? (
               <XIcon key="x" className="icon-pop size-5" />
@@ -205,13 +238,14 @@ function PublicShell({ children }: { children: ReactNode }) {
           <nav
             id="public-menu"
             aria-label="Mobile"
-            className="fade-in fixed inset-x-0 bottom-0 top-16 z-50 flex flex-col overflow-y-auto bg-night px-5 pb-[max(24px,env(safe-area-inset-bottom))] pt-4 lg:top-[76px] lg:px-12 min-[1180px]:hidden"
+            className="fade-in fixed inset-x-0 bottom-0 top-16 z-50 flex flex-col overflow-y-auto bg-night px-5 pb-[max(24px,env(safe-area-inset-bottom))] pt-4 lg:top-[76px] lg:px-12 min-[1320px]:hidden"
           >
             <div className="stagger flex flex-col">
               {links.map((l) => (
                 <Link
                   key={l.href}
                   href={l.href}
+                  onClick={onNavClick(l.href)}
                   className="disp group flex items-center justify-between border-b border-white/10 py-4 text-[36px] leading-none text-white"
                 >
                   {l.label}
@@ -249,16 +283,10 @@ export function SiteFooter() {
     <footer className="on-dark relative overflow-clip bg-night text-white">
       <div className="flex flex-col gap-16 px-5 pb-10 pt-20 lg:px-16 lg:pt-28">
         <div className="flex flex-col items-start gap-8 lg:flex-row lg:items-end lg:justify-between">
-          <h2 data-reveal="" className="disp m-0 text-[clamp(52px,8vw,120px)] leading-[0.9]">
+          <h2 className="disp m-0 text-[clamp(52px,8vw,120px)] leading-[0.9]">
             {tx({ fr: "Prêt à jouer ?", en: "Ready to play?", ar: "مستعد للعب؟" })}
           </h2>
-          <Button
-            asChild
-            variant="lime"
-            size="xl"
-            data-reveal="late"
-            className="shine w-full sm:w-auto"
-          >
+          <Button asChild variant="lime" size="xl" className="shine w-full sm:w-auto">
             <Link href="/terrains">
               {tx({ fr: "Réserver mon terrain", en: "Book your court", ar: "احجز ملعبك" })}
               <ArrowRightIcon className="btn-ic" />
@@ -371,8 +399,11 @@ export function SiteFooter() {
           </div>
         </div>
         <div className="flex flex-col justify-between gap-3 text-sm text-[#8A93C4] sm:flex-row">
-          <span>
-            © {new Date().getFullYear()} {CLUB.name}
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span>
+              © {new Date().getFullYear()} {CLUB.name}
+            </span>
+            <AmivioCredit />
           </span>
           <LangSwitch className="self-start" />
         </div>
@@ -935,10 +966,42 @@ function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * A new page starts at its top. Without this the browser keeps the scroll position of
+ * the page left behind, so a short page opened from far down a long one shows its end.
+ * Not when going back or forward (the browser restores the position there), nor when
+ * the address points to a section of the page (#…), which is scrolled to instead.
+ */
+function useStartAtTop(location: string) {
+  const viaHistory = useRef(false);
+  const firstPage = useRef(true);
+  useEffect(() => {
+    const onPop = () => {
+      viaHistory.current = true;
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  useLayoutEffect(() => {
+    if (firstPage.current) {
+      firstPage.current = false;
+      return;
+    }
+    if (viaHistory.current) {
+      viaHistory.current = false;
+      return;
+    }
+    if (window.location.hash) return;
+    cancelSectionScroll();
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [location]);
+}
+
 export function NavLayout({ children }: { children: ReactNode }) {
   const { isSignedIn, isLoaded } = useAuth();
   const [location] = useLocation();
   useRevealFallback();
+  useStartAtTop(location);
 
   const isAuthRoute =
     location.startsWith("/sign-in") ||

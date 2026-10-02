@@ -3,7 +3,8 @@
  * - Hashed build assets are cache-first; API calls are NEVER cached (live availability)
  * - Shows push notifications and opens the right page on tap
  */
-const VERSION = "smash-v1";
+// Changing this name drops every copy saved by the previous worker
+const VERSION = "smash-v2";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./favicon.svg", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -32,13 +33,21 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (url.pathname.includes("/assets/") || /\.(png|webp|svg|woff2?)$/.test(url.pathname)) {
-    event.respondWith(
-      caches.match(req).then((hit) => hit || fetch(req).then((res) => {
-        if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
-        return res;
-      })),
-    );
+  const keep = (res) => {
+    if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
+    return res;
+  };
+
+  // Build assets carry a hash in their name: a new version is a new file, so the saved copy is always right
+  if (url.pathname.includes("/assets/")) {
+    event.respondWith(caches.match(req).then((hit) => hit || fetch(req).then(keep)));
+    return;
+  }
+
+  // Club photos, logo and icons keep their name when the club replaces them: ask the
+  // network first so a new photo shows at once; the saved copy is only for offline
+  if (/\.(png|jpe?g|webp|svg|woff2?)$/.test(url.pathname)) {
+    event.respondWith(fetch(req).then(keep).catch(() => caches.match(req)));
   }
 });
 
