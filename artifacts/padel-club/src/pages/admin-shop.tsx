@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  apiErrorCode,
   shopKeys,
   useAdminShopOrders,
   useAdminShopProducts,
@@ -11,6 +12,7 @@ import {
   type AdminShopOrder,
   type AdminShopProduct,
   type ShopOrderStatus,
+  type ShopProductInput,
 } from "@workspace/api-client-react";
 import {
   CheckIcon,
@@ -168,12 +170,12 @@ export default function AdminShop() {
 
   function save(e: React.FormEvent) {
     e.preventDefault();
-    const data = {
+    const stock = Math.max(0, parseInt(form.stock) || 0);
+    const data: ShopProductInput = {
       name: form.name.trim(),
       description: form.description.trim() || null,
       category: form.category,
-      price: Number(form.price) || 0,
-      stock: Math.max(0, parseInt(form.stock) || 0),
+      price: Number(form.price),
       imageUrl: form.imageUrl.trim() || null,
       isActive: form.isActive,
     };
@@ -182,15 +184,32 @@ export default function AdminShop() {
       setEditing(null);
       refreshProducts();
     };
-    const fail = (err: unknown) =>
+    const fail = (err: unknown) => {
       toast({
         title: tx({ fr: "Enregistrement impossible", en: "Couldn't save", ar: "تعذر الحفظ" }),
         description: apiErrorText(err, tx),
         variant: "destructive",
       });
+      // Orders took stock while the form was open: show the real figure, keep the form
+      const current = (err as { data?: { details?: { stock?: unknown } } })?.data?.details?.stock;
+      if (
+        apiErrorCode(err) === "STOCK_CHANGED" &&
+        typeof current === "number" &&
+        editing !== "new"
+      ) {
+        setEditing((e) => (e && e !== "new" ? { ...e, stock: current } : e));
+        set("stock", String(current));
+        refreshProducts();
+      }
+    };
     if (editing && editing !== "new")
       update.mutate(
-        { id: editing.id, data },
+        {
+          id: editing.id,
+          // The stock is only sent when changed, with the figure it was changed from:
+          // an order placed meanwhile is never undone
+          data: stock !== editing.stock ? { ...data, stock, stockWas: editing.stock } : data,
+        },
         {
           onSuccess: done(
             tx({ fr: "Article mis à jour", en: "Article updated", ar: "تم التحديث" }),
@@ -199,10 +218,13 @@ export default function AdminShop() {
         },
       );
     else
-      create.mutate(data, {
-        onSuccess: done(tx({ fr: "Article ajouté", en: "Article added", ar: "تمت الإضافة" })),
-        onError: fail,
-      });
+      create.mutate(
+        { ...data, stock },
+        {
+          onSuccess: done(tx({ fr: "Article ajouté", en: "Article added", ar: "تمت الإضافة" })),
+          onError: fail,
+        },
+      );
   }
 
   async function remove(p: AdminShopProduct) {
@@ -578,7 +600,7 @@ export default function AdminShop() {
                 <Input
                   id="sp-price"
                   type="number"
-                  min={0}
+                  min={0.01}
                   step="0.01"
                   inputMode="decimal"
                   value={form.price}

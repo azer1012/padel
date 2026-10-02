@@ -82,6 +82,7 @@ describe("catalogue", () => {
     for (const body of [
       { name: "", price: 10 },
       { name: "Sac", price: -1 },
+      { name: "Sac", price: 0 },
       { name: "Sac", price: 10, stock: 1.5 },
       { name: "Sac", price: 10, imageUrl: "javascript:alert(1)" },
     ]) {
@@ -213,9 +214,12 @@ describe("ordering", () => {
       (await q("select count(*)::int as n from shop_orders where user_id = $1", [bob.id]))[0].n,
       1,
     );
-    // Somebody else's key gives nothing away
+    // Somebody else's key gives nothing away, and is a clear refusal (not a server error)
     const other = await order(alice.token, { ...body, idempotencyKey: "checkout-bob-1" });
+    assert.equal(other.status, 409);
+    assert.equal(other.body.code, "DUPLICATE_REQUEST");
     assert.notEqual(other.body.userId, bob.id);
+    assert.equal(await stock(balls), 6, "no stock taken");
   });
 
   test("the last unit goes to one member: nobody is sold what is not there", async () => {
@@ -362,6 +366,84 @@ describe("the desk handles an order", () => {
     });
     assert.equal(gone.status, 409);
     assert.equal(gone.body.code, "PRODUCT_GONE");
+  });
+});
+
+describe("guards", () => {
+  let grip: number;
+  let carol: Member;
+
+  before(async () => {
+    carol = await signup(api.pool, "carol@test.tn", {
+      first_name: "Carol",
+      phone: "+216 22 333 444",
+    });
+    const r = await call("POST", "/admin/shop/products", {
+      token: admin.token,
+      body: { name: "Surgrip", category: "accessory", price: 5, stock: 50 },
+    });
+    grip = r.body.id;
+  });
+
+  test("a member can't hold more than 3 orders waiting for the call", async () => {
+    const one = { ...pickup, items: [{ productId: grip, quantity: 1 }] };
+    const ids: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const r = await order(carol.token, one);
+      assert.equal(r.status, 201);
+      ids.push(r.body.id);
+    }
+    const fourth = await order(carol.token, one);
+    assert.equal(fourth.status, 409);
+    assert.equal(fourth.body.code, "TOO_MANY_PENDING_ORDERS");
+    assert.equal(await stock(grip), 47, "the refused order took nothing");
+    // Once the club has called (or one is cancelled), the member can order again
+    await call("PATCH", `/admin/shop/orders/${ids[0]}`, {
+      token: admin.token,
+      body: { status: "confirmed" },
+    });
+    assert.equal((await order(carol.token, one)).status, 201);
+    for (const id of ids.slice(1))
+      await call("POST", `/shop/orders/${id}/cancel`, { token: carol.token });
+  });
+
+  test("the name and phone given are kept on one line (they go into e-mail subjects)", async () => {
+    const r = await order(carol.token, {
+      ...pickup,
+      contactName: "Carol\r\nBcc: someone@else.tn",
+      items: [{ productId: grip, quantity: 1 }],
+    });
+    assert.equal(r.status, 201);
+    assert.equal(r.body.contactName, "Carol Bcc: someone@else.tn");
+    await call("POST", `/shop/orders/${r.body.id}/cancel`, { token: carol.token });
+  });
+
+  test("editing an article never undoes the stock taken by orders placed meanwhile", async () => {
+    const seen = await stock(grip);
+    // A member orders while the admin's form is open
+    const r = await order(carol.token, { ...pickup, items: [{ productId: grip, quantity: 2 }] });
+    assert.equal(r.status, 201);
+    const stale = await call("PATCH", `/admin/shop/products/${grip}`, {
+      token: admin.token,
+      body: { stock: seen + 10, stockWas: seen, price: 6 },
+    });
+    assert.equal(stale.status, 409);
+    assert.equal(stale.body.code, "STOCK_CHANGED");
+    assert.equal(await stock(grip), seen - 2, "unchanged");
+    // With the current figure, the change goes through
+    const ok = await call("PATCH", `/admin/shop/products/${grip}`, {
+      token: admin.token,
+      body: { stock: seen + 10, stockWas: seen - 2 },
+    });
+    assert.equal(ok.status, 200);
+    assert.equal(await stock(grip), seen + 10);
+    // A change that leaves the stock alone is never refused
+    const price = await call("PATCH", `/admin/shop/products/${grip}`, {
+      token: admin.token,
+      body: { price: 6 },
+    });
+    assert.equal(price.status, 200);
+    await call("POST", `/shop/orders/${r.body.id}/cancel`, { token: carol.token });
   });
 });
 

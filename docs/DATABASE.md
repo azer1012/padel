@@ -81,6 +81,10 @@ Spots per match come from `club_settings.max_players` (kept on each booking as `
 Nothing is paid online: the club calls the member (`pending` → `confirmed`), then
 delivers or hands the order over, and is paid in cash. `idempotency_key` makes one
 checkout one order. `club_settings.shop_enabled` switches the whole feature off.
+A member may have at most 3 orders `pending` at once (the stock is taken before
+anybody pays), and an article costs more than 0. An admin's stock change carries
+the figure it was changed from, so an order placed while the form was open is
+never undone (`STOCK_CHANGED`).
 
 There is no table of clubs and no staff table: branding is per installation
 (`VITE_CLUB_*`), staff are `users.role = 'admin'`. The prototype's `clubs` and

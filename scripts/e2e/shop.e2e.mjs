@@ -230,6 +230,74 @@ await step("the shop fits a phone, cart included", async () => {
   await m.ctx.close();
 });
 
+await step("the stock moved under a cart: the line says so and the order waits", async () => {
+  const c = await as(A);
+  await c.page.goto(`${WEB}/boutique`);
+  await c.page.getByRole("button", { name: "Ajouter Raquette Carbone Pro au panier" }).click();
+  await c.page.getByRole("button", { name: "Ajouter Tube de 3 balles au panier" }).click();
+  // Meanwhile the last racket is sold at the desk and the tubes are taken off sale
+  await sql("update shop_products set stock = 0 where name = 'Raquette Carbone Pro'");
+  await sql("update shop_products set is_active = false where name = 'Tube de 3 balles'");
+  await c.page.reload();
+  await c.page.getByTestId("btn-cart").getByText("1").waitFor({ timeout: 15000 });
+  await c.page.getByTestId("btn-cart").click();
+  const dialog = c.page.getByRole("dialog");
+  await dialog.getByTestId("cart-line-short").getByText("Rupture de stock").waitFor();
+  equal(await dialog.getByText("Tube de 3 balles").count(), 0, "article off sale left the cart");
+  await dialog.locator("#order-phone").fill("+216 20 123 456");
+  const before = (await sql("select count(*)::int as n from shop_orders"))[0].n;
+  await dialog.getByTestId("btn-place-order").click();
+  await dialog
+    .getByRole("alert")
+    .getByText(/plus assez en stock/)
+    .waitFor();
+  equal((await sql("select count(*)::int as n from shop_orders"))[0].n, before, "no order");
+  equal(c.page.problems.length, 0, c.page.problems.join(" · "));
+  await c.ctx.close();
+  await sql("update shop_products set stock = 1 where name = 'Raquette Carbone Pro'");
+  await sql("update shop_products set is_active = true where name = 'Tube de 3 balles'");
+});
+
+await step("an order arriving while the admin edits an article is never undone", async () => {
+  await admin.page.goto(`${WEB}/admin/shop`);
+  await admin.page.getByRole("button", { name: "Modifier Tube de 3 balles" }).click();
+  const dialog = admin.page.getByRole("dialog");
+  const seen = Number(await dialog.locator("#sp-stock").inputValue());
+  // A member orders 2 tubes while the form is open
+  const r = await api(A, "POST", "/shop/orders", {
+    deliveryMethod: "pickup",
+    contactPhone: "+216 20 123 456",
+    items: [{ productId: 2, quantity: 2 }],
+  });
+  equal(r.status, 201, "order");
+  await dialog.locator("#sp-stock").fill(String(seen + 10));
+  await admin.page.waitForTimeout(600);
+  await dialog.getByRole("button", { name: "Enregistrer" }).click();
+  await admin.page
+    .getByText(/Le stock a changé pendant votre modification/)
+    .first()
+    .waitFor({
+      timeout: 10000,
+    });
+  // That refusal is the point of this step: it is not a problem of the page
+  const expected = admin.page.problems.filter((p) => /409 \(Conflict\)/.test(p));
+  equal(expected.length, 1, "one refused save");
+  admin.page.problems.splice(
+    0,
+    admin.page.problems.length,
+    ...admin.page.problems.filter((p) => !expected.includes(p)),
+  );
+  equal(await stock("Tube de 3 balles"), seen - 2, "the order's stock kept");
+  equal(await dialog.locator("#sp-stock").inputValue(), String(seen - 2), "current figure shown");
+  // Saved again with the figure in front of them: it goes through
+  await dialog.locator("#sp-stock").fill(String(seen + 10));
+  await admin.page.waitForTimeout(600);
+  await dialog.getByRole("button", { name: "Enregistrer" }).click();
+  await admin.page.getByText("Article mis à jour").first().waitFor({ timeout: 10000 });
+  equal(await stock("Tube de 3 balles"), seen + 10, "new stock");
+  equal((await api(A, "POST", `/shop/orders/${r.body.id}/cancel`)).status, 200, "cancel");
+});
+
 await step("switched off in Réglages: no shop in the menus, orders refused", async () => {
   equal((await api(ADMIN, "PATCH", "/admin/settings", { shopEnabled: false })).status, 200, "off");
   const v = await as(null, { width: 1440, height: 900 });

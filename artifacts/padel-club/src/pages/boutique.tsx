@@ -164,6 +164,16 @@ export default function Boutique() {
     .map((l) => ({ ...l, product: byId.get(l.productId) }))
     .filter((l): l is typeof l & { product: ShopProduct } => !!l.product);
   const total = items.reduce((sum, l) => sum + l.product.price * l.quantity, 0);
+  /** Lines asking for more than what is left (the stock moved since they were added). */
+  const short = items.filter((l) => l.quantity > l.product.stock);
+  // Until the catalogue is known, the saved cart's own count
+  const units = products ? items.reduce((sum, l) => sum + l.quantity, 0) : count;
+
+  // Articles taken off sale since they were put in the cart leave it
+  useEffect(() => {
+    if (!products || !rules.shopEnabled) return;
+    for (const l of lines) if (!byId.has(l.productId)) cart.remove(l.productId);
+  }, [products, byId, lines, rules.shopEnabled]);
   const categories = [...new Set((products ?? []).map((p) => p.category))];
   const shown = (products ?? []).filter((p) => category === "all" || p.category === category);
 
@@ -178,6 +188,16 @@ export default function Boutique() {
     setFormError(null);
     if (!isSignedIn) {
       setLocation(`/sign-in?redirect=${encodeURIComponent("/boutique")}`);
+      return;
+    }
+    if (short.length) {
+      setFormError(
+        tx({
+          fr: "Il n'en reste plus assez en stock pour un article : ajustez sa quantité.",
+          en: "One article doesn't have enough left in stock: adjust its quantity.",
+          ar: "الكمية المتوفرة من أحد المنتجات غير كافية: عدّل كميته.",
+        }),
+      );
       return;
     }
     if (!PHONE_RE.test(form.phone.trim())) {
@@ -296,14 +316,14 @@ export default function Boutique() {
         actions={
           <Button
             onClick={openCart}
-            variant={count ? "default" : "secondary"}
+            variant={units ? "default" : "secondary"}
             data-testid="btn-cart"
           >
             <ShoppingCartIcon />
             {tx({ fr: "Panier", en: "Cart", ar: "السلة" })}
-            {count > 0 && (
+            {units > 0 && (
               <span className="pop-in flex h-6 min-w-6 items-center justify-center rounded-full bg-ball px-1.5 text-xs font-extrabold text-night">
-                {count}
+                {units}
               </span>
             )}
           </Button>
@@ -615,6 +635,24 @@ export default function Boutique() {
                           <span className="text-sm text-muted-foreground" dir="ltr">
                             {money(l.product.price)} {rules.currency}
                           </span>
+                          {l.quantity > l.product.stock && (
+                            <span
+                              data-testid="cart-line-short"
+                              className="text-sm font-semibold text-[#B1452A]"
+                            >
+                              {l.product.stock <= 0
+                                ? tx({
+                                    fr: "Rupture de stock : retirez-le",
+                                    en: "Out of stock: remove it",
+                                    ar: "نفد المخزون: احذفه",
+                                  })
+                                : tx({
+                                    fr: `Plus que ${l.product.stock} en stock`,
+                                    en: `Only ${l.product.stock} left`,
+                                    ar: `بقي ${l.product.stock} فقط`,
+                                  })}
+                            </span>
+                          )}
                         </span>
                         <Stepper
                           value={l.quantity}

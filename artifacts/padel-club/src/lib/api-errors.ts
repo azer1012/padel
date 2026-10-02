@@ -114,6 +114,21 @@ const BY_CODE: Record<string, Copy> = {
     en: "An article in your cart is no longer on sale. Remove it to continue.",
     ar: "أحد منتجات سلتك لم يعد معروضًا. احذفه للمتابعة.",
   },
+  TOO_MANY_PENDING_ORDERS: {
+    fr: "Vous avez déjà 3 commandes en attente d'appel. Le club vous appelle bientôt ; vous pourrez commander à nouveau ensuite.",
+    en: "You already have 3 orders waiting for the club's call. The club will call you soon; you can order again after that.",
+    ar: "لديك 3 طلبات بانتظار اتصال النادي. سيتصل بك النادي قريبًا، ويمكنك الطلب مجددًا بعد ذلك.",
+  },
+  DUPLICATE_REQUEST: {
+    fr: "Cette commande n'a pas pu être envoyée. Rechargez la page puis réessayez.",
+    en: "This order couldn't be sent. Reload the page and try again.",
+    ar: "تعذر إرسال هذا الطلب. أعد تحميل الصفحة ثم حاول مجددًا.",
+  },
+  STOCK_CHANGED: {
+    fr: "Le stock a changé pendant votre modification (une commande vient d'arriver). Le chiffre actuel est affiché : vérifiez-le puis enregistrez.",
+    en: "The stock changed while you were editing (an order just came in). The current figure is shown: check it, then save.",
+    ar: "تغيّر المخزون أثناء التعديل (وصل طلب للتو). الرقم الحالي معروض: تحقق منه ثم احفظ.",
+  },
   PHONE_REQUIRED: {
     fr: "Indiquez un numéro de téléphone valide : le club vous appelle pour confirmer.",
     en: "Enter a valid phone number: the club calls you to confirm.",

@@ -33,6 +33,15 @@ const STATUSES = ["pending", "confirmed", "shipped", "delivered", "cancelled"] a
 const PHONE = /^[+\d][\d\s().-]{5,29}$/;
 const MAX_LINES = 20;
 const MAX_QUANTITY = 20;
+/**
+ * Orders waiting for the club's call that one member may have at once. An order takes
+ * its articles out of stock before anybody has paid: without a limit, one account
+ * could empty the shelves with orders nobody confirms.
+ */
+const MAX_PENDING_ORDERS = 3;
+
+/** One line of text: what goes into an e-mail subject or a push never spans lines. */
+const oneLine = (s: string | null) => (s === null ? null : s.replace(/\s+/g, " "));
 
 /**
  * What staff may do with an order. The club first calls the member (pending →
@@ -123,14 +132,14 @@ router.post("/shop/orders", requireUser, async (req, res) => {
   const deliveryMethod = oneOf(b?.deliveryMethod, ["delivery", "pickup"] as const);
   if (!deliveryMethod)
     throw new HttpError(400, "Choose delivery or pick-up at the club", "VALIDATION_ERROR");
-  const contactPhone = cleanText(b?.contactPhone, 30) ?? member.phone;
+  const contactPhone = oneLine(cleanText(b?.contactPhone, 30) ?? member.phone);
   if (!contactPhone || !PHONE.test(contactPhone))
     throw new HttpError(
       400,
       "A phone number is required: the club calls you to confirm the order",
       "PHONE_REQUIRED",
     );
-  const contactName = cleanText(b?.contactName, 120) ?? fullName(member);
+  const contactName = oneLine(cleanText(b?.contactName, 120)) ?? fullName(member);
   const address = cleanText(b?.address, 300);
   const city = cleanText(b?.city, 80);
   if (deliveryMethod === "delivery" && !address)
@@ -157,6 +166,23 @@ router.post("/shop/orders", requireUser, async (req, res) => {
   let units = 0;
   try {
     orderId = await db.transaction(async (tx: Tx) => {
+      // The member's row is locked first: two checkouts of one member are counted in turn
+      await tx
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(eq(usersTable.id, member.id))
+        .for("no key update");
+      const [{ waiting }] = await tx
+        .select({ waiting: count() })
+        .from(shopOrdersTable)
+        .where(and(eq(shopOrdersTable.userId, member.id), eq(shopOrdersTable.status, "pending")));
+      if (Number(waiting) >= MAX_PENDING_ORDERS)
+        throw new HttpError(
+          409,
+          `You already have ${MAX_PENDING_ORDERS} orders waiting for the club's call`,
+          "TOO_MANY_PENDING_ORDERS",
+          { limit: MAX_PENDING_ORDERS },
+        );
       // Locked in id order: two members after the last unit are served one after the other
       const products = await tx
         .select()
@@ -226,6 +252,8 @@ router.post("/shop/orders", requireUser, async (req, res) => {
         res.json(already);
         return;
       }
+      // The key belongs to an order of another account: never theirs, never a 500
+      throw new HttpError(409, "This checkout was already used: try again", "DUPLICATE_REQUEST");
     }
     throw err;
   }
@@ -336,7 +364,8 @@ function parseProduct(body: Body, creating: boolean) {
   if (body?.category !== undefined) out.category = cleanText(body.category, 40) ?? "accessory";
   if (creating || body?.price !== undefined) {
     const price = toMoney(body?.price, 100_000);
-    if (price === null) throw new HttpError(400, "Invalid price", "VALIDATION_ERROR");
+    // An article at 0 would be given away by any member who orders it
+    if (price === null || price <= 0) throw new HttpError(400, "Invalid price", "VALIDATION_ERROR");
     out.price = price;
   }
   if (body?.stock !== undefined) {
@@ -374,16 +403,37 @@ router.post("/admin/shop/products", requireAdmin, async (req, res) => {
   res.status(201).json(row);
 });
 
+/**
+ * `stockWas`: the stock the admin saw when they opened the article. Orders take stock
+ * while the form is open; if it moved, the new figure would undo those orders (and
+ * oversell), so the change is refused and the admin sees the current stock.
+ */
 router.patch("/admin/shop/products/:id", requireAdmin, async (req, res) => {
   const id = requireId(req.params.id);
   const patch = parseProduct(req.body, false);
   if (!Object.keys(patch).length) throw new HttpError(400, "Nothing to update", "VALIDATION_ERROR");
-  const [row] = await db
-    .update(shopProductsTable)
-    .set({ ...patch, updatedAt: new Date() })
-    .where(eq(shopProductsTable.id, id))
-    .returning();
-  if (!row) throw new HttpError(404, "Article not found", "NOT_FOUND");
+  const stockWas = req.body?.stockWas;
+  const row = await db.transaction(async (tx: Tx) => {
+    const [locked] = await tx
+      .select({ stock: shopProductsTable.stock })
+      .from(shopProductsTable)
+      .where(eq(shopProductsTable.id, id))
+      .for("update");
+    if (!locked) throw new HttpError(404, "Article not found", "NOT_FOUND");
+    if (patch.stock !== undefined && stockWas !== undefined && Number(stockWas) !== locked.stock)
+      throw new HttpError(
+        409,
+        `The stock changed while you were editing: ${locked.stock} now`,
+        "STOCK_CHANGED",
+        { stock: locked.stock },
+      );
+    const [updated] = await tx
+      .update(shopProductsTable)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(shopProductsTable.id, id))
+      .returning();
+    return updated;
+  });
   await logActivity(req, "shop_updated", `Shop article "${row.name}" updated`);
   res.json(row);
 });

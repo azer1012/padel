@@ -12,8 +12,12 @@ export function cancelSectionScroll() {
  * page has settled; already in place, aiming again does nothing. One at a time: a new
  * call, `cancelSectionScroll()` or the visitor scrolling by hand stops the previous one.
  */
-export function scrollToSection(id: string, behavior: ScrollBehavior = "smooth") {
+export function scrollToSection(id: string, requested: ScrollBehavior = "smooth") {
   cancelSectionScroll();
+  // Visitors who asked their system for less motion jump straight there
+  const behavior = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    ? "auto"
+    : requested;
   const timers: number[] = [];
   let frame = 0;
   let tries = 0;
@@ -22,6 +26,7 @@ export function scrollToSection(id: string, behavior: ScrollBehavior = "smooth")
     timers.forEach((t) => window.clearTimeout(t));
     window.removeEventListener("wheel", cancel);
     window.removeEventListener("touchmove", cancel);
+    window.removeEventListener("keydown", cancel);
     if (cancelPending === cancel) cancelPending = null;
   };
   const start = () => {
@@ -37,6 +42,8 @@ export function scrollToSection(id: string, behavior: ScrollBehavior = "smooth")
   };
   window.addEventListener("wheel", cancel, { passive: true });
   window.addEventListener("touchmove", cancel, { passive: true });
+  // Scrolling with the keyboard (arrows, Page Down, Space) is the visitor taking over too
+  window.addEventListener("keydown", cancel);
   frame = requestAnimationFrame(start);
   cancelPending = cancel;
   return cancel;

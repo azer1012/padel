@@ -605,7 +605,10 @@ export type ShopProductInput = Partial<
     AdminShopProduct,
     "name" | "description" | "category" | "price" | "stock" | "imageUrl" | "isActive" | "sortOrder"
   >
->;
+> & {
+  /** With `stock`: the stock the admin saw; refused (STOCK_CHANGED) if orders moved it since. */
+  stockWas?: number;
+};
 export type ShopOrderStatus = "pending" | "confirmed" | "shipped" | "delivered" | "cancelled";
 export type ShopDeliveryMethod = "delivery" | "pickup";
 export type ShopOrderItem = {
