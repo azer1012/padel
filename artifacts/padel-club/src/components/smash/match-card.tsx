@@ -88,7 +88,7 @@ export function MatchCard({
         </span>
         <span className="flex flex-col items-end text-end">
           <span className="text-base font-extrabold text-ink">
-            {playersLabel(tx, match.filledSpots, match.totalSpots)}
+            {playersLabel(tx, match.filledSpots, match.totalSpots, rules.minPlayers)}
           </span>
           <span className="text-sm font-semibold text-[#0F6B3C]">
             {openSpotsLabel(tx, match.openSpots)}

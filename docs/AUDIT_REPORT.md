@@ -25,7 +25,7 @@ No P0 / P1 found. Fixed:
 | The booking grid took up to a second to finish appearing                                                                           | Under half a second                                                                            |
 
 Tests this pass (local Postgres 18, real API, Chromium): typecheck 0 errors, lint
-clean, **100 / 100** API tests, **11 / 11** database blocks, **145 / 145** browser
+clean, **101 / 101** API tests, **11 / 11** database blocks, **145 / 145** browser
 steps, production build OK,
 `pnpm audit --prod` clean.
 
@@ -39,9 +39,17 @@ Decided by the owner the same day, done and verified:
   guarded migration `20261006000000` (rollback in `supabase/rollbacks`), applied to
   the hosted project. Repository and hosted database now hold the same 9 migrations.
 
-Still open: the admin activity feed is written in English; cancelling a recurring
-booking does not notify the member; "minimum players" is stored but unused; e-mail
-confirmation, SMTP, Google sign-in and the domain need the club's accounts.
+Also closed the same day:
+
+- The admin activity feed reads in the admin's language (the API still files its
+  entries in English; bookings carry a numeric date).
+- Cancelling a recurring booking tells each member concerned once, with the number
+  of sessions cancelled, and is recorded in the activity feed.
+- "Minimum players" is shown to players on a match still below it ("1 more to
+  play"). It never blocks a booking.
+
+Still open: e-mail confirmation, SMTP, Google sign-in and the domain need the
+club's accounts.
 
 ## Pass 4 (2026-10-02): code review and refactor
 

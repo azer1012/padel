@@ -14,7 +14,15 @@ export type NotificationEvent =
       isPeak?: boolean;
       equipment?: { name: string; quantity: number; price: number }[];
     }
-  | { kind: "booking_cancelled"; terrain: string; date: string; time: string; refunded: number }
+  | {
+      kind: "booking_cancelled";
+      terrain: string;
+      date: string;
+      time: string;
+      refunded: number;
+      /** A recurring booking cancelled by the club: how many sessions, `date` being the first */
+      sessions?: number;
+    }
   | {
       kind: "reservation_reminder";
       terrain: string;
@@ -164,6 +172,16 @@ function copy(e: NotificationEvent, lang: Lang, f: ClubFacts): Copy {
         heading: t(lang, "Réservation annulée", "Booking cancelled", "تم إلغاء الحجز"),
         lines: [
           `${e.terrain} · ${e.date} · ${e.time}`,
+          ...(e.sessions && e.sessions > 1
+            ? [
+                t(
+                  lang,
+                  `Réservation récurrente : ${e.sessions} séances annulées à partir de cette date.`,
+                  `Recurring booking: ${e.sessions} sessions cancelled from this date on.`,
+                  `حجز متكرر: تم إلغاء ${e.sessions} حصص ابتداءً من هذا التاريخ.`,
+                ),
+              ]
+            : []),
           e.refunded > 0
             ? t(
                 lang,

@@ -15,7 +15,9 @@ import { currentUser, requireAdmin } from "../lib/auth";
 import { fullName } from "../lib/members";
 import { assertBookable, toMinutes, type ScheduleContext } from "../lib/slots";
 import { scheduleContext } from "../lib/settings";
-import { addDays, clubInstant, clubParts } from "../lib/club-time";
+import { addDays, clubInstant, clubParts, formatClubDate, formatClubTime } from "../lib/club-time";
+import { notifyLater } from "../lib/notify";
+import { logActivity } from "../lib/activity";
 import { HttpError, cleanText, pgCode, requireId, toId, type Body } from "../lib/http";
 
 const router = Router();
@@ -288,13 +290,16 @@ router.get("/admin/series", requireAdmin, async (_req, res) => {
   );
 });
 
-/** Cancels the remaining (future) sessions. Past sessions stay in history. */
+/**
+ * Cancels the remaining (future) sessions. Past sessions stay in history. Every member
+ * who was in one of them is told once, with how many of their sessions are gone.
+ */
 router.post("/admin/series/:id/cancel", requireAdmin, async (req, res) => {
   const id = requireId(req.params.id);
-  const [series] = await db
-    .select({ id: reservationSeriesTable.id })
-    .from(reservationSeriesTable)
-    .where(eq(reservationSeriesTable.id, id));
+  const series = await db.query.reservationSeriesTable.findFirst({
+    where: eq(reservationSeriesTable.id, id),
+    with: { terrain: true },
+  });
   if (!series) throw new HttpError(404, "Recurring booking not found", "NOT_FOUND");
   const cancelled = await db.transaction(async (tx) => {
     const future = await tx
@@ -307,7 +312,11 @@ router.post("/admin/series/:id/cancel", requireAdmin, async (req, res) => {
           gt(reservationsTable.startTime, new Date()),
         ),
       )
-      .returning({ id: reservationsTable.id });
+      .returning({
+        id: reservationsTable.id,
+        userId: reservationsTable.userId,
+        startTime: reservationsTable.startTime,
+      });
     if (future.length) {
       await tx
         .update(reservationEquipmentTable)
@@ -326,9 +335,60 @@ router.post("/admin/series/:id/cancel", requireAdmin, async (req, res) => {
       .update(reservationSeriesTable)
       .set({ status: "cancelled" })
       .where(eq(reservationSeriesTable.id, id));
-    return future.length;
+    return future;
   });
-  res.json({ cancelled });
+
+  if (cancelled.length) {
+    // Sessions of each member: the one the series is for, and friends invited to a session
+    const players = await db
+      .select({
+        reservationId: reservationPlayersTable.reservationId,
+        userId: reservationPlayersTable.userId,
+      })
+      .from(reservationPlayersTable)
+      .where(
+        inArray(
+          reservationPlayersTable.reservationId,
+          cancelled.map((c) => c.id),
+        ),
+      );
+    const sessionsOf = new Map<number, Set<number>>();
+    const add = (userId: number | null, reservationId: number) => {
+      if (userId == null) return;
+      if (!sessionsOf.has(userId)) sessionsOf.set(userId, new Set());
+      sessionsOf.get(userId)!.add(reservationId);
+    };
+    for (const c of cancelled) add(c.userId, c.id);
+    for (const p of players) add(p.userId, p.reservationId);
+    const startOf = new Map(cancelled.map((c) => [c.id, c.startTime]));
+    const members = sessionsOf.size
+      ? await db
+          .select()
+          .from(usersTable)
+          .where(inArray(usersTable.id, [...sessionsOf.keys()]))
+      : [];
+    for (const u of members) {
+      const starts = [...sessionsOf.get(u.id)!].map((r) => startOf.get(r)!).sort((a, b) => +a - +b);
+      notifyLater(
+        u,
+        {
+          kind: "booking_cancelled",
+          terrain: series.terrain?.name ?? "",
+          date: formatClubDate(starts[0], u.language),
+          time: formatClubTime(starts[0]),
+          refunded: 0,
+          sessions: starts.length,
+        },
+        `series-cancel:${id}`,
+      );
+    }
+    await logActivity(
+      req,
+      "reservation_cancelled",
+      `Recurring booking cancelled: ${series.terrain?.name ?? "court"}, ${cancelled.length} sessions`,
+    );
+  }
+  res.json({ cancelled: cancelled.length });
 });
 
 export default router;

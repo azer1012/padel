@@ -301,7 +301,7 @@ export default function PlayerReservations() {
                               ? tx({ fr: "Terrain complet", en: "Full court", ar: "ملعب كامل" })
                               : tx({ fr: "Place individuelle", en: "Own spot", ar: "مكان فردي" })}
                             {" · "}
-                            {playersLabel(tx, seats, total)}
+                            {playersLabel(tx, seats, total, rules.minPlayers)}
                           </span>
                           {mine && (
                             <PaymentBadge type={mine.paymentType} status={mine.paymentStatus} />

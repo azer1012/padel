@@ -552,6 +552,14 @@ await step("an open match is listed for the club with its free spots", async () 
   await b.page.goto(`${WEB}/open-matches`);
   await b.page.getByText("Niveau 3, bonne humeur").waitFor({ timeout: 15000 });
   await shot(b.page, "acc-08-open-matches");
+  // The club's minimum number of players is shown on a match still below it
+  equal(await b.page.getByText(/pour jouer/).count(), 0, "hint shown with a minimum of 1");
+  equal((await api(ADMIN, "PATCH", "/admin/settings", { minPlayers: 2 })).status, 200, "min 2");
+  await b.page.reload();
+  await b.page.getByText("1/4 joueurs · encore 1 pour jouer").first().waitFor({ timeout: 15000 });
+  equal((await api(ADMIN, "PATCH", "/admin/settings", { minPlayers: 1 })).status, 200, "min 1");
+  await b.page.reload();
+  await b.page.getByText("Niveau 3, bonne humeur").waitFor({ timeout: 15000 });
   const before = await balance(B);
   await b.page
     .getByRole("button", { name: /Rejoindre · 1 token/ })

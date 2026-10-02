@@ -258,6 +258,24 @@ await step("admin dashboard", async () => {
   await a.page.getByRole("heading").first().waitFor({ timeout: 15000 });
   await a.page.waitForTimeout(1500);
   await shot(a.page, "10-admin-dashboard");
+  // The audit trail reads in the admin's language, not in the API's English wording
+  const feed = a.page.locator("section, aside, div").filter({
+    has: a.page.getByRole("heading", { name: "Activité récente" }),
+  });
+  await feed
+    .last()
+    .getByText(/tokens crédités à yasmine@test\.tn/)
+    .first()
+    .waitFor();
+  await feed
+    .last()
+    .getByText(/\(terrain complet/)
+    .first()
+    .waitFor();
+  assert(
+    (await a.page.getByText(/token\(s\) added to|\(full court|\(own spot/).count()) === 0,
+    "English wording in the activity feed",
+  );
 });
 
 await step("admin marks the cash spot as paid from the planning", async () => {

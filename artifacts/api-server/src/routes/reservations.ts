@@ -247,7 +247,7 @@ router.post("/reservations", requireUser, async (req, res) => {
 
       await tx.insert(activityTable).values({
         type: "reservation_created",
-        message: `${terrain.name} · ${formatClubDate(start)} ${formatClubTime(start)} (${bookingMode === "own_spot" ? "own spot" : "full court"}${isAdmin ? `, by ${fullName(booker)}` : ""})`,
+        message: `${terrain.name} · ${formatClubStamp(start)} (${bookingMode === "own_spot" ? "own spot" : "full court"}${isAdmin ? `, by ${fullName(booker)}` : ""})`,
         userId: member?.id ?? null,
         userName: member ? fullName(member) : (guestName ?? "Guest"),
       });
@@ -349,7 +349,7 @@ router.post("/reservations/:id/cancel", requireUser, async (req, res) => {
     await releaseEquipment(tx, id);
     await tx.insert(activityTable).values({
       type: "reservation_cancelled",
-      message: `${check.terrain?.name ?? "Court"} · ${formatClubDate(check.startTime)} ${formatClubTime(check.startTime)} cancelled${isAdmin ? ` by ${fullName(user)}` : ""}`,
+      message: `${check.terrain?.name ?? "Court"} · ${formatClubStamp(check.startTime)} cancelled${isAdmin ? ` by ${fullName(user)}` : ""}`,
       userId: check.userId,
       userName: fullName(user),
     });

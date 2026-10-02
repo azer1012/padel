@@ -153,7 +153,7 @@ export default function Dashboard() {
                 {next.players && next.totalSpots ? (
                   <span className="flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 font-bold">
                     <UsersIcon className="size-4 text-ball" />
-                    {playersLabel(tx, next.players.length, next.totalSpots)}
+                    {playersLabel(tx, next.players.length, next.totalSpots, rules.minPlayers)}
                   </span>
                 ) : null}
               </span>

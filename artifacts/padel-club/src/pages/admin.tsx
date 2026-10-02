@@ -36,7 +36,7 @@ import {
   addClubDays,
   clubMinutes,
 } from "@/lib/club-time";
-import { plural } from "@/lib/labels";
+import { activityLabel, plural } from "@/lib/labels";
 
 export default function AdminDashboard() {
   const rules = useClubRules();
@@ -409,7 +409,9 @@ export default function AdminDashboard() {
                       <Icon className="size-[18px]" weight="duotone" />
                     </span>
                     <span className="flex min-w-0 flex-col">
-                      <span className="text-sm font-semibold leading-snug">{a.message}</span>
+                      <span className="text-sm font-semibold leading-snug">
+                        {activityLabel(tx, a.message)}
+                      </span>
                       <span className="text-xs text-muted-d">
                         {clubDateTime(a.createdAt, lang, "dayMonth")}
                       </span>

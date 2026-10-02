@@ -249,7 +249,9 @@ export default function JoinInvite() {
           ))}
         </div>
         <span className="flex flex-wrap items-center justify-between gap-2 text-sm font-bold">
-          <span>{playersLabel(tx, reservation.filledSpots, reservation.totalSpots)}</span>
+          <span>
+            {playersLabel(tx, reservation.filledSpots, reservation.totalSpots, rules.minPlayers)}
+          </span>
           <span className={full ? "text-destructive" : "text-[#0F6B3C]"}>
             {full
               ? tx({ fr: "Match complet", en: "Match full", ar: "المباراة مكتملة" })

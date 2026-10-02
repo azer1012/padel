@@ -64,15 +64,15 @@ in the form, in the API and by database constraints. Every change is logged in
 the activity feed with the admin and the old → new values. Each section has
 **Valeurs par défaut** to restore the installation defaults.
 
-| Section             | Settings (default)                                                                                                                                                                                                                                                           |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Terrains**        | Courts: name, number, description, indoor/outdoor, photo, order, bookable, maintenance + note, archive/restore, optional price and hours override (Admin → Terrains)                                                                                                         |
-| **Réservations**    | Match duration (90 min; 60/90/120 or 30–240 by 5), min players (1, informational), max players = spots per match (4), book at the latest (30 min before), at the earliest (14 days ahead), cancellation deadline (0 h = until start), after the deadline: forbid / no refund |
-| **Tarifs**          | Currency (TND), price per player (25), full court price (100). Peak / off-peak / weekend / holiday prices: pricing rules in Admin → Tarifs                                                                                                                                   |
-| **Tokens**          | Tokens per spot (1), per full court (4), price of one token (25), minimum purchase (1), packs (10 = 250, 20 = 480, 50 = 1150)                                                                                                                                                |
-| **Horaires**        | Weekly hours per day (08:00–23:00 every day), exceptions: holiday / closure / special hours, whole club or one court                                                                                                                                                         |
-| **Fonctionnalités** | Open matches (on), invitations: link, QR, member invitation (on), pay at the club (on)                                                                                                                                                                                       |
-| **Notifications**   | Confirmations, cancellations, invitations, tokens credited, after the match, reminder (on, 120 min before)                                                                                                                                                                   |
+| Section             | Settings (default)                                                                                                                                                                                                                                                                                  |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Terrains**        | Courts: name, number, description, indoor/outdoor, photo, order, bookable, maintenance + note, archive/restore, optional price and hours override (Admin → Terrains)                                                                                                                                |
+| **Réservations**    | Match duration (90 min; 60/90/120 or 30–240 by 5), min players (1; shown to players on a match below it), max players = spots per match (4), book at the latest (30 min before), at the earliest (14 days ahead), cancellation deadline (0 h = until start), after the deadline: forbid / no refund |
+| **Tarifs**          | Currency (TND), price per player (25), full court price (100). Peak / off-peak / weekend / holiday prices: pricing rules in Admin → Tarifs                                                                                                                                                          |
+| **Tokens**          | Tokens per spot (1), per full court (4), price of one token (25), minimum purchase (1), packs (10 = 250, 20 = 480, 50 = 1150)                                                                                                                                                                       |
+| **Horaires**        | Weekly hours per day (08:00–23:00 every day), exceptions: holiday / closure / special hours, whole club or one court                                                                                                                                                                                |
+| **Fonctionnalités** | Open matches (on), invitations: link, QR, member invitation (on), pay at the club (on)                                                                                                                                                                                                              |
+| **Notifications**   | Confirmations, cancellations, invitations, tokens credited, after the match, reminder (on, 120 min before)                                                                                                                                                                                          |
 
 ### How a change applies
 
@@ -102,7 +102,8 @@ the activity feed with the admin and the old → new values. Each section has
 
 - **Token expiry**: tokens never expire. The API refuses a credit that carries an
   expiry date, and no screen announces one (the `expires_at` column is unused).
-- **Minimum players** is informational: a player can always book only their spot.
+- **Minimum players** never blocks a booking: a player can always book only their
+  spot. A match below the minimum shows "1 more to play" to its players.
 - **Automatic refund of cash already paid** for a cancelled match: staff handle it
   at the desk (token payments are refunded automatically).
 

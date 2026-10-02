@@ -665,9 +665,9 @@ function BookingSection({
           id="set-min-players"
           label={tx({ fr: "Joueurs minimum", en: "Minimum players", ar: "الحد الأدنى للاعبين" })}
           hint={tx({
-            fr: "Indicatif, affiché aux joueurs. Une réservation « ma place » reste possible à 1.",
-            en: "For information, shown to players. Booking a single spot stays possible.",
-            ar: "للعلم فقط، يُعرض للاعبين. يبقى حجز مكان واحد ممكنًا.",
+            fr: "Affiché aux joueurs sur un match incomplet (« encore 1 pour jouer »). Réserver seulement sa place reste possible.",
+            en: "Shown to players on a match below it (“1 more to play”). Booking a single spot stays possible.",
+            ar: "يُعرض للاعبين في مباراة غير مكتملة («ينقص 1 للعب»). يبقى حجز مكان واحد ممكنًا.",
           })}
           value={String(d.minPlayers ?? "")}
           onChange={(v) => s.set("minPlayers", v)}

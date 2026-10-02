@@ -166,6 +166,47 @@ describe("what the browser sends is never the authority", () => {
   });
 });
 
+describe("a recurring booking cancelled by the club", () => {
+  test("its member is told once, with the number of sessions; a second cancel tells nobody", async () => {
+    const created = await call("POST", "/admin/series", {
+      token: admin.token,
+      body: { terrainId: court, firstStart: slot("20:00", 5), occurrences: 3, userId: bob.id },
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.created.length, 3);
+    const told = () =>
+      q(
+        "select title, message from notifications where user_id = $1 and type = 'booking_cancelled' and message like '%3 séances%'",
+        [bob.id],
+      );
+    assert.equal((await told()).length, 0);
+
+    const cancel = await call("POST", `/admin/series/${created.body.series.id}/cancel`, {
+      token: admin.token,
+    });
+    assert.equal(cancel.status, 200);
+    assert.equal(cancel.body.cancelled, 3);
+    // Notifications are sent after the answer
+    for (let i = 0; i < 40 && (await told()).length === 0; i++)
+      await new Promise((r) => setTimeout(r, 50));
+    const notices = await told();
+    assert.equal(notices.length, 1, "one notice for the whole series");
+    assert.match(notices[0].message, /Court A/);
+
+    const again = await call("POST", `/admin/series/${created.body.series.id}/cancel`, {
+      token: admin.token,
+    });
+    assert.equal(again.body.cancelled, 0);
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal((await told()).length, 1);
+    const trail = await q(
+      "select message from activity where type = 'reservation_cancelled' and message like 'Recurring booking cancelled:%'",
+    );
+    assert.equal(trail.length, 1);
+    assert.match(trail[0].message, /Court A, 3 sessions \(by owner@club\.tn\)$/);
+  });
+});
+
 describe("tokens never expire", () => {
   test("a credit with an expiry date is refused instead of promising what nothing enforces", async () => {
     const before = await balance(bob.id);

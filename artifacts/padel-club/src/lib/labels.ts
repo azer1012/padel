@@ -22,13 +22,28 @@ export function openSpotsLabel(tx: ReturnType<typeof useTx>, n: number) {
   });
 }
 
-/** "3/4 joueurs": how full a match is. */
-export function playersLabel(tx: ReturnType<typeof useTx>, filled: number, total: number) {
-  return tx({
+/**
+ * "3/4 joueurs": how full a match is. With the club's minimum number of players
+ * (Réglages) and a match still below it: "1/4 joueurs · encore 1 pour jouer".
+ */
+export function playersLabel(
+  tx: ReturnType<typeof useTx>,
+  filled: number,
+  total: number,
+  minPlayers = 1,
+) {
+  const count = tx({
     fr: `${filled}/${total} joueurs`,
     en: `${filled}/${total} players`,
     ar: `${filled}/${total} لاعبين`,
   });
+  const missing = Math.min(minPlayers, total) - filled;
+  if (missing <= 0) return count;
+  return `${count} · ${tx({
+    fr: `encore ${missing} pour jouer`,
+    en: `${missing} more to play`,
+    ar: `ينقص ${missing} للعب`,
+  })}`;
 }
 
 /**
@@ -103,4 +118,188 @@ export function ledgerLabel(tx: ReturnType<typeof useTx>, description: string) {
     default:
       return description;
   }
+}
+
+/**
+ * An entry of the staff audit trail in the reader's language. The API files its
+ * entries under fixed English wordings; names, reasons and field lists are kept as
+ * written. An entry this does not recognise is shown as stored.
+ */
+export function activityLabel(tx: ReturnType<typeof useTx>, message: string) {
+  const by = (who?: string) =>
+    who ? ` (${tx({ fr: "par", en: "by", ar: "بواسطة" })} ${who})` : "";
+  let m: RegExpMatchArray | null;
+
+  // "<what> (by admin@club)": desk actions recorded by lib/activity
+  const staff = message.match(/^(.*) \(by ([^()]+)\)$/s);
+  const body = staff ? staff[1] : message;
+  const who = staff?.[2];
+
+  if ((m = body.match(/^Recurring booking cancelled: (.+), (\d+) sessions$/)))
+    return (
+      tx({
+        fr: `Réservation récurrente annulée : ${m[1]}, ${m[2]} séances`,
+        en: `Recurring booking cancelled: ${m[1]}, ${m[2]} sessions`,
+        ar: `إلغاء حجز متكرر: ${m[1]}، ${m[2]} حصص`,
+      }) + by(who)
+    );
+  if ((m = body.match(/^Recurring booking: (.+), (\d+) sessions( \(.+\))?$/)))
+    return (
+      tx({
+        fr: `Réservation récurrente : ${m[1]}, ${m[2]} séances${m[3] ?? ""}`,
+        en: `Recurring booking: ${m[1]}, ${m[2]} sessions${m[3] ?? ""}`,
+        ar: `حجز متكرر: ${m[1]}، ${m[2]} حصص${m[3] ?? ""}`,
+      }) + by(who)
+    );
+  if ((m = body.match(/^(\d+) token\(s\) (added to|removed from) (.+?): (.*)$/s))) {
+    const added = m[2] === "added to";
+    return (
+      tx({
+        fr: `${tokensLabel(Number(m[1]))} ${added ? "crédités à" : "retirés à"} ${m[3]} : ${ledgerLabel(tx, m[4])}`,
+        en: `${tokensLabel(Number(m[1]))} ${added ? "added to" : "removed from"} ${m[3]}: ${ledgerLabel(tx, m[4])}`,
+        ar: `${tokensLabel(Number(m[1]))} ${added ? "أضيفت إلى" : "خُصمت من"} ${m[3]}: ${ledgerLabel(tx, m[4])}`,
+      }) + by(who)
+    );
+  }
+  if ((m = body.match(/^Cash payment marked (received|not received) · booking #(\d+)$/)))
+    return (
+      (m[1] === "received"
+        ? tx({
+            fr: `Paiement en espèces encaissé · réservation n° ${m[2]}`,
+            en: `Cash payment received · booking #${m[2]}`,
+            ar: `تم استلام الدفع نقدًا · الحجز رقم ${m[2]}`,
+          })
+        : tx({
+            fr: `Paiement en espèces remis en attente · réservation n° ${m[2]}`,
+            en: `Cash payment marked not received · booking #${m[2]}`,
+            ar: `الدفع نقدًا غير مستلم · الحجز رقم ${m[2]}`,
+          })) + by(who)
+    );
+  if ((m = body.match(/^Pricing rule (".*") (created|updated|deleted)$/)))
+    return (
+      tx({
+        fr: `Règle tarifaire ${m[1]} ${{ created: "créée", updated: "modifiée", deleted: "supprimée" }[m[2]]}`,
+        en: body,
+        ar: `قاعدة التسعير ${m[1]}: ${{ created: "إنشاء", updated: "تعديل", deleted: "حذف" }[m[2]]}`,
+      }) + by(who)
+    );
+  if ((m = body.match(/^Court (".*") (created|archived|deleted|restored from the archive)$/)))
+    return (
+      tx({
+        fr: `Terrain ${m[1]} ${
+          {
+            created: "créé",
+            archived: "archivé",
+            deleted: "supprimé",
+            "restored from the archive": "restauré",
+          }[m[2]]
+        }`,
+        en: body,
+        ar: `الملعب ${m[1]}: ${
+          {
+            created: "إنشاء",
+            archived: "أرشفة",
+            deleted: "حذف",
+            "restored from the archive": "استعادة",
+          }[m[2]]
+        }`,
+      }) + by(who)
+    );
+  if ((m = body.match(/^Court (".*") updated · (.*)$/)))
+    return (
+      tx({
+        fr: `Terrain ${m[1]} modifié · ${m[2]}`,
+        en: body,
+        ar: `تعديل الملعب ${m[1]} · ${m[2]}`,
+      }) + by(who)
+    );
+  if ((m = body.match(/^Settings changed · (.*)$/)))
+    return (
+      tx({
+        fr: `Réglages modifiés · ${m[1]}`,
+        en: body,
+        ar: `تعديل الإعدادات · ${m[1]}`,
+      }) + by(who)
+    );
+  if ((m = body.match(/^Settings section "(.*)" reset to default$/)))
+    return (
+      tx({
+        fr: `Réglages « ${m[1]} » remis aux valeurs par défaut`,
+        en: body,
+        ar: `إعادة إعدادات «${m[1]}» إلى القيم الافتراضية`,
+      }) + by(who)
+    );
+  if (body === "Opening hours reset to default")
+    return (
+      tx({
+        fr: "Horaires d'ouverture remis aux valeurs par défaut",
+        en: body,
+        ar: "إعادة ساعات العمل إلى القيم الافتراضية",
+      }) + by(who)
+    );
+  if (body === "Opening hours updated")
+    return tx({ fr: "Horaires d'ouverture modifiés", en: body, ar: "تعديل ساعات العمل" }) + by(who);
+  if ((m = body.match(/^Closure on (\S+)( \(court #\d+\))?$/)))
+    return (
+      tx({
+        fr: `Fermeture le ${m[1]}${(m[2] ?? "").replace("court", "terrain")}`,
+        en: body,
+        ar: `إغلاق يوم ${m[1]}${(m[2] ?? "").replace("court", "الملعب")}`,
+      }) + by(who)
+    );
+  if ((m = body.match(/^Special hours (\S+) on (\S+)( \(court #\d+\))?$/)))
+    return (
+      tx({
+        fr: `Horaires spéciaux ${m[1]} le ${m[2]}${(m[3] ?? "").replace("court", "terrain")}`,
+        en: body,
+        ar: `ساعات خاصة ${m[1]} يوم ${m[2]}${(m[3] ?? "").replace("court", "الملعب")}`,
+      }) + by(who)
+    );
+  if ((m = body.match(/^Schedule exception of (\S+) removed$/)))
+    return (
+      tx({
+        fr: `Exception du ${m[1]} supprimée`,
+        en: body,
+        ar: `حذف استثناء يوم ${m[1]}`,
+      }) + by(who)
+    );
+  if ((m = body.match(/^Token pack (".*") (created|updated|deleted)( \(.*\))?$/)))
+    return (
+      tx({
+        fr: `Pack de tokens ${m[1]} ${{ created: "créé", updated: "modifié", deleted: "supprimé" }[m[2]]}${m[3] ?? ""}`,
+        en: body,
+        ar: `باقة الرصيد ${m[1]}: ${{ created: "إنشاء", updated: "تعديل", deleted: "حذف" }[m[2]]}${m[3] ?? ""}`,
+      }) + by(who)
+    );
+  if ((m = body.match(/^(\S+) is now (admin|player)$/)))
+    return (
+      tx({
+        fr: `${m[1]} est maintenant ${m[2] === "admin" ? "administrateur" : "joueur"}`,
+        en: body,
+        ar: `${m[1]} أصبح ${m[2] === "admin" ? "مسؤولًا" : "لاعبًا"}`,
+      }) + by(who)
+    );
+
+  // Bookings: written without the "(by …)" suffix of desk actions
+  if ((m = message.match(/^(.+) blocked: (.*)$/s)))
+    return tx({
+      fr: `${m[1]} bloqué : ${m[2]}`,
+      en: message,
+      ar: `${m[1]} محجوب: ${m[2]}`,
+    });
+  if ((m = message.match(/^(.+) \((own spot|full court)(?:, by (.+))?\)$/s))) {
+    const mode =
+      m[2] === "own spot"
+        ? tx({ fr: "une place", en: "own spot", ar: "مكان واحد" })
+        : tx({ fr: "terrain complet", en: "full court", ar: "ملعب كامل" });
+    const desk = m[3] ? `, ${tx({ fr: "par", en: "by", ar: "بواسطة" })} ${m[3]}` : "";
+    return `${m[1]} (${mode}${desk})`;
+  }
+  if ((m = message.match(/^(.+) cancelled(?: by (.+))?$/s)))
+    return tx({
+      fr: `${m[1]} · annulée${m[2] ? ` par ${m[2]}` : ""}`,
+      en: message,
+      ar: `${m[1]} · أُلغي${m[2] ? ` بواسطة ${m[2]}` : ""}`,
+    });
+  return message;
 }
