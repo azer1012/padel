@@ -22,6 +22,7 @@ const LOADING: ClubRules = {
   openMatchesEnabled: true,
   invitationsEnabled: true,
   cashPaymentEnabled: true,
+  shopEnabled: true,
   openingHours: [],
   tokenPackages: [],
 };

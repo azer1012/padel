@@ -1452,6 +1452,7 @@ function FeaturesSection({ settings }: { settings: AdminSettings }) {
     "openMatchesEnabled",
     "invitationsEnabled",
     "cashPaymentEnabled",
+    "shopEnabled",
   ]);
   const d = s.draft;
   return (
@@ -1508,6 +1509,17 @@ function FeaturesSection({ settings }: { settings: AdminSettings }) {
         })}
         checked={!!d.cashPaymentEnabled}
         onChange={(v) => s.set("cashPaymentEnabled", v)}
+      />
+      <ToggleRow
+        testId="toggle-shop"
+        label={tx({ fr: "Boutique", en: "Shop", ar: "المتجر" })}
+        hint={tx({
+          fr: "Les membres commandent des articles sur le site ; vous les appelez pour confirmer, puis vous livrez ou remettez la commande au club.",
+          en: "Members order articles on the site; you call them to confirm, then deliver the order or hand it over at the club.",
+          ar: "يطلب الأعضاء المنتجات من الموقع؛ تتصل بهم للتأكيد ثم توصل الطلب أو تسلّمه في النادي.",
+        })}
+        checked={!!d.shopEnabled}
+        onChange={(v) => s.set("shopEnabled", v)}
       />
     </Section>
   );

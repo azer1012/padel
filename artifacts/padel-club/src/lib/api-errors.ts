@@ -104,6 +104,31 @@ const BY_CODE: Record<string, Copy> = {
     en: "There is not enough of this equipment left at that time.",
     ar: "هذه المعدات غير متوفرة بالكمية المطلوبة في هذا الوقت.",
   },
+  OUT_OF_STOCK: {
+    fr: "Il n'en reste plus assez en stock. Ajustez la quantité dans votre panier.",
+    en: "Not enough left in stock. Adjust the quantity in your cart.",
+    ar: "الكمية المتوفرة غير كافية. عدّل الكمية في سلتك.",
+  },
+  PRODUCT_GONE: {
+    fr: "Un article de votre panier n'est plus en vente. Retirez-le pour continuer.",
+    en: "An article in your cart is no longer on sale. Remove it to continue.",
+    ar: "أحد منتجات سلتك لم يعد معروضًا. احذفه للمتابعة.",
+  },
+  PHONE_REQUIRED: {
+    fr: "Indiquez un numéro de téléphone valide : le club vous appelle pour confirmer.",
+    en: "Enter a valid phone number: the club calls you to confirm.",
+    ar: "أدخل رقم هاتف صحيحًا: سيتصل بك النادي للتأكيد.",
+  },
+  ADDRESS_REQUIRED: {
+    fr: "Indiquez l'adresse de livraison.",
+    en: "Enter the delivery address.",
+    ar: "أدخل عنوان التوصيل.",
+  },
+  ORDER_CONFIRMED: {
+    fr: "Le club a déjà confirmé cette commande. Appelez le club pour la modifier.",
+    en: "The club has already confirmed this order. Call the club to change it.",
+    ar: "أكّد النادي هذا الطلب. اتصل بالنادي لتعديله.",
+  },
   CASH_DISABLED: {
     fr: "Le paiement au club n'est pas proposé : réglez avec vos tokens.",
     en: "Paying at the club is not available: use your tokens.",

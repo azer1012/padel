@@ -11,6 +11,8 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "match_finished",
   "welcome",
   "invitation",
+  "order_placed",
+  "order_update",
 ]);
 
 export const notificationsTable = pgTable("notifications", {

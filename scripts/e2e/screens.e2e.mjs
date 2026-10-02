@@ -16,6 +16,7 @@ import {
   finish,
   launch,
   overflow,
+  pickDay,
   section,
   shot,
   slot,
@@ -313,6 +314,8 @@ if (axe)
         if (role === "player") {
           await page.goto(`${WEB}/terrains`);
           await settled(page);
+          // Tomorrow: late in the evening today has no free slot left to open
+          await pickDay(page, 1);
           await page
             .getByRole("button", { name: /^Court 2 \d\d:\d\d: Libre/ })
             .first()

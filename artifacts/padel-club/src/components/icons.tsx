@@ -81,16 +81,20 @@ import {
   RepeatIcon as RepeatBase,
   ShareNetworkIcon as ShareNetworkBase,
   ShieldCheckIcon as ShieldCheckBase,
+  ShoppingBagIcon as ShoppingBagBase,
+  ShoppingCartSimpleIcon as ShoppingCartSimpleBase,
   ShieldSlashIcon as ShieldSlashBase,
   ShieldWarningIcon as ShieldWarningBase,
   SignOutIcon as SignOutBase,
   SquaresFourIcon as SquaresFourBase,
+  StorefrontIcon as StorefrontBase,
   SunIcon as SunBase,
   TagIcon as TagBase,
   TennisBallIcon as TennisBallBase,
   TimerIcon as TimerBase,
   ToggleRightIcon as ToggleRightBase,
   TrashIcon as TrashBase,
+  TruckIcon as TruckBase,
   TrophyIcon as TrophyBase,
   UserCircleIcon as UserCircleBase,
   UserIcon as UserBase,
@@ -202,6 +206,10 @@ export const QrCodeIcon = icon(QrCodeBase);
 export const RepeatIcon = icon(RepeatBase);
 export const ShareNetworkIcon = icon(ShareNetworkBase);
 export const ShieldCheckIcon = icon(ShieldCheckBase);
+export const ShoppingBagIcon = icon(ShoppingBagBase);
+export const ShoppingCartIcon = icon(ShoppingCartSimpleBase);
+export const StorefrontIcon = icon(StorefrontBase);
+export const TruckIcon = icon(TruckBase);
 export const ShieldSlashIcon = icon(ShieldSlashBase);
 export const ShieldWarningIcon = icon(ShieldWarningBase);
 export const SignOutIcon = icon(SignOutBase);

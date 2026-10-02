@@ -371,6 +371,7 @@ export type ClubRules = {
   openMatchesEnabled: boolean;
   invitationsEnabled: boolean;
   cashPaymentEnabled: boolean;
+  shopEnabled: boolean;
   openingHours: OpeningHoursDay[];
   tokenPackages: TokenPackage[];
 };
@@ -575,3 +576,164 @@ export function apiErrorCode(e: unknown): string | undefined {
     ? ((data as { code?: string }).code ?? undefined)
     : undefined;
 }
+
+// ─── Boutique (articles sold by the club, orders confirmed by phone) ─────────
+
+export type ShopProduct = {
+  id: number;
+  name: string;
+  description: string | null;
+  category: string;
+  price: number;
+  /** Units left to sell */
+  stock: number;
+  imageUrl: string | null;
+};
+export type AdminShopProduct = ShopProduct & {
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ShopProductInput = Partial<
+  Pick<
+    AdminShopProduct,
+    "name" | "description" | "category" | "price" | "stock" | "imageUrl" | "isActive" | "sortOrder"
+  >
+>;
+export type ShopOrderStatus = "pending" | "confirmed" | "shipped" | "delivered" | "cancelled";
+export type ShopDeliveryMethod = "delivery" | "pickup";
+export type ShopOrderItem = {
+  id: number;
+  productId: number;
+  productName: string;
+  unitPrice: number;
+  quantity: number;
+};
+export type ShopOrder = {
+  id: number;
+  userId: number;
+  status: ShopOrderStatus;
+  total: number;
+  currency: string;
+  deliveryMethod: ShopDeliveryMethod;
+  contactName: string;
+  contactPhone: string;
+  address: string | null;
+  city: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items: ShopOrderItem[];
+};
+export type AdminShopOrder = ShopOrder & {
+  adminNotes: string | null;
+  handledBy: number | null;
+  member: { id: number; name: string; email: string } | null;
+};
+export type AdminShopOrders = {
+  data: AdminShopOrder[];
+  total: number;
+  /** Orders still waiting for the club's phone call */
+  pending: number;
+  page: number;
+  limit: number;
+};
+export type ShopCartLine = { productId: number; quantity: number };
+export type ShopOrderInput = {
+  items: ShopCartLine[];
+  deliveryMethod: ShopDeliveryMethod;
+  contactName?: string;
+  contactPhone?: string;
+  address?: string;
+  city?: string;
+  notes?: string;
+  /** One per checkout: a double tap or a retried request creates one order */
+  idempotencyKey?: string;
+};
+
+export const shopKeys = {
+  products: ["/api/shop/products"] as const,
+  myOrders: ["/api/shop/orders"] as const,
+  adminProducts: ["/api/admin/shop/products"] as const,
+  /** Every admin order list, whatever the filter */
+  adminOrdersAll: ["/api/admin/shop/orders"] as const,
+  adminOrders: (status?: ShopOrderStatus) => ["/api/admin/shop/orders", status ?? "all"] as const,
+};
+
+export const useShopProducts = (o?: Opts<ShopProduct[]>) =>
+  useQuery({
+    queryKey: shopKeys.products,
+    queryFn: () => customFetch<ShopProduct[]>("/api/shop/products"),
+    staleTime: 30_000,
+    ...o,
+  });
+export const useMyShopOrders = (o?: Opts<ShopOrder[]>) =>
+  useQuery({
+    queryKey: shopKeys.myOrders,
+    queryFn: () => customFetch<ShopOrder[]>("/api/shop/orders"),
+    ...o,
+  });
+export const usePlaceShopOrder = () =>
+  useMutation({
+    mutationFn: (data: ShopOrderInput) =>
+      customFetch<ShopOrder>("/api/shop/orders", { method: "POST", ...json(data) }),
+  });
+export const useCancelShopOrder = () =>
+  useMutation({
+    mutationFn: (id: number) =>
+      customFetch<ShopOrder>(`/api/shop/orders/${id}/cancel`, { method: "POST" }),
+  });
+
+export const useAdminShopProducts = (o?: Opts<AdminShopProduct[]>) =>
+  useQuery({
+    queryKey: shopKeys.adminProducts,
+    queryFn: () => customFetch<AdminShopProduct[]>("/api/admin/shop/products"),
+    ...o,
+  });
+export const useCreateShopProduct = () =>
+  useMutation({
+    mutationFn: (data: ShopProductInput) =>
+      customFetch<AdminShopProduct>("/api/admin/shop/products", { method: "POST", ...json(data) }),
+  });
+export const useUpdateShopProduct = () =>
+  useMutation({
+    mutationFn: ({ id, data }: { id: number; data: ShopProductInput }) =>
+      customFetch<AdminShopProduct>(`/api/admin/shop/products/${id}`, {
+        method: "PATCH",
+        ...json(data),
+      }),
+  });
+export const useDeleteShopProduct = () =>
+  useMutation({
+    mutationFn: (id: number) =>
+      customFetch<{ archived?: boolean } | void>(`/api/admin/shop/products/${id}`, {
+        method: "DELETE",
+      }),
+  });
+export const useAdminShopOrders = (status?: ShopOrderStatus, o?: Opts<AdminShopOrders>) =>
+  useQuery({
+    queryKey: shopKeys.adminOrders(status),
+    queryFn: () =>
+      customFetch<AdminShopOrders>(
+        `/api/admin/shop/orders?limit=100${status ? `&status=${status}` : ""}`,
+      ),
+    // A new order must reach the desk without a reload
+    refetchInterval: 60_000,
+    ...o,
+  });
+export const useUpdateShopOrder = () =>
+  useMutation({
+    mutationFn: ({
+      id,
+      ...data
+    }: {
+      id: number;
+      status?: ShopOrderStatus;
+      adminNotes?: string | null;
+    }) =>
+      customFetch<AdminShopOrder>(`/api/admin/shop/orders/${id}`, {
+        method: "PATCH",
+        ...json(data),
+      }),
+  });

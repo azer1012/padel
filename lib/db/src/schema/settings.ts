@@ -54,6 +54,7 @@ export const clubSettingsTable = pgTable(
     openMatchesEnabled: boolean("open_matches_enabled").notNull().default(true),
     invitationsEnabled: boolean("invitations_enabled").notNull().default(true),
     cashPaymentEnabled: boolean("cash_payment_enabled").notNull().default(true),
+    shopEnabled: boolean("shop_enabled").notNull().default(true),
 
     bookingConfirmationNotificationsEnabled: boolean("booking_confirmation_notifications_enabled")
       .notNull()

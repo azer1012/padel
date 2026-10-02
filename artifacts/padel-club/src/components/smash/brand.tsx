@@ -45,11 +45,14 @@ export function Logo({
   href = "/",
   tone = "light",
   compact = false,
+  wrap = false,
   onClick,
 }: {
   href?: string;
   tone?: "light" | "dark";
   compact?: boolean;
+  /** Let a long club name take two lines (narrow sidebar) instead of staying on one. */
+  wrap?: boolean;
   onClick?: () => void;
 }) {
   return (
@@ -57,13 +60,21 @@ export function Logo({
       href={href}
       onClick={onClick}
       aria-label={`${CLUB.name}`}
-      className={cn("flex items-center gap-3", tone === "light" ? "text-white" : "text-ink")}
+      className={cn(
+        "flex min-w-0 items-center gap-3",
+        tone === "light" ? "text-white" : "text-ink",
+      )}
     >
       <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-ball text-night lg:size-10">
         <BallMark />
       </span>
       {!compact && (
-        <span className="disp whitespace-nowrap text-[20px] tracking-[-0.02em] lg:text-[22px]">
+        <span
+          className={cn(
+            "disp text-[20px] tracking-[-0.02em] lg:text-[22px]",
+            wrap ? "leading-[1.05]" : "whitespace-nowrap",
+          )}
+        >
           {CLUB.name}
         </span>
       )}

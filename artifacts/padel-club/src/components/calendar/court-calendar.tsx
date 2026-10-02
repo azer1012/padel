@@ -318,9 +318,18 @@ export default function CourtCalendar({
       ) : (
         <>
           {/* Courts as columns, times as rows. Both headers stay visible while scrolling. */}
+          {/* Reachable with the keyboard even on a day with no slot left to press
+              (late in the evening every cell is past): arrow keys scroll the grid */}
           <div
             ref={scroller}
-            className="relative -mx-4 max-h-[min(72vh,760px)] overflow-auto overscroll-x-contain bg-card shadow-sm sm:mx-0 sm:rounded-[28px]"
+            role="group"
+            tabIndex={0}
+            aria-label={tx({
+              fr: "Planning des terrains",
+              en: "Court schedule",
+              ar: "جدول الملاعب",
+            })}
+            className="relative -mx-4 max-h-[min(72vh,760px)] overflow-auto overscroll-x-contain bg-card shadow-sm focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-court/25 sm:mx-0 sm:rounded-[28px]"
           >
             <table
               className="w-full table-fixed border-separate border-spacing-1.5 p-1.5"

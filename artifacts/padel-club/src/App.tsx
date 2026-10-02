@@ -28,6 +28,7 @@ const AdminTournaments = lazy(() => import("@/pages/admin-tournaments"));
 const AdminPricing = lazy(() => import("@/pages/admin-pricing"));
 const AdminEquipment = lazy(() => import("@/pages/admin-equipment"));
 const AdminSettings = lazy(() => import("@/pages/admin-settings"));
+const AdminShop = lazy(() => import("@/pages/admin-shop"));
 import Terrains from "@/pages/terrains";
 import Tournaments from "@/pages/tournaments";
 import News from "@/pages/news";
@@ -37,6 +38,7 @@ import Wallet from "@/pages/wallet";
 import Profile from "@/pages/profile";
 import JoinInvite from "@/pages/join-invite";
 import OpenMatches from "@/pages/open-matches";
+import Boutique from "@/pages/boutique";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 20_000, retry: 1 } },
@@ -236,6 +238,9 @@ function AppRoutes() {
             <Route path="/admin/settings">
               <AdminRoute component={AdminSettings} />
             </Route>
+            <Route path="/admin/shop">
+              <AdminRoute component={AdminShop} />
+            </Route>
 
             {/* Public Routes */}
             <Route path="/terrains" component={Terrains} />
@@ -243,6 +248,7 @@ function AppRoutes() {
             <Route path="/news" component={News} />
             <Route path="/contact" component={Contact} />
             <Route path="/open-matches" component={OpenMatches} />
+            <Route path="/boutique" component={Boutique} />
             <Route path="/join/:token" component={JoinInvite} />
             <Route component={NotFound} />
           </Switch>

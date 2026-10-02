@@ -42,6 +42,24 @@ export type NotificationEvent =
       token: string;
     }
   | {
+      /** To the admins: an order arrived from the boutique, the member is waiting for a call */
+      kind: "order_placed";
+      orderId: number;
+      customer: string;
+      phone: string;
+      total: number;
+      currency: string;
+      units: number;
+    }
+  | {
+      /** To the member: where their boutique order stands */
+      kind: "order_update";
+      orderId: number;
+      status: "pending" | "confirmed" | "shipped" | "delivered" | "cancelled";
+      total: number;
+      currency: string;
+    }
+  | {
       kind: "tokens_added";
       amount: number;
       balance: number;
@@ -330,6 +348,101 @@ function copy(e: NotificationEvent, lang: Lang, f: ClubFacts): Copy {
           body: `${e.from} · ${e.terrain} · ${e.date} · ${e.time}`,
         },
       };
+    case "order_placed":
+      return {
+        subject: t(
+          lang,
+          `Nouvelle commande n° ${e.orderId} : ${e.customer}`,
+          `New order #${e.orderId}: ${e.customer}`,
+          `طلب جديد رقم ${e.orderId}: ${e.customer}`,
+        ),
+        heading: t(lang, "Nouvelle commande", "New order", "طلب جديد"),
+        lines: [
+          t(
+            lang,
+            `${e.customer} · ${e.units} article(s) · ${e.total} ${e.currency}`,
+            `${e.customer} · ${e.units} article(s) · ${e.total} ${e.currency}`,
+            `${e.customer} · ${e.units} منتج · ${e.total} ${e.currency}`,
+          ),
+          t(
+            lang,
+            `Appelez le ${e.phone} pour confirmer la commande.`,
+            `Call ${e.phone} to confirm the order.`,
+            `اتصل بالرقم ${e.phone} لتأكيد الطلب.`,
+          ),
+        ],
+        cta: {
+          label: t(lang, "Voir la commande", "View the order", "عرض الطلب"),
+          path: "/admin/shop",
+        },
+        push: {
+          title: t(
+            lang,
+            `Nouvelle commande n° ${e.orderId}`,
+            `New order #${e.orderId}`,
+            `طلب جديد رقم ${e.orderId}`,
+          ),
+          body: `${e.customer} · ${e.total} ${e.currency} · ${e.phone}`,
+        },
+      };
+    case "order_update": {
+      const what = {
+        pending: t(
+          lang,
+          "Nous avons bien reçu votre commande. Le club vous appelle pour la confirmer.",
+          "We received your order. The club will call you to confirm it.",
+          "استلمنا طلبك. سيتصل بك النادي لتأكيده.",
+        ),
+        confirmed: t(
+          lang,
+          "Votre commande est confirmée. Nous la préparons.",
+          "Your order is confirmed. We are preparing it.",
+          "تم تأكيد طلبك. نقوم بتحضيره.",
+        ),
+        shipped: t(
+          lang,
+          "Votre commande est en route.",
+          "Your order is on its way.",
+          "طلبك في الطريق.",
+        ),
+        delivered: t(
+          lang,
+          "Votre commande a été remise. Bon jeu !",
+          "Your order has been delivered. Enjoy your game!",
+          "تم تسليم طلبك. لعبًا ممتعًا!",
+        ),
+        cancelled: t(
+          lang,
+          "Votre commande a été annulée.",
+          "Your order has been cancelled.",
+          "تم إلغاء طلبك.",
+        ),
+      }[e.status];
+      const title = t(
+        lang,
+        `Commande n° ${e.orderId}`,
+        `Order #${e.orderId}`,
+        `الطلب رقم ${e.orderId}`,
+      );
+      return {
+        subject: `${title} · ${what}`,
+        heading: title,
+        lines: [
+          what,
+          t(
+            lang,
+            `Total : ${e.total} ${e.currency}, à régler en espèces à la réception.`,
+            `Total: ${e.total} ${e.currency}, paid in cash on reception.`,
+            `المجموع: ${e.total} ${e.currency}، يُدفع نقدًا عند الاستلام.`,
+          ),
+        ],
+        cta: {
+          label: t(lang, "Voir ma commande", "View my order", "عرض طلبي"),
+          path: "/boutique",
+        },
+        push: { title, body: what },
+      };
+    }
     case "tokens_added":
       return {
         subject: t(

@@ -11,6 +11,8 @@ export const activityTypeEnum = pgEnum("activity_type", [
   "role_changed",
   "court_updated",
   "pricing_updated",
+  "shop_updated",
+  "order_updated",
 ]);
 
 export const activityTable = pgTable("activity", {

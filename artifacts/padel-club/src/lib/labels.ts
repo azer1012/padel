@@ -271,6 +271,45 @@ export function activityLabel(tx: ReturnType<typeof useTx>, message: string) {
         ar: `باقة الرصيد ${m[1]}: ${{ created: "إنشاء", updated: "تعديل", deleted: "حذف" }[m[2]]}${m[3] ?? ""}`,
       }) + by(who)
     );
+  if ((m = body.match(/^Shop order #(\d+) placed · (\d+) article\(s\) · (.+)$/)))
+    return (
+      tx({
+        fr: `Commande boutique n° ${m[1]} passée · ${m[2]} article(s) · ${m[3]}`,
+        en: `Shop order #${m[1]} placed · ${m[2]} article(s) · ${m[3]}`,
+        ar: `طلب المتجر رقم ${m[1]} · ${m[2]} منتج · ${m[3]}`,
+      }) + by(who)
+    );
+  if ((m = body.match(/^Shop order #(\d+) cancelled by the member$/)))
+    return (
+      tx({
+        fr: `Commande boutique n° ${m[1]} annulée par le membre`,
+        en: body,
+        ar: `ألغى العضو طلب المتجر رقم ${m[1]}`,
+      }) + by(who)
+    );
+  if ((m = body.match(/^Shop order #(\d+) is now (confirmed|shipped|delivered|cancelled)$/))) {
+    const state = {
+      confirmed: tx({ fr: "confirmée", en: "confirmed", ar: "مؤكد" }),
+      shipped: tx({ fr: "expédiée", en: "shipped", ar: "مُرسل" }),
+      delivered: tx({ fr: "remise", en: "delivered", ar: "مُسلَّم" }),
+      cancelled: tx({ fr: "annulée", en: "cancelled", ar: "ملغى" }),
+    }[m[2]];
+    return (
+      tx({
+        fr: `Commande boutique n° ${m[1]} ${state}`,
+        en: `Shop order #${m[1]} ${state}`,
+        ar: `طلب المتجر رقم ${m[1]}: ${state}`,
+      }) + by(who)
+    );
+  }
+  if ((m = body.match(/^Shop article (".*") (created|updated|archived|deleted)$/)))
+    return (
+      tx({
+        fr: `Article boutique ${m[1]} ${{ created: "créé", updated: "modifié", archived: "archivé", deleted: "supprimé" }[m[2]]}`,
+        en: body,
+        ar: `منتج المتجر ${m[1]}: ${{ created: "إنشاء", updated: "تعديل", archived: "أرشفة", deleted: "حذف" }[m[2]]}`,
+      }) + by(who)
+    );
   if ((m = body.match(/^(\S+) is now (admin|player)$/)))
     return (
       tx({

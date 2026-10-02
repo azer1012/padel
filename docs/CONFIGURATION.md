@@ -102,6 +102,8 @@ the activity feed with the admin and the old → new values. Each section has
 
 - **Token expiry**: tokens never expire. The API refuses a credit that carries an
   expiry date, and no screen announces one (the `expires_at` column is unused).
+- **Online payment in the boutique**: an order is never paid on the site. The club
+  calls the member to confirm it and is paid in cash on delivery or at the desk.
 - **Minimum players** never blocks a booking: a player can always book only their
   spot. A match below the minimum shows "1 more to play" to its players.
 - **Automatic refund of cash already paid** for a cancelled match: staff handle it

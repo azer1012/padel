@@ -31,6 +31,7 @@ import {
   PhoneIcon,
   ShieldCheckIcon,
   SignOutIcon,
+  ShoppingBagIcon,
   SquaresFourIcon,
   TagIcon,
   TennisBallIcon,
@@ -131,7 +132,7 @@ function PublicShell({ children }: { children: ReactNode }) {
     };
   }, [open]);
 
-  const { openMatchesEnabled } = useClubRules();
+  const { openMatchesEnabled, shopEnabled } = useClubRules();
   const links = [
     { href: "/", label: t("home") },
     { href: HOW_HREF, label: tx({ fr: "Comment ça marche", en: "How it works", ar: "كيف يعمل" }) },
@@ -144,6 +145,9 @@ function PublicShell({ children }: { children: ReactNode }) {
         ]
       : []),
     { href: "/tournaments", label: t("tournaments") },
+    ...(shopEnabled
+      ? [{ href: "/boutique", label: tx({ fr: "Boutique", en: "Shop", ar: "المتجر" }) }]
+      : []),
     { href: "/news", label: t("news") },
     { href: "/contact", label: t("contact") },
   ];
@@ -187,8 +191,8 @@ function PublicShell({ children }: { children: ReactNode }) {
         )}
       >
         <Logo />
-        {/* The full menu needs 1320px with a club name of about 15 letters: narrower laptops and tablets get the menu button */}
-        <nav aria-label="Main" className="hidden items-center gap-7 min-[1320px]:flex">
+        {/* The full menu (up to 7 links) needs 1400px with a club name of about 15 letters: narrower laptops and tablets get the menu button */}
+        <nav aria-label="Main" className="hidden items-center gap-7 min-[1400px]:flex">
           {links.map((l) => (
             <Link
               key={l.href}
@@ -207,7 +211,7 @@ function PublicShell({ children }: { children: ReactNode }) {
             asChild
             variant="outline-dark"
             size="sm"
-            className="hidden min-[1320px]:inline-flex"
+            className="hidden min-[1400px]:inline-flex"
           >
             <Link href="/sign-in">{t("signIn")}</Link>
           </Button>
@@ -225,7 +229,7 @@ function PublicShell({ children }: { children: ReactNode }) {
                 ? tx({ fr: "Fermer le menu", en: "Close menu", ar: "إغلاق القائمة" })
                 : tx({ fr: "Ouvrir le menu", en: "Open menu", ar: "فتح القائمة" })
             }
-            className="flex size-11 items-center justify-center rounded-full bg-white/10 min-[1320px]:hidden"
+            className="flex size-11 items-center justify-center rounded-full bg-white/10 min-[1400px]:hidden"
           >
             {open ? (
               <XIcon key="x" className="icon-pop size-5" />
@@ -238,7 +242,7 @@ function PublicShell({ children }: { children: ReactNode }) {
           <nav
             id="public-menu"
             aria-label="Mobile"
-            className="fade-in fixed inset-x-0 bottom-0 top-16 z-50 flex flex-col overflow-y-auto bg-night px-5 pb-[max(24px,env(safe-area-inset-bottom))] pt-4 lg:top-[76px] lg:px-12 min-[1320px]:hidden"
+            className="fade-in fixed inset-x-0 bottom-0 top-16 z-50 flex flex-col overflow-y-auto bg-night px-5 pb-[max(24px,env(safe-area-inset-bottom))] pt-4 lg:top-[76px] lg:px-12 min-[1400px]:hidden"
           >
             <div className="stagger flex flex-col">
               {links.map((l) => (
@@ -319,6 +323,11 @@ export function SiteFooter() {
             <Link href="/tournaments" className="ulink self-start">
               {t("tournaments")}
             </Link>
+            {rules.shopEnabled && (
+              <Link href="/boutique" className="ulink self-start">
+                {tx({ fr: "Boutique", en: "Shop", ar: "المتجر" })}
+              </Link>
+            )}
             <Link href="/news" className="ulink self-start">
               {t("news")}
             </Link>
@@ -436,6 +445,8 @@ const NOTIFICATION: Record<string, { href: string; icon: AppIcon }> = {
   reservation_reminder: { href: "/reservations", icon: ClockIcon },
   tokens_added: { href: "/wallet", icon: CoinsIcon },
   announcement: { href: "/news", icon: NewspaperIcon },
+  order_placed: { href: "/admin/shop", icon: ShoppingBagIcon },
+  order_update: { href: "/boutique", icon: ShoppingBagIcon },
 };
 
 function NotificationsBell({ dark = true }: { dark?: boolean }) {
@@ -681,6 +692,15 @@ function AppShell({ children }: { children: ReactNode }) {
       icon: WalletIcon,
     },
     { href: "/tournaments", label: t("tournaments"), icon: TrophyIcon },
+    ...(rules.shopEnabled
+      ? [
+          {
+            href: "/boutique",
+            label: tx({ fr: "Boutique", en: "Shop", ar: "المتجر" }),
+            icon: ShoppingBagIcon,
+          },
+        ]
+      : []),
     { href: "/news", label: t("news"), icon: NewspaperIcon },
     { href: "/profile", label: t("profile"), icon: UserIcon },
   ];
@@ -718,6 +738,11 @@ function AppShell({ children }: { children: ReactNode }) {
       href: "/admin/equipment",
       label: tx({ fr: "Matériel", en: "Equipment", ar: "المعدات" }),
       icon: PackageIcon,
+    },
+    {
+      href: "/admin/shop",
+      label: tx({ fr: "Boutique", en: "Shop", ar: "المتجر" }),
+      icon: ShoppingBagIcon,
     },
     { href: "/admin/news", label: t("news"), icon: NewspaperIcon },
     { href: "/admin/tournaments", label: t("tournaments"), icon: TrophyIcon },
@@ -758,8 +783,8 @@ function AppShell({ children }: { children: ReactNode }) {
 
       {/* Desktop sidebar */}
       <aside className="on-dark sticky top-0 hidden h-[100dvh] w-[264px] shrink-0 flex-col gap-6 overflow-y-auto bg-night px-4 py-6 text-white lg:flex">
-        <div className="flex items-center justify-between px-2">
-          <Logo href={isAdminRoute ? "/admin" : "/dashboard"} />
+        <div className="flex items-center justify-between gap-2 px-2">
+          <Logo href={isAdminRoute ? "/admin" : "/dashboard"} wrap />
           <NotificationsBell />
         </div>
         {isAdminRoute ? (

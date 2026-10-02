@@ -10,3 +10,4 @@ export * from "./pricing";
 export * from "./equipment";
 export * from "./push";
 export * from "./settings";
+export * from "./shop";

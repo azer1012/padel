@@ -30,6 +30,7 @@ const PUBLIC = new Set([
   "GET /pricing/rules",
   "GET /pricing/quote",
   "GET /equipment",
+  "GET /shop/products",
   "GET /settings",
   "GET /push/public-key",
   // Guarded by its own secret (x-cron-secret), checked below
@@ -146,6 +147,7 @@ describe("every route has the guard it needs", () => {
       /^\/notifications\//,
       /^\/push\/(subscribe|unsubscribe|test)$/,
       /^\/tournaments\/:id\/register$/,
+      /^\/shop\/orders(\/:id\/cancel)?$/,
       /^\/internal\/jobs\/run$/,
     ];
     const unguarded = (await endpoints())
