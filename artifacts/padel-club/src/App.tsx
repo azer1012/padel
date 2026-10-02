@@ -10,7 +10,8 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { Redirect } from "wouter";
 import { syncUser } from "@/lib/user-sync";
 import { API_BASE, getAccessToken } from "@/services/api";
-import { I18nProvider } from "@/lib/i18n";
+import { I18nProvider, useTx } from "@/lib/i18n";
+import { Button } from "@/components/ui/button";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth";
 import ResetPassword from "@/pages/reset-password";
@@ -112,18 +113,52 @@ const RouteLoader = () => (
 );
 
 /**
+ * Shown when the signed-in user's profile can't be loaded from the API. Silently
+ * redirecting here would look like "not an admin" and hide the real problem
+ * (API down or pointed at another database, profile missing, token rejected).
+ */
+function ProfileUnavailable({ onRetry }: { onRetry: () => void }) {
+  const tx = useTx();
+  return (
+    <div
+      role="alert"
+      className="mx-auto flex min-h-[60vh] max-w-[480px] flex-col items-center justify-center gap-4 px-5 text-center"
+    >
+      <h1 className="disp m-0 text-3xl">
+        {tx({
+          fr: "Impossible de vérifier votre accès",
+          en: "Couldn't check your access",
+          ar: "تعذر التحقق من صلاحياتك",
+        })}
+      </h1>
+      <p className="m-0 text-muted-foreground">
+        {tx({
+          fr: "Le serveur n'a pas pu charger votre profil. Réessayez dans un instant ; si le problème continue, contactez l'administrateur du club.",
+          en: "The server couldn't load your profile. Try again in a moment; if it keeps happening, contact the club administrator.",
+          ar: "تعذر على الخادم تحميل ملفك. حاول مجددًا بعد لحظة، وإن استمرت المشكلة تواصل مع مسؤول النادي.",
+        })}
+      </p>
+      <Button onClick={onRetry}>
+        {tx({ fr: "Réessayer", en: "Try again", ar: "إعادة المحاولة" })}
+      </Button>
+    </div>
+  );
+}
+
+/**
  * Admin gate. The role lives on the API user (useGetMe), not on the Supabase
  * session user (whose role is always "authenticated").
  */
 function AdminRoute({ component: Component }: { component: React.ComponentType }) {
   const { isSignedIn, isLoaded } = useAuth();
   const [location] = useLocation();
-  const { data: me, isLoading, isError } = useGetMe({ query: { enabled: isSignedIn } });
+  const { data: me, isLoading, isError, refetch } = useGetMe({ query: { enabled: isSignedIn } });
 
   if (!isLoaded) return <RouteLoader />;
   if (!isSignedIn) return <Redirect to={signInPath(location)} replace />;
   if (isLoading) return <RouteLoader />;
-  if (isError || me?.role !== "admin") return <Redirect to="/dashboard" replace />;
+  if (isError) return <ProfileUnavailable onRetry={() => refetch()} />;
+  if (me?.role !== "admin") return <Redirect to="/dashboard" replace />;
 
   return (
     <Suspense fallback={<RouteLoader />}>

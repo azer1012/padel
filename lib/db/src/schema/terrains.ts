@@ -27,7 +27,6 @@ export const terrainsTable = pgTable("terrains", {
   archivedAt: timestamp("archived_at"),
   /** Optional per-court overrides; null = use the club settings / opening hours. */
   pricePerPerson: real("price_per_person"),
-  capacity: integer("capacity").notNull().default(4),
   openingTime: text("opening_time"),
   closingTime: text("closing_time"),
   photos: text("photos").array().notNull().default([]),

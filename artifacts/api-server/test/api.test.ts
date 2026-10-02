@@ -90,6 +90,28 @@ describe("auth", () => {
     assert.equal(s.body.firstName, "Aly", "sync must not overwrite profile edits");
   });
 
+  test("gender and phone: sync fills them once, profile edits validate them", async () => {
+    const s = await call("POST", "/users/sync", {
+      token: bob.token,
+      body: { phone: "+216 22 111 222", gender: "male" },
+    });
+    assert.equal(s.status, 200);
+    assert.equal(s.body.gender, "male");
+    assert.equal(s.body.phone, "+216 22 111 222");
+    const again = await call("POST", "/users/sync", {
+      token: bob.token,
+      body: { phone: "+216 99 999 999", gender: "female" },
+    });
+    assert.equal(again.body.gender, "male", "sync must not overwrite gender");
+    assert.equal(again.body.phone, "+216 22 111 222", "sync must not overwrite phone");
+    const bad = await call("PATCH", "/users/me", { token: bob.token, body: { gender: "robot" } });
+    assert.equal(bad.status, 400);
+    const ok = await call("PATCH", "/users/me", { token: bob.token, body: { gender: "female" } });
+    assert.equal(ok.body.gender, "female");
+    const cleared = await call("PATCH", "/users/me", { token: bob.token, body: { gender: null } });
+    assert.equal(cleared.body.gender, null);
+  });
+
   test("a player cannot make themselves admin or change their balance via the profile", async () => {
     const r = await call("PATCH", "/users/me", {
       token: bob.token,

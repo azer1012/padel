@@ -141,6 +141,8 @@ await step("an empty form, a bad e-mail and a weak password never leave the brow
     "bad e-mail accepted",
   );
   await s.page.locator("#email").fill(NEW.email);
+  // The phone is required: without it the browser stops the form before the password check
+  await s.page.locator("#phone").fill("+216 20 123 456");
   for (const weak of ["abcdefghij", "1234567890", "abc123"]) {
     await s.page.locator("#password").fill(weak);
     await press(submit);
@@ -154,9 +156,17 @@ await step("an empty form, a bad e-mail and a weak password never leave the brow
 });
 
 await step("a valid sign-up shows “check your inbox” and creates the profile once", async () => {
-  await s.page.locator("#phone").fill("+216 20 123 456");
   await s.page.locator("#password").fill(NEW.password);
-  await press(s.page.getByRole("button", { name: "Créer mon compte" }));
+  const submit = s.page.getByRole("button", { name: "Créer mon compte" });
+  await s.page.locator("#phone").fill("12");
+  await press(submit);
+  await s.page.getByRole("alert").getByText("Entrez un numéro de téléphone valide.").waitFor();
+  await s.page.locator("#phone").fill("+216 20 123 456");
+  await press(submit);
+  await s.page.getByRole("alert").getByText("Indiquez votre genre.").waitFor();
+  equal(calls.length, 0, `requests sent before the form was complete: ${calls.join(", ")}`);
+  await s.page.getByRole("radio", { name: "Femme" }).click();
+  await press(submit);
   await s.page
     .getByRole("heading", { name: "Vérifiez votre boîte mail" })
     .waitFor({ timeout: 10000 });
@@ -166,6 +176,7 @@ await step("a valid sign-up shows “check your inbox” and creates the profile
   equal(found.body.total, 1, "profiles for the new e-mail");
   const profile = found.body.data[0];
   equal(profile.firstName, NEW.first, "first name");
+  equal(profile.gender, "female", "gender from sign-up");
   equal(profile.lastName, NEW.last, "last name");
   equal(profile.role, "player", "role");
   equal(profile.tokenBalance, 0, "starting balance");
@@ -214,6 +225,8 @@ await step("a confirmation link opened on another device signs the member in the
   await laptop.page.locator("#last-name").fill("Gharbi");
   await laptop.page.locator("#email").fill("player.b@e2e.test");
   await laptop.page.locator("#password").fill(NEW.password);
+  await laptop.page.locator("#phone").fill("+216 20 000 111");
+  await laptop.page.getByRole("radio", { name: "Homme" }).click();
   await laptop.page.getByRole("button", { name: "Créer mon compte" }).click();
   await laptop.page
     .getByRole("heading", { name: "Vérifiez votre boîte mail" })
@@ -235,6 +248,8 @@ await step(
     await q.page.locator("#last-name").fill("Mansour");
     await q.page.locator("#email").fill("player.c@e2e.test");
     await q.page.locator("#password").fill(NEW.password);
+    await q.page.locator("#phone").fill("+216 20 000 111");
+    await q.page.getByRole("radio", { name: "Homme" }).click();
     await q.page.getByRole("button", { name: "Créer mon compte" }).click();
     await q.page
       .getByRole("heading", { name: "Vérifiez votre boîte mail" })
@@ -262,6 +277,8 @@ await step("signing up again with a taken e-mail reveals nothing and creates not
   await p.page.locator("#last-name").fill("Else");
   await p.page.locator("#email").fill(NEW.email);
   await p.page.locator("#password").fill("Another2026pw");
+  await p.page.locator("#phone").fill("+216 20 000 111");
+  await p.page.getByRole("radio", { name: "Homme" }).click();
   await p.page.getByRole("button", { name: "Créer mon compte" }).click();
   await p.page
     .getByRole("heading", { name: "Vérifiez votre boîte mail" })

@@ -12,6 +12,11 @@ import { PHOTOS } from "@/config/club";
 import { authErrorMessage } from "@/lib/auth-errors";
 import { useAuth } from "@/lib/auth";
 import { PasswordInput, passwordIsStrong } from "@/components/smash/password-input";
+import { cn } from "@/lib/utils";
+
+/** Same rule as the API (PATCH /users/me). */
+const PHONE_RE = /^[+\d][\d\s().-]{5,29}$/;
+type Gender = "male" | "female";
 
 const GOOGLE_ENABLED = import.meta.env.VITE_AUTH_GOOGLE_ENABLED === "true";
 // Prepared for a future release: needs an Apple Developer account and the Apple
@@ -38,6 +43,7 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
+  const [gender, setGender] = useState<Gender | null>(null);
   const [canResend, setCanResend] = useState(false);
   /** Sign-up done, waiting for the confirmation e-mail: the form gives way to "check your inbox". */
   const [awaitingEmail, setAwaitingEmail] = useState(false);
@@ -66,6 +72,26 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
       );
       return;
     }
+    if (isSignUp && !PHONE_RE.test(phone.trim())) {
+      setError(
+        tx({
+          fr: "Entrez un numéro de téléphone valide.",
+          en: "Enter a valid phone number.",
+          ar: "أدخل رقم هاتف صحيحًا.",
+        }),
+      );
+      return;
+    }
+    if (isSignUp && !gender) {
+      setError(
+        tx({
+          fr: "Indiquez votre genre.",
+          en: "Please select your gender.",
+          ar: "يرجى اختيار الجنس.",
+        }),
+      );
+      return;
+    }
     setIsSubmitting(true);
     setCanResend(false);
     const result = isSignUp
@@ -77,7 +103,8 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
             data: {
               first_name: firstName.trim(),
               last_name: lastName.trim(),
-              ...(phone.trim() ? { phone: phone.trim() } : {}),
+              phone: phone.trim(),
+              gender,
             },
           },
         })
@@ -437,23 +464,51 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
                   </div>
                   <div>
                     <Label htmlFor="phone">
-                      {tx({
-                        fr: "Téléphone (optionnel)",
-                        en: "Phone (optional)",
-                        ar: "الهاتف (اختياري)",
-                      })}
+                      {tx({ fr: "Téléphone", en: "Phone", ar: "الهاتف" })}
                     </Label>
                     <Input
                       id="phone"
                       type="tel"
                       inputMode="tel"
                       autoComplete="tel"
+                      dir="ltr"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="+216 20 000 000"
                       maxLength={30}
+                      required
                     />
                   </div>
+                  <fieldset className="m-0 border-0 p-0">
+                    <legend className="mb-2 text-sm font-bold">
+                      {tx({ fr: "Genre", en: "Gender", ar: "الجنس" })}
+                    </legend>
+                    <div role="radiogroup" className="grid grid-cols-2 gap-3">
+                      {(
+                        [
+                          ["male", tx({ fr: "Homme", en: "Male", ar: "ذكر" })],
+                          ["female", tx({ fr: "Femme", en: "Female", ar: "أنثى" })],
+                        ] as const
+                      ).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          role="radio"
+                          aria-checked={gender === value}
+                          data-testid={`signup-gender-${value}`}
+                          onClick={() => setGender(value)}
+                          className={cn(
+                            "h-12 rounded-full border-2 font-bold transition-colors",
+                            gender === value
+                              ? "border-ink bg-ink text-white"
+                              : "border-[#E4E8F7] hover:border-[#C6CEF6]",
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </fieldset>
                 </>
               )}
               <div>

@@ -1296,6 +1296,9 @@ components:
           type: ["string", "null"]
         phone:
           type: ["string", "null"]
+        gender:
+          type: ["string", "null"]
+          enum: [male, female, null]
         role:
           type: string
           enum: [admin, player]
@@ -1324,6 +1327,9 @@ components:
           type: string
         phone:
           type: string
+        gender:
+          type: ["string", "null"]
+          enum: [male, female, null]
         language:
           type: string
           enum: [fr, ar, en]
@@ -1361,9 +1367,6 @@ components:
           type: boolean
         pricePerPerson:
           type: number
-        capacity:
-          type: integer
-          default: 4
         openingTime:
           type: string
         closingTime:
@@ -1389,9 +1392,6 @@ components:
           enum: [indoor, outdoor]
         pricePerPerson:
           type: number
-        capacity:
-          type: integer
-          default: 4
         openingTime:
           type: string
           default: "08:00"

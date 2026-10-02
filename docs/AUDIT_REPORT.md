@@ -25,12 +25,23 @@ No P0 / P1 found. Fixed:
 | The booking grid took up to a second to finish appearing                                                                           | Under half a second                                                                            |
 
 Tests this pass (local Postgres 18, real API, Chromium): typecheck 0 errors, lint
-clean, **99 / 99** API tests (92 + 7 new in `integrity.test.ts`), **11 / 11**
-database blocks, browser suites all green (one new step), production build OK,
+clean, **100 / 100** API tests, **11 / 11** database blocks, **145 / 145** browser
+steps, production build OK,
 `pnpm audit --prod` clean.
 
-Still open, for the owner: the items listed under pass 4 and pass 3 below, except
-token expiry (closed). The admin activity feed is still written in English.
+Decided by the owner the same day, done and verified:
+
+- **Sign-up asks for phone and gender** (branch `claude/ecstatic-noether-lm132w`)
+  is merged: migration `20261004000000_user_gender`, required phone, gender at
+  sign-up and in the profile, and the admin gate now says "couldn't check your
+  access" with a retry when the API is unreachable instead of redirecting.
+- **Legacy `clubs`, `staff_roles` and `terrains.capacity` are dropped** by the
+  guarded migration `20261006000000` (rollback in `supabase/rollbacks`), applied to
+  the hosted project. Repository and hosted database now hold the same 9 migrations.
+
+Still open: the admin activity feed is written in English; cancelling a recurring
+booking does not notify the member; "minimum players" is stored but unused; e-mail
+confirmation, SMTP, Google sign-in and the domain need the club's accounts.
 
 ## Pass 4 (2026-10-02): code review and refactor
 

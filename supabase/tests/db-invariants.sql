@@ -8,8 +8,8 @@
 
 -- Fixtures ------------------------------------------------------------------
 insert into auth.users (id, email, raw_user_meta_data) values
-  ('00000000-0000-0000-0000-000000000001', 'alice@test.tn', '{"first_name":"Alice","last_name":"Ben Salah","phone":"+21620000000"}'),
-  ('00000000-0000-0000-0000-000000000002', 'bob@test.tn', '{"full_name":"Bob Trabelsi"}'),
+  ('00000000-0000-0000-0000-000000000001', 'alice@test.tn', '{"first_name":"Alice","last_name":"Ben Salah","phone":"+21620000000","gender":"female"}'),
+  ('00000000-0000-0000-0000-000000000002', 'bob@test.tn', '{"full_name":"Bob Trabelsi","gender":"robot"}'),
   ('00000000-0000-0000-0000-000000000003', 'admin@test.tn', '{}');
 insert into public.terrains (name, type) values ('Court A', 'indoor'), ('Court B', 'outdoor');
 
@@ -20,6 +20,8 @@ do $$ begin
          = 'Alice|Ben Salah|+21620000000', 'alice metadata not copied';
   assert (select first_name || '|' || last_name from public.users where email = 'bob@test.tn')
          = 'Bob|Trabelsi', 'full_name not split';
+  assert (select gender::text from public.users where email = 'alice@test.tn') = 'female', 'gender not copied';
+  assert (select gender from public.users where email = 'bob@test.tn') is null, 'invalid gender must be ignored';
   raise notice 'ok 1 - signup creates profile';
 end $$;
 
@@ -168,6 +170,11 @@ drop table public.zz_future_table;
 do $$ begin
   assert to_regclass('public.profiles') is null and to_regclass('public.reservation_payments') is null
      and to_regclass('public.courts') is null, 'legacy tables remain';
+  assert to_regclass('public.clubs') is null and to_regclass('public.staff_roles') is null,
+    'a single-club installation has no clubs / staff_roles table';
+  assert not exists (select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'terrains' and column_name = 'capacity'),
+    'terrains.capacity remains';
   assert not exists (select 1 from pg_trigger where tgname = 'on_auth_user_created'), 'legacy auth trigger remains';
   raise notice 'ok 9 - legacy schema removed';
 end $$;

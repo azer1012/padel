@@ -2,6 +2,7 @@ import { pgTable, serial, text, integer, timestamp, pgEnum, boolean } from "driz
 
 export const roleEnum = pgEnum("role", ["admin", "player"]);
 export const languageEnum = pgEnum("language", ["fr", "ar", "en"]);
+export const genderEnum = pgEnum("gender", ["male", "female"]);
 
 export const usersTable = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -10,6 +11,7 @@ export const usersTable = pgTable("users", {
   firstName: text("first_name"),
   lastName: text("last_name"),
   phone: text("phone"),
+  gender: genderEnum("gender"),
   role: roleEnum("role").notNull().default("player"),
   avatarUrl: text("avatar_url"),
   tokenBalance: integer("token_balance").notNull().default(0),

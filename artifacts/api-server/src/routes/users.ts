@@ -15,6 +15,8 @@ import { HttpError, cleanText, oneOf, paging, requireId } from "../lib/http";
 
 const router = Router();
 const LANGS = ["fr", "ar", "en"] as const;
+const GENDERS = ["male", "female"] as const;
+const PHONE = /^[+\d][\d\s().-]{5,29}$/;
 
 /** Profile fields a user may edit on themselves (never role or balance). */
 function profilePatch(body: Record<string, unknown> | undefined) {
@@ -23,9 +25,15 @@ function profilePatch(body: Record<string, unknown> | undefined) {
   if (body?.lastName !== undefined) patch.lastName = cleanText(body.lastName, 80);
   if (body?.phone !== undefined) {
     const phone = cleanText(body.phone, 30);
-    if (phone && !/^[+\d][\d\s().-]{5,29}$/.test(phone))
+    if (phone && !PHONE.test(phone))
       throw new HttpError(400, "Invalid phone number", "VALIDATION_ERROR");
     patch.phone = phone;
+  }
+  if (body?.gender !== undefined) {
+    const cleared = body.gender === null || body.gender === "";
+    const gender = cleared ? null : oneOf(body.gender, GENDERS);
+    if (!cleared && !gender) throw new HttpError(400, "Invalid gender", "VALIDATION_ERROR");
+    patch.gender = gender;
   }
   if (body?.language !== undefined) {
     const language = oneOf(body.language, LANGS);
@@ -64,6 +72,10 @@ router.post("/users/sync", requireAuth, async (req, res) => {
   const lastName = cleanText(req.body?.lastName, 80);
   const avatar = cleanText(req.body?.imageUrl, 500);
   const avatarUrl = avatar && /^https:\/\//.test(avatar) ? avatar : null;
+  // Signup metadata is browser-written: keep only well-formed values, never fail the sync.
+  const rawPhone = cleanText(req.body?.phone, 30);
+  const phone = rawPhone && PHONE.test(rawPhone) ? rawPhone : null;
+  const gender = oneOf(req.body?.gender, GENDERS) ?? null;
 
   const [existing] = await db
     .select()
@@ -79,6 +91,8 @@ router.post("/users/sync", requireAuth, async (req, res) => {
         ...(!existing.firstName && firstName ? { firstName } : {}),
         ...(!existing.lastName && lastName ? { lastName } : {}),
         ...(!existing.avatarUrl && avatarUrl ? { avatarUrl } : {}),
+        ...(!existing.phone && phone ? { phone } : {}),
+        ...(!existing.gender && gender ? { gender } : {}),
         updatedAt: new Date(),
       })
       .where(eq(usersTable.id, existing.id))
@@ -91,6 +105,8 @@ router.post("/users/sync", requireAuth, async (req, res) => {
         email: email || `${authUserId}@placeholder.local`,
         firstName,
         lastName,
+        phone,
+        gender,
         avatarUrl,
         role: "player",
         tokenBalance: 0,

@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { useGetMe, useUpdateMe, getGetMeQueryKey } from "@workspace/api-client-react";
+import {
+  useGetMe,
+  useUpdateMe,
+  getGetMeQueryKey,
+  type UserGender,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { FloppyDiskIcon, KeyIcon, SignOutIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
@@ -27,6 +32,7 @@ export default function Profile() {
     firstName: "",
     lastName: "",
     phone: "",
+    gender: null as UserGender | null,
     language: "fr" as Lang,
   });
 
@@ -36,6 +42,7 @@ export default function Profile() {
         firstName: user.firstName ?? "",
         lastName: user.lastName ?? "",
         phone: user.phone ?? "",
+        gender: user.gender ?? null,
         language: (user.language ?? "fr") as Lang,
       });
   }, [user]);
@@ -45,6 +52,7 @@ export default function Profile() {
     (form.firstName !== (user.firstName ?? "") ||
       form.lastName !== (user.lastName ?? "") ||
       form.phone !== (user.phone ?? "") ||
+      form.gender !== (user.gender ?? null) ||
       form.language !== (user.language ?? "fr"));
 
   function handleSave(e: React.FormEvent) {
@@ -55,6 +63,7 @@ export default function Profile() {
           firstName: form.firstName,
           lastName: form.lastName,
           phone: form.phone,
+          gender: form.gender,
           language: form.language,
         },
       },
@@ -98,6 +107,10 @@ export default function Profile() {
     { v: "fr", l: "Français" },
     { v: "ar", l: "العربية" },
     { v: "en", l: "English" },
+  ];
+  const genders: { v: UserGender; l: string }[] = [
+    { v: "male", l: tx({ fr: "Homme", en: "Male", ar: "ذكر" }) },
+    { v: "female", l: tx({ fr: "Femme", en: "Female", ar: "أنثى" }) },
   ];
 
   return (
@@ -192,6 +205,30 @@ export default function Profile() {
                 placeholder="+216 XX XXX XXX"
               />
             </div>
+            <fieldset className="m-0 border-0 p-0">
+              <legend className="mb-2 text-sm font-bold">
+                {tx({ fr: "Genre", en: "Gender", ar: "الجنس" })}
+              </legend>
+              <div role="radiogroup" data-testid="select-gender" className="flex flex-wrap gap-2">
+                {genders.map((g) => (
+                  <button
+                    key={g.v}
+                    type="button"
+                    role="radio"
+                    aria-checked={form.gender === g.v}
+                    onClick={() => setForm((f) => ({ ...f, gender: g.v }))}
+                    className={cn(
+                      "h-11 rounded-full border-2 px-5 font-bold transition-colors",
+                      form.gender === g.v
+                        ? "border-ink bg-ink text-white"
+                        : "border-[#E4E8F7] hover:border-[#C6CEF6]",
+                    )}
+                  >
+                    {g.l}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
             <fieldset className="m-0 border-0 p-0">
               <legend className="mb-2 text-sm font-bold">{t("language")}</legend>
               <div role="radiogroup" data-testid="select-language" className="flex flex-wrap gap-2">

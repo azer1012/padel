@@ -305,10 +305,12 @@ export const useBlockSlot = () =>
 
 // ─── Profile sync after sign-in ──────────────────────────────────────────────
 
-/** Fills an empty profile from the sign-in provider (name, avatar). Idempotent. */
+/** Fills an empty profile from the sign-up form or sign-in provider. Idempotent. */
 export const syncProfile = (profile: {
   firstName?: string | null;
   lastName?: string | null;
+  phone?: string | null;
+  gender?: string | null;
   imageUrl?: string | null;
 }) => customFetch<unknown>("/api/users/sync", { method: "POST", ...json(profile) });
 

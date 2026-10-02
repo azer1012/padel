@@ -40,14 +40,14 @@ are also validated by the API):
 
 Court overrides: `terrains.price_per_person`, `opening_time`, `closing_time` are
 NULL by default = use the club settings / weekly hours. Set both times or neither.
-`terrains.capacity` is legacy and unused (spots per match come from `max_players`).
+Spots per match come from `club_settings.max_players` (kept on each booking as `total_spots`).
 
 ### Members and money
 
-| Table                | Purpose                                                                                                                                                               |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `users`              | App profile of each Supabase Auth user (created by trigger on `auth.users`): names, phone, role (`admin` \| `player`), language, `token_balance`, notification prefs. |
-| `token_transactions` | **Append-only ledger**: credit / debit / adjustment, `amount`, `balance_after`, admin, reservation, `cash_amount`, `package_id`, `idempotency_key`.                   |
+| Table                | Purpose                                                                                                                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `users`              | App profile of each Supabase Auth user (created by trigger on `auth.users`): names, phone, gender (`male` \| `female`, asked at signup), role (`admin` \| `player`), language, `token_balance`, notification prefs. |
+| `token_transactions` | **Append-only ledger**: credit / debit / adjustment, `amount`, `balance_after`, admin, reservation, `cash_amount`, `package_id`, `idempotency_key`.                                                                 |
 
 ### Bookings
 
@@ -70,9 +70,9 @@ NULL by default = use the club settings / weekly hours. Set both times or neithe
 | `activity`                                        | Audit trail of staff and booking events (see "Audit trail" below).                      |
 | `news`, `tournaments`, `tournament_registrations` | Club content.                                                                           |
 
-Legacy, unused by the application (kept, private, empty on new projects):
-`clubs`, `staff_roles`. Branding is per installation (`VITE_CLUB_*`), staff roles
-are `users.role`.
+There is no table of clubs and no staff table: branding is per installation
+(`VITE_CLUB_*`), staff are `users.role = 'admin'`. The prototype's `clubs` and
+`staff_roles` tables were dropped by `20261006000000`.
 
 ### Views
 
@@ -145,7 +145,9 @@ They hold even if the API had a bug, and are tested by
 | `20261001000000_pricing_equipment_series_notifications.sql` | Pricing rules, equipment, recurring bookings, notifications.                |
 | `20261002000000_security_and_integrity.sql`                 | Lockdown, overlap constraint, capacity, ledger guards, payment states.      |
 | `20261003000000_club_settings.sql`                          | Club settings, opening hours, exceptions, packs, court fields, invitations. |
+| `20261004000000_user_gender.sql`                            | Player gender, copied from signup metadata by the auth trigger.             |
 | `20261005000000_audit_trail_types.sql`                      | Audit-trail types (cash, roles, courts, pricing rules) and two indexes.     |
+| `20261006000000_drop_unused_legacy_tables.sql`              | Drops the empty `clubs`, `staff_roles` and `terrains.capacity` (guarded).   |
 
 All migrations are additive or guarded; none deletes club data. Apply them with
 `pnpm --filter @workspace/scripts run db:migrate` (or `supabase db push`, or the

@@ -24,6 +24,13 @@ export const UserLanguage = {
   en: "en",
 } as const;
 
+export type UserGender = (typeof UserGender)[keyof typeof UserGender];
+
+export const UserGender = {
+  male: "male",
+  female: "female",
+} as const;
+
 export interface User {
   id: number;
   supabaseAuthId: string;
@@ -34,6 +41,8 @@ export interface User {
   lastName?: string | null;
   /** @nullable */
   phone?: string | null;
+  /** @nullable */
+  gender?: UserGender | null;
   role: UserRole;
   /** @nullable */
   avatarUrl?: string | null;
@@ -58,6 +67,8 @@ export interface UserUpdate {
   firstName?: string;
   lastName?: string;
   phone?: string;
+  /** @nullable */
+  gender?: UserGender | null;
   language?: UserUpdateLanguage;
 }
 
@@ -90,7 +101,6 @@ export interface Terrain {
   archivedAt?: string | null;
   /** Override of the club player price; null = club setting. */
   pricePerPerson: number | null;
-  capacity?: number;
   /** Override of the club opening hours (both or neither); null = club hours. */
   openingTime?: string | null;
   closingTime?: string | null;
@@ -113,7 +123,6 @@ export interface TerrainInput {
   isMaintenance?: boolean;
   maintenanceNote?: string | null;
   pricePerPerson?: number | null;
-  capacity?: number;
   openingTime?: string | null;
   closingTime?: string | null;
   photos?: string[];
