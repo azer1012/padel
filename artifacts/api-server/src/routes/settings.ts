@@ -18,6 +18,8 @@ import { getOpeningHours, getSettings, invalidateSettings, publicSettings } from
 import { isValidCloseHhmm, isValidHhmm } from "../lib/slots";
 import { addDays, clubParts, isClubDate } from "../lib/club-time";
 import { demoInfo } from "../lib/demo";
+import { onlinePayment } from "../lib/payments";
+import { env } from "../config/env";
 
 const router = Router();
 
@@ -47,6 +49,7 @@ const settingsPatch = z
     invitationsEnabled: z.boolean(),
     cashPaymentEnabled: z.boolean(),
     shopEnabled: z.boolean(),
+    onlinePaymentEnabled: z.boolean(),
     loyaltyEnabled: z.boolean(),
     loyaltySpendTokens: int(1, 1000),
     loyaltyRewardTokens: z
@@ -80,7 +83,13 @@ const SECTIONS: Record<string, SettingKey[]> = {
   ],
   pricing: ["currency", "playerPrice", "fullCourtPrice"],
   tokens: ["tokenCostPlayer", "tokenCostFullCourt", "tokenUnitPrice", "tokenMinPurchase"],
-  features: ["openMatchesEnabled", "invitationsEnabled", "cashPaymentEnabled", "shopEnabled"],
+  features: [
+    "openMatchesEnabled",
+    "invitationsEnabled",
+    "cashPaymentEnabled",
+    "shopEnabled",
+    "onlinePaymentEnabled",
+  ],
   loyalty: ["loyaltyEnabled", "loyaltySpendTokens", "loyaltyRewardTokens"],
   notifications: [
     "bookingConfirmationNotificationsEnabled",
@@ -118,6 +127,8 @@ router.get("/settings", async (_req, res) => {
   res.set("Cache-Control", "no-cache");
   res.json({
     ...publicSettings(settings, hours),
+    // Whether members can pay online here, and through which gateway
+    onlinePayment: onlinePayment(settings),
     // Demo mode: the shared accounts the sign-in page offers (null on a real club)
     demo: demoInfo(),
     tokenPackages: packages.map((p) => ({
@@ -133,7 +144,13 @@ router.get("/settings", async (_req, res) => {
 router.get("/admin/settings", requireAdmin, async (_req, res) => {
   invalidateSettings();
   const [settings, hours] = await Promise.all([getSettings(), getOpeningHours()]);
-  res.json({ ...settings, openingHours: hours, upcomingBookings: await countUpcomingBookings() });
+  res.json({
+    ...settings,
+    openingHours: hours,
+    upcomingBookings: await countUpcomingBookings(),
+    // The gateway this installation is set up with (null: none, the switch has no effect)
+    paymentProvider: env.paymentProvider,
+  });
 });
 
 router.patch("/admin/settings", requireAdmin, async (req, res) => {

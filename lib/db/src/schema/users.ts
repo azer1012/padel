@@ -36,6 +36,14 @@ export const usersTable = pgTable("users", {
   pushNotifications: boolean("push_notifications").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at"),
+  /** Set by the club: the member can no longer use the API (their history stays). */
+  blockedAt: timestamp("blocked_at"),
+  blockedReason: text("blocked_reason"),
+  /**
+   * The member deleted their account. The row stays, emptied of everything personal:
+   * bookings and the token ledger point to it.
+   */
+  deletedAt: timestamp("deleted_at"),
 });
 
 export type User = typeof usersTable.$inferSelect;

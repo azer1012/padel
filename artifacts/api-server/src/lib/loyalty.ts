@@ -1,5 +1,5 @@
 import { usersTable, type Tx } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { moveTokens } from "./ledger";
 import type { ClubSettings } from "./settings";
 
@@ -10,8 +10,8 @@ import type { ClubSettings } from "./settings";
  * Token balances are whole numbers, so the fractions add up in
  * `users.loyalty_balance`; each time it reaches a whole token, that token is credited
  * to the wallet through the ledger like any other credit. A refunded booking takes
- * its reward back, which may leave the loyalty balance below zero until the next
- * rewards fill it: booking and cancelling never earns anything.
+ * its reward back, and with it the token that reward had become: booking and
+ * cancelling never earns anything.
  */
 
 /** Amounts are kept to the cent of a token. */
@@ -60,11 +60,39 @@ export async function earnLoyalty(
   return whole;
 }
 
-/** Takes back the reward of a refunded spot (inside the caller's transaction). */
-export async function revokeLoyalty(tx: Tx, userId: number, earned: number) {
-  if (earned <= 0) return;
+/**
+ * Takes back the reward of a refunded spot. Runs inside the caller's transaction,
+ * after the refund itself. When the reward had already become a token, that token
+ * leaves the wallet again (through the ledger): a cancelled booking keeps nothing.
+ * Only a wallet that no longer holds the token leaves the loyalty balance below zero.
+ * Returns the tokens taken back from the wallet (0 most of the time).
+ */
+export async function revokeLoyalty(
+  tx: Tx,
+  m: { userId: number; earned: number; reservationId?: number | null },
+): Promise<number> {
+  if (m.earned <= 0) return 0;
+  const [user] = await tx
+    .select({ loyaltyBalance: usersTable.loyaltyBalance, tokenBalance: usersTable.tokenBalance })
+    .from(usersTable)
+    .where(eq(usersTable.id, m.userId))
+    // Same lock as the wallet (lib/ledger)
+    .for("no key update");
+  if (!user) return 0;
+  const total = cents(user.loyaltyBalance) - cents(m.earned);
+  const owed = total < 0 ? Math.ceil(-total / 100) : 0;
+  const back = Math.min(owed, user.tokenBalance);
+  if (back > 0)
+    await moveTokens(tx, {
+      userId: m.userId,
+      delta: -back,
+      type: "debit",
+      reservationId: m.reservationId ?? null,
+      description: "Loyalty reward taken back",
+    });
   await tx
     .update(usersTable)
-    .set({ loyaltyBalance: sql`${usersTable.loyaltyBalance} - ${earned}` })
-    .where(eq(usersTable.id, userId));
+    .set({ loyaltyBalance: (total + back * 100) / 100 })
+    .where(eq(usersTable.id, m.userId));
+  return back;
 }

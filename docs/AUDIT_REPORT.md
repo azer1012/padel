@@ -47,31 +47,83 @@ no negative stock, no overlapping booking, no orphan order line; realtime empty.
 Advisors: the intended "RLS enabled, no policy" notices and "leaked password
 protection disabled".
 
+Decided by the owner the same day, done and tested:
+
+- **Fidélité: a cancelled booking keeps nothing.** The reward was credited at booking
+  and, once it had become a token, a cancellation left that token in the wallet (owed
+  back out of later rewards). Now the refund takes the reward back, token included:
+  "Récompense fidélité reprise" in the member's history, through the ledger. A reward
+  token already spent elsewhere is taken from the refund; the balance never goes below
+  zero.
+- **A member no longer cancels a boutique order from the site.** The club calls every
+  order; the member says so on the phone and the desk cancels it (stock given back,
+  member told). The member's cancel route and button are gone.
+- **The five storage buckets of the prototype are removed** (`avatars`, `clubs`,
+  `courts`, `tournaments`, `gallery`): empty, no policy, read by no screen and no API
+  route, referenced by no row. Guarded migration `20261009000000` (rollback in
+  `supabase/rollbacks`), applied to the hosted project.
+
+Asked by the owner after the pass, built and tested the same day:
+
+- **Caisse** (Admin → Caisse): what the desk took in cash over a period (tokens sold,
+  spots paid at the club with their amount, who took it and when, boutique orders
+  handed over), with a spreadsheet export. Online payments are shown apart.
+- **Members**: the desk blocks and unblocks a member (the API is closed to them, a
+  "compte suspendu" screen explains it); a member deletes their own account (refused
+  with a match to come or an order in progress; the tokens left are lost, shown and
+  confirmed; nothing personal stays; the sign-in record goes in the same transaction).
+- **The missing buttons**: gear rented for a booking already made, one notification
+  read alone, older wallet movements on demand. A team taken out of a tournament by
+  the desk is now in the activity feed.
+- **Online payment** (`docs/ONLINE_PAYMENT.md`): token packs, loose tokens and
+  boutique orders, through the club's own Konnect or Flouci account, chosen per
+  installation. The amount is decided by the API; a payment is settled only on the
+  gateway's own answer to the API and for the amount asked; tokens are credited once;
+  the scheduler settles what a member never came back for. A paid order the desk
+  cancels is owed back until the desk records the refund it made at the gateway.
+  **Not verified against the real gateways**: the adapters follow their published
+  documentation and are tested against a local server answering like it; a club's
+  test keys are needed for the checklist in that guide.
+- Migrations `20261010000000` and `20261011000000`, additive, with rollbacks, applied
+  to the hosted project: 14 migrations on both sides; `payments` is closed to the
+  browser roles like every other table.
+
+- **Photo upload** (`docs/OPERATIONS.md`, `docs/SECURITY.md`): the desk picks a file
+  instead of pasting a link, for courts, news, tournaments and boutique articles; a
+  boutique article has up to 6 photos, which members swipe through. One private
+  storage bucket (`media`), written by the API alone and served by it; a file is
+  judged by its bytes (JPEG, PNG, WebP), named at random, lightened in the browser
+  (1600 px, WebP, camera metadata dropped); photos no page shows any more are removed
+  a day later. Migration `20261012000000` (bucket, `media_files`,
+  `shop_products.image_urls` in place of `image_url`), with a guarded rollback.
+  **Not verified against the real Supabase Storage**: tested against a local stand-in
+  answering the three calls the API makes; the migration is not applied to the hosted
+  project yet.
+- Tests after these requests, on the final code: typecheck 0 errors, lint clean,
+  **189 / 189** API tests, **11 / 11** database blocks, **220 / 220** browser steps
+  over 12 suites (members 9, payments 10 and photos 12 are new), production build OK,
+  `pnpm audit --prod` clean.
+
 Open, for the owner:
 
-- **Fidélité gives the reward before the match is played.** Ten bookings earn a token;
-  cancelling them refunds the ten and leaves the reward in the wallet, owed back out of
-  the next rewards (documented, tested). A member who stops playing keeps it. Taking it
-  back from the wallet, or crediting rewards after the match, is a product decision.
+- **Online payment**: run the checklist of `docs/ONLINE_PAYMENT.md` with a gateway's
+  test keys before a club goes live with it. Tokens bought online are not refunded
+  from the app (the desk refunds at the gateway and removes the tokens).
 - **Hosted project**: leaked-password protection is off; e-mail confirmation, SMTP,
   Google sign-in and the domain still need the accounts (e-mail confirmation not
-  re-checked this pass). Five public storage buckets of the first prototype
-  (`avatars`, `clubs`, `courts`, `tournaments`, `gallery`) are still there: empty, no
-  policy, used by nothing. Dropping them is a change to the hosted project.
-- **A team taken out by the desk** is not told and leaves no entry in the activity
-  feed (the feed's types are a database constraint: a migration).
-- **A member cancelling a boutique order** does not notify the admins (the order
-  leaves "À appeler" within a minute).
-- Not built, on purpose or not yet: online payment, tournament brackets and scores,
-  booking 2 or 3 spots in one go (own spot, then invitations), a request to join an
-  open match (joining is immediate), notifications for tournaments, damaged or
-  missing rental gear, editing a recurring series (cancel and recreate), account
-  deletion, older wallet movements than the last 30.
-- Still without a button (API only): adding rental gear to an existing booking,
-  marking one notification read.
+  re-checked this pass).
+- **A team taken out by the desk** is recorded in the activity feed, but the team is
+  not told: the desk calls them.
+- Not built, on purpose or not yet: tournament brackets and scores, booking 2 or 3
+  spots in one go (own spot, then invitations), a request to join an open match
+  (joining is immediate), notifications for tournaments, damaged or missing rental
+  gear, editing a recurring series (cancel and recreate), automatic refunds of online
+  payments, a larger view of a boutique photo.
 
-Feature matrix. PASS = proven by a test or a check run this pass; "suites" = judged
-by its suites only, not read again.
+Feature matrix, as it stood at the end of the pass (before the owner's requests
+above: Equipment's "gear cannot be added after booking" and Members' "no blocking, no
+account deletion" are since done). PASS = proven by a test or a check run this pass;
+"suites" = judged by its suites only, not read again.
 
 | Feature              | UI   | API  | DB   | Security | Tested                                 | Status      | Problems                                                                                  |
 | -------------------- | ---- | ---- | ---- | -------- | -------------------------------------- | ----------- | ----------------------------------------------------------------------------------------- |
@@ -88,7 +140,7 @@ by its suites only, not read again.
 | Equipment            | PASS | PASS | PASS | PASS     | API; screens for the pages             | PARTIAL     | gear cannot be added after booking from the app; no damaged or missing state              |
 | Tournaments          | PASS | PASS | PASS | PASS     | acceptance, API                        | IMPLEMENTED | content and team registration only (no brackets, scores); team list and withdrawal: fixed |
 | Boutique             | PASS | PASS | PASS | PASS     | shop, screens, API                     | IMPLEMENTED | no online payment (by design)                                                             |
-| Loyalty              | PASS | PASS | PASS | PASS     | loyalty, API                           | IMPLEMENTED | reward given before the match: owner decision                                             |
+| Loyalty              | PASS | PASS | PASS | PASS     | loyalty, API                           | IMPLEMENTED | a cancelled booking takes its reward back, token included (owner decision, done)          |
 | Notifications        | PASS | PASS | PASS | PASS     | acceptance, API (in-app only)          | PARTIAL     | e-mail and push delivery NOT TESTED (no SMTP, no push keys); none for tournaments         |
 | PWA                  | –    | n/a  | n/a  | –        | NOT TESTED                             | NOT TESTED  | install, offline start and push not exercised this pass                                   |
 | Dashboard            | PASS | PASS | PASS | PASS     | screens, API                           | IMPLEMENTED | suites; "revenue" is a token equivalent                                                   |

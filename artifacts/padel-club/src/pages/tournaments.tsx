@@ -25,6 +25,7 @@ import { Field, useConfirm } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { useI18n, useTx } from "@/lib/i18n";
+import { mediaSrc } from "@/services/api";
 import { clubDate } from "@/lib/club-time";
 import { apiErrorText } from "@/lib/api-errors";
 import { EventCover } from "@/components/smash/cover";
@@ -232,7 +233,7 @@ export default function Tournaments() {
               >
                 <div className="relative h-[220px]">
                   <EventCover
-                    src={x.imageUrl}
+                    src={mediaSrc(x.imageUrl)}
                     seed={x.id}
                     className="size-full"
                     imgClassName="transition-transform duration-700 group-hover:scale-105"

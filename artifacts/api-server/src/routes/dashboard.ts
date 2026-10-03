@@ -79,7 +79,10 @@ router.get("/dashboard/stats", requireAdmin, async (req, res) => {
     bookedValue(clubInstant(monthFirst, 0), clubInstant(nextMonthFirst, 0)),
     slotsPerDay(today, today).then((m) => m.get(today) ?? 0),
   ]);
-  const [{ activeUsers }] = await db.select({ activeUsers: count() }).from(usersTable);
+  const [{ activeUsers }] = await db
+    .select({ activeUsers: count() })
+    .from(usersTable)
+    .where(isNull(usersTable.deletedAt));
   const [{ tokensIssued }] = await db
     .select({ tokensIssued: sql<number>`coalesce(sum(${tokenTransactionsTable.amount}), 0)` })
     .from(tokenTransactionsTable)

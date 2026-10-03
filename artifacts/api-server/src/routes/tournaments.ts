@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { db, tournamentsTable, tournamentRegistrationsTable } from "@workspace/db";
+import { db, tournamentsTable, tournamentRegistrationsTable, usersTable } from "@workspace/db";
+import { logActivity } from "../lib/activity";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { currentUser, optionalUser, requireAdmin, requireUser, loadUser } from "../lib/auth";
 import { fullName } from "../lib/members";
@@ -189,9 +190,9 @@ router.get("/tournaments/:id/registrations", requireAdmin, async (req, res) => {
 router.delete("/tournaments/:id/registrations/:registrationId", requireAdmin, async (req, res) => {
   const id = requireId(req.params.id);
   const registrationId = requireId(req.params.registrationId, "registration");
-  await db.transaction(async (tx) => {
+  const removed = await db.transaction(async (tx) => {
     const [t] = await tx
-      .select({ id: tournamentsTable.id })
+      .select({ id: tournamentsTable.id, name: tournamentsTable.name })
       .from(tournamentsTable)
       .where(eq(tournamentsTable.id, id))
       .for("update");
@@ -210,7 +211,15 @@ router.delete("/tournaments/:id/registrations/:registrationId", requireAdmin, as
       .update(tournamentsTable)
       .set({ registeredTeams: sql`greatest(${tournamentsTable.registeredTeams} - 1, 0)` })
       .where(eq(tournamentsTable.id, id));
+    return { tournament: t.name, ...deleted[0] };
   });
+  const [member] = await db.select().from(usersTable).where(eq(usersTable.id, removed.userId));
+  await logActivity(
+    req,
+    "tournament_updated",
+    `Team ${removed.teamName ? `"${removed.teamName}" ` : ""}removed from ${removed.tournament}`,
+    member,
+  );
   res.status(204).end();
 });
 

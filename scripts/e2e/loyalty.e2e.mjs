@@ -128,13 +128,16 @@ await step("a cancelled booking gives its tokens back and takes its reward back"
   const cancel = await api(A, "POST", `/reservations/${second.body.id}/cancel`);
   equal(cancel.status, 200, "cancel");
   const u = await me();
-  equal(u.tokenBalance, 13, "tokens refunded");
-  // 0.2 − 0.4: the reward of that booking had already become a token
-  equal(u.loyaltyBalance, -0.2, "reward owed");
+  // 9 + 4 refunded − 1: the reward of that booking had already become a token, and
+  // that token leaves the wallet with the booking
+  equal(u.tokenBalance, 12, "tokens refunded, reward token taken back");
+  // 0.2 − 0.4 + the token taken back
+  equal(u.loyaltyBalance, 0.8, "reward left");
   await a.page.reload();
   const card = a.page.getByTestId("loyalty-card");
-  await card.getByText("0 / 1 token de récompense").waitFor({ timeout: 15000 });
-  await card.getByText(/il reste 0\.2 à regagner/).waitFor();
+  await card.getByText("0.8 / 1 token de récompense").waitFor({ timeout: 15000 });
+  equal(await card.getByText(/à regagner/).count(), 0, "nothing is owed");
+  await a.page.getByText("Récompense fidélité reprise (réservation annulée)").first().waitFor();
 });
 
 await step("the wallet fits a phone, and nothing went wrong behind the pages", async () => {

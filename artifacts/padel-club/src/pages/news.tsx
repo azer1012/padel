@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState, Page, PageHeader } from "@/components/smash/primitives";
 import { useI18n, useTx } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { mediaSrc } from "@/services/api";
 import { clubDate } from "@/lib/club-time";
 
 export default function News() {
@@ -39,7 +40,7 @@ export default function News() {
           className={cn("photo block shrink-0", big ? "h-[240px] lg:h-auto lg:w-1/2" : "h-[190px]")}
         >
           <img
-            src={a.imageUrl}
+            src={mediaSrc(a.imageUrl)}
             alt=""
             loading="lazy"
             className="size-full object-cover transition-transform duration-700 group-hover:scale-105"
@@ -129,7 +130,7 @@ export default function News() {
             <>
               {open.imageUrl && (
                 <img
-                  src={open.imageUrl}
+                  src={mediaSrc(open.imageUrl)}
                   alt=""
                   className="-mx-6 -mt-6 h-[260px] w-[calc(100%+48px)] max-w-none rounded-t-[32px] object-cover sm:-mx-8 sm:-mt-8 sm:w-[calc(100%+64px)]"
                 />

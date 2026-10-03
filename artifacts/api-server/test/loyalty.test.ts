@@ -195,7 +195,7 @@ describe("a refund takes the reward back", () => {
     assert.equal((await rewards(alice.id)).length, 2, "no new reward token");
   });
 
-  test("cancelled after the reward became a token: the reward is owed, and the next bookings fill it", async () => {
+  test("cancelled after the reward became a token: the token leaves the wallet again", async () => {
     await settings({ loyaltySpendTokens: 4, loyaltyRewardTokens: 1 });
     const start = await loyalty(bob.id);
     await credit(bob.id, 20);
@@ -204,12 +204,44 @@ describe("a refund takes the reward back", () => {
     assert.deepEqual(r.body.loyalty, { earned: 1, credited: 1 });
     assert.equal(await wallet(bob.id), tokens - 4 + 1);
     await call("POST", `/reservations/${r.body.id}/cancel`, { token: bob.token });
-    // The 4 tokens come back; the reward token stays in the wallet but is owed
-    assert.equal(await wallet(bob.id), tokens + 1);
-    assert.equal(await loyalty(bob.id), Math.round((start - 1) * 100) / 100);
-    const next = await book(bob, "15:30", 3);
-    assert.deepEqual(next.body.loyalty, { earned: 1, credited: 0 }, "it pays the debt first");
+    // The 4 tokens come back and the reward token is taken back: nothing is kept
+    assert.equal(await wallet(bob.id), tokens);
+    assert.equal(await loyalty(bob.id), start, "nothing owed, nothing gained");
+    const back = await q(
+      `select type, amount, reservation_id from token_transactions
+        where user_id = $1 and description = 'Loyalty reward taken back'`,
+      [bob.id],
+    );
+    assert.deepEqual(back, [{ type: "debit", amount: 1, reservation_id: r.body.id }]);
+    // Again and again: the wallet never grows by booking and cancelling
+    for (const hhmm of ["14:00", "15:30"]) {
+      const again = await book(bob, hhmm, 3);
+      assert.deepEqual(again.body.loyalty, { earned: 1, credited: 1 });
+      await call("POST", `/reservations/${again.body.id}/cancel`, { token: bob.token });
+    }
+    assert.equal(await wallet(bob.id), tokens);
     assert.equal(await loyalty(bob.id), start);
+    // A booking that is played keeps its reward
+    const next = await book(bob, "15:30", 3);
+    assert.deepEqual(next.body.loyalty, { earned: 1, credited: 1 });
+    assert.equal(await wallet(bob.id), tokens - 4 + 1);
+    await settings({ loyaltySpendTokens: 1, loyaltyRewardTokens: 0.1 });
+  });
+
+  test("the reward token already spent elsewhere: it is taken from the refund, never below zero", async () => {
+    await settings({ loyaltySpendTokens: 4, loyaltyRewardTokens: 1 });
+    const carol = await signup(api.pool, "carol@test.tn", { first_name: "Carol" });
+    await credit(carol.id, 4);
+    const first = await book(carol, "08:00", 4); // 4 spent, 1 reward token
+    assert.equal(await wallet(carol.id), 1);
+    // The reward token pays a spot (which earns 0.25 of its own)
+    const spot = await book(carol, "09:30", 4, { bookingMode: "own_spot" });
+    assert.equal(spot.status, 201);
+    assert.equal(await wallet(carol.id), 0);
+    await call("POST", `/reservations/${first.body.id}/cancel`, { token: carol.token });
+    // 4 refunded, 1 taken back: the reward is not kept because it was already used
+    assert.equal(await wallet(carol.id), 3);
+    assert.equal(await loyalty(carol.id), 0.25);
     await settings({ loyaltySpendTokens: 1, loyaltyRewardTokens: 0.1 });
   });
 

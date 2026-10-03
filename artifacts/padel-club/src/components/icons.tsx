@@ -21,6 +21,9 @@ import {
   ArrowUUpLeftIcon as ArrowUUpLeftBase,
   BellIcon as BellBase,
   BoxArrowUpIcon as BoxArrowUpBase,
+  CashRegisterIcon as CashRegisterBase,
+  CreditCardIcon as CreditCardBase,
+  LockOpenIcon as LockOpenBase,
   CalendarBlankIcon as CalendarBlankBase,
   CalendarCheckIcon as CalendarCheckBase,
   CalendarDotsIcon as CalendarDotsBase,
@@ -56,6 +59,9 @@ import {
   HandHeartIcon as HandHeartBase,
   HandTapIcon as HandTapBase,
   ImageBrokenIcon as ImageBrokenBase,
+  LinkSimpleIcon as LinkSimpleBase,
+  StarIcon as StarBase,
+  UploadSimpleIcon as UploadSimpleBase,
   InfoIcon as InfoBase,
   InstagramLogoIcon as InstagramLogoBase,
   KeyIcon as KeyBase,
@@ -147,6 +153,9 @@ export const ArrowUpRightIcon = icon(ArrowUpRightBase);
 export const ArrowUUpLeftIcon = icon(ArrowUUpLeftBase);
 export const BellIcon = icon(BellBase);
 export const BoxArrowUpIcon = icon(BoxArrowUpBase);
+export const CashRegisterIcon = icon(CashRegisterBase);
+export const CreditCardIcon = icon(CreditCardBase);
+export const LockOpenIcon = icon(LockOpenBase);
 export const CalendarBlankIcon = icon(CalendarBlankBase);
 export const CalendarCheckIcon = icon(CalendarCheckBase);
 export const CalendarDotsIcon = icon(CalendarDotsBase);
@@ -181,6 +190,9 @@ export const GridFourIcon = icon(GridFourBase);
 export const HandHeartIcon = icon(HandHeartBase);
 export const HandTapIcon = icon(HandTapBase);
 export const ImageBrokenIcon = icon(ImageBrokenBase);
+export const LinkSimpleIcon = icon(LinkSimpleBase);
+export const StarIcon = icon(StarBase);
+export const UploadSimpleIcon = icon(UploadSimpleBase);
 export const InfoIcon = icon(InfoBase);
 export const InstagramLogoIcon = icon(InstagramLogoBase);
 export const KeyIcon = icon(KeyBase);

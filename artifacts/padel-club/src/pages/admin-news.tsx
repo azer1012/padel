@@ -8,14 +8,7 @@ import {
 } from "@workspace/api-client-react";
 import type { NewsArticle } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  EyeIcon,
-  ImageBrokenIcon,
-  NewspaperIcon,
-  PencilSimpleIcon,
-  PlusIcon,
-  TrashIcon,
-} from "@/components/icons";
+import { EyeIcon, NewspaperIcon, PencilSimpleIcon, PlusIcon, TrashIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,10 +17,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
 import { Field, Pill, Segmented, useConfirm } from "@/components/smash/admin";
+import { PhotoInput } from "@/components/smash/photo-input";
 import { useToast } from "@/hooks/use-toast";
 import { useTx, useI18n } from "@/lib/i18n";
 import { clubDate } from "@/lib/club-time";
 import { apiErrorText } from "@/lib/api-errors";
+import { mediaSrc } from "@/services/api";
 
 type Form = {
   title: string;
@@ -62,14 +57,14 @@ export default function AdminNews() {
   const [editing, setEditing] = useState<NewsArticle | "new" | null>(null);
   const [form, setForm] = useState<Form>(blank);
   const [filter, setFilter] = useState<"all" | "published" | "draft">("all");
-  const [imgError, setImgError] = useState(false);
+  /** A photo is on its way to the storage: saving waits for its address. */
+  const [photoBusy, setPhotoBusy] = useState(false);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
   const refresh = () => qc.invalidateQueries({ queryKey: getListNewsQueryKey() });
   const saving = createMutation.isPending || updateMutation.isPending;
 
   const openCreate = () => {
     setForm(blank);
-    setImgError(false);
     setEditing("new");
   };
   const openEdit = (a: NewsArticle) => {
@@ -81,7 +76,6 @@ export default function AdminNews() {
       category: a.category ?? "",
       isPublished: a.isPublished,
     });
-    setImgError(false);
     setEditing(a);
   };
 
@@ -102,7 +96,8 @@ export default function AdminNews() {
       title: form.title.trim(),
       excerpt: form.excerpt || undefined,
       content: form.content,
-      imageUrl: form.imageUrl || undefined,
+      // Sent even when empty: a removed photo is removed
+      imageUrl: form.imageUrl,
       category: form.category || undefined,
       isPublished: form.isPublished,
     };
@@ -248,7 +243,12 @@ export default function AdminNews() {
             >
               <span className="flex h-[88px] w-full shrink-0 items-center justify-center overflow-hidden rounded-[18px] bg-mist sm:w-[132px]">
                 {a.imageUrl ? (
-                  <img src={a.imageUrl} alt="" loading="lazy" className="size-full object-cover" />
+                  <img
+                    src={mediaSrc(a.imageUrl)}
+                    alt=""
+                    loading="lazy"
+                    className="size-full object-cover"
+                  />
                 ) : (
                   <NewspaperIcon className="size-6 text-muted-foreground" />
                 )}
@@ -372,35 +372,14 @@ export default function AdminNews() {
                 data-testid="input-article-content"
               />
             </Field>
-            <Field
-              label={tx({ fr: "Image (URL)", en: "Image (URL)", ar: "الصورة (رابط)" })}
-              htmlFor="n-img"
-            >
-              <div className="flex items-center gap-3">
-                <Input
-                  id="n-img"
-                  type="url"
-                  dir="ltr"
-                  value={form.imageUrl}
-                  onChange={(e) => {
-                    set("imageUrl", e.target.value);
-                    setImgError(false);
-                  }}
-                  placeholder="https://…"
-                />
-                <span className="flex h-12 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-mist">
-                  {form.imageUrl && !imgError ? (
-                    <img
-                      src={form.imageUrl}
-                      alt=""
-                      onError={() => setImgError(true)}
-                      className="size-full object-cover"
-                    />
-                  ) : (
-                    <ImageBrokenIcon className="size-4 text-muted-foreground" />
-                  )}
-                </span>
-              </div>
+            <Field label={tx({ fr: "Photo", en: "Photo", ar: "الصورة" })} htmlFor="n-img">
+              <PhotoInput
+                id="n-img"
+                testId="news-photo"
+                value={form.imageUrl ? [form.imageUrl] : []}
+                onChange={(v) => set("imageUrl", v[0] ?? "")}
+                onBusyChange={setPhotoBusy}
+              />
             </Field>
             <label className="flex cursor-pointer items-center justify-between gap-4 rounded-[20px] bg-secondary p-4">
               <span className="flex items-center gap-3">
@@ -428,7 +407,7 @@ export default function AdminNews() {
               data-testid="btn-save-article"
               type="submit"
               size="lg"
-              disabled={saving}
+              disabled={saving || photoBusy}
               loading={saving}
             >
               {saving

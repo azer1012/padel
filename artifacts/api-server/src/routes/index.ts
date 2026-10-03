@@ -17,6 +17,9 @@ import pushRouter from "./push";
 import jobsRouter from "./jobs";
 import settingsRouter from "./settings";
 import shopRouter from "./shop";
+import reportsRouter from "./reports";
+import paymentsRouter from "./payments";
+import mediaRouter from "./media";
 
 const router: IRouter = Router();
 
@@ -38,5 +41,8 @@ router.use(pushRouter);
 router.use(jobsRouter);
 router.use(settingsRouter);
 router.use(shopRouter);
+router.use(reportsRouter);
+router.use(paymentsRouter);
+router.use(mediaRouter);
 
 export default router;

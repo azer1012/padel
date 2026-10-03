@@ -80,6 +80,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/User"
+    delete:
+      tags: [users]
+      summary: "Delete one's own account (confirm: true; forfeitTokens = the tokens given up)"
+      responses:
+        "200":
+          description: Deleted
+        "409":
+          description: "A match to come, an order in progress, or tokens not given up"
 
   /users:
     get:
@@ -1313,6 +1321,89 @@ paths:
     post:
       summary: "Run reminders and match-finished jobs (header x-cron-secret)"
       tags: [jobs]
+      responses:
+        "200":
+          description: OK
+  /admin/media:
+    post:
+      summary: "Upload one photo (admin): the body is the file itself, JPEG, PNG or WebP, 5 MB at most"
+      tags: [media]
+      responses:
+        "201":
+          description: "The photo's key and the address to save in a form (/api/media/<key>)"
+        "400":
+          description: "Not a JPEG, PNG or WebP image (UNSUPPORTED_IMAGE)"
+        "413":
+          description: "Over 5 MB"
+  /media/{key}:
+    get:
+      summary: "An uploaded photo (public, cached for good: a name is never reused)"
+      tags: [media]
+      responses:
+        "200":
+          description: "The image"
+        "404":
+          description: "No such photo"
+  /admin/reports/cash:
+    get:
+      summary: "Cash taken by the desk between two club dates, line by line, and what was paid online (admin)"
+      tags: [reports]
+      responses:
+        "200":
+          description: OK
+  /payments/tokens:
+    post:
+      summary: "Start an online payment for a pack (packageId) or a number of tokens; the amount is the server's"
+      tags: [payments]
+      responses:
+        "201":
+          description: "The payment, with the address of the gateway's payment page"
+  /payments/orders/{orderId}:
+    post:
+      summary: "Start an online payment for one's own boutique order"
+      tags: [payments]
+      responses:
+        "201":
+          description: "The payment, with the address of the gateway's payment page"
+  /payments/{id}:
+    get:
+      summary: "One's own payment"
+      tags: [payments]
+      responses:
+        "200":
+          description: OK
+  /payments/{id}/verify:
+    post:
+      summary: "Ask the gateway what became of one's own payment, and settle it once"
+      tags: [payments]
+      responses:
+        "200":
+          description: OK
+  /payments/webhook/konnect:
+    get:
+      summary: "Konnect's callback (public): only makes the API ask Konnect"
+      tags: [payments]
+      responses:
+        "200":
+          description: OK
+  /payments/webhook/flouci:
+    post:
+      summary: "Flouci's callback (public, GET too): only makes the API ask Flouci"
+      tags: [payments]
+      responses:
+        "200":
+          description: OK
+  /admin/payments:
+    get:
+      summary: "Online payments, newest first (admin)"
+      tags: [payments]
+      responses:
+        "200":
+          description: OK
+  /admin/payments/{id}/refunded:
+    post:
+      summary: "Record that a payment owed back was refunded at the gateway (admin)"
+      tags: [payments]
       responses:
         "200":
           description: OK

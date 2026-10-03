@@ -9,6 +9,86 @@ import { friendlyError } from "./labels";
  * API's own sentence; a failure with no explanation gets a plain "try again".
  */
 const BY_CODE: Record<string, Copy> = {
+  ACCOUNT_BLOCKED: {
+    fr: "Votre compte est suspendu par le club. Contactez l'accueil.",
+    en: "Your account is suspended by the club. Contact the front desk.",
+    ar: "حسابك موقوف من النادي. تواصل مع الاستقبال.",
+  },
+  HAS_UPCOMING_BOOKINGS: {
+    fr: "Vous avez encore des matchs à venir. Annulez-les ou quittez-les avant de supprimer votre compte.",
+    en: "You still have matches to come. Cancel or leave them before deleting your account.",
+    ar: "لديك مباريات قادمة. ألغها أو غادرها قبل حذف حسابك.",
+  },
+  HAS_OPEN_ORDERS: {
+    fr: "Une commande de la boutique est encore en cours. Attendez-la, ou demandez au club de l'annuler.",
+    en: "A shop order is still in progress. Wait for it, or ask the club to cancel it.",
+    ar: "لديك طلب من المتجر قيد التنفيذ. انتظره أو اطلب من النادي إلغاءه.",
+  },
+  TOKENS_LEFT: {
+    fr: "Votre solde de tokens a changé. Vérifiez le nombre de tokens perdus, puis confirmez à nouveau.",
+    en: "Your token balance changed. Check how many tokens are given up, then confirm again.",
+    ar: "تغيّر رصيدك. تحقق من الرصيد الذي ستتخلى عنه ثم أكّد مجددًا.",
+  },
+  UNSUPPORTED_IMAGE: {
+    fr: "Ce fichier n'est pas une photo utilisable. Choisissez une image JPEG, PNG ou WebP.",
+    en: "This file is not a usable photo. Pick a JPEG, PNG or WebP image.",
+    ar: "هذا الملف ليس صورة صالحة. اختر صورة JPEG أو PNG أو WebP.",
+  },
+  IMAGE_TOO_LARGE: {
+    fr: "Cette photo est trop lourde (5 Mo au maximum).",
+    en: "This photo is too large (5 MB at most).",
+    ar: "هذه الصورة كبيرة جدًا (5 ميغابايت كحد أقصى).",
+  },
+  TOO_LARGE: {
+    fr: "Cet envoi est trop lourd (5 Mo au maximum pour une photo).",
+    en: "This upload is too large (5 MB at most for a photo).",
+    ar: "هذا الملف كبير جدًا (5 ميغابايت كحد أقصى للصورة).",
+  },
+  STORAGE_ERROR: {
+    fr: "La photo n'a pas pu être enregistrée. Réessayez dans un instant.",
+    en: "The photo could not be saved. Try again in a moment.",
+    ar: "تعذر حفظ الصورة. حاول بعد لحظة.",
+  },
+  TOO_MANY_PHOTOS: {
+    fr: "Un article peut avoir 6 photos au maximum.",
+    en: "An article can have 6 photos at most.",
+    ar: "يمكن إضافة 6 صور كحد أقصى للمنتج.",
+  },
+  PAYMENT_PROVIDER_ERROR: {
+    fr: "Le service de paiement ne répond pas. Rien n'a été débité : réessayez dans un instant.",
+    en: "The payment service is not answering. Nothing was charged: try again in a moment.",
+    ar: "خدمة الدفع لا تستجيب. لم يُخصم شيء: حاول بعد لحظة.",
+  },
+  ALREADY_PAID: {
+    fr: "Cette commande est déjà payée.",
+    en: "This order is already paid.",
+    ar: "هذا الطلب مدفوع بالفعل.",
+  },
+  ORDER_CLOSED: {
+    fr: "Cette commande ne peut plus être payée en ligne.",
+    en: "This order can no longer be paid online.",
+    ar: "لا يمكن دفع هذا الطلب عبر الإنترنت.",
+  },
+  BELOW_MIN_PURCHASE: {
+    fr: "Quantité inférieure à l'achat minimum du club.",
+    en: "Below the club's minimum purchase.",
+    ar: "أقل من الحد الأدنى للشراء.",
+  },
+  SELF_BLOCK: {
+    fr: "Vous ne pouvez pas bloquer votre propre compte.",
+    en: "You can't block your own account.",
+    ar: "لا يمكنك حظر حسابك.",
+  },
+  ADMIN_NOT_BLOCKABLE: {
+    fr: "Retirez d'abord l'accès admin de ce membre, puis bloquez-le.",
+    en: "Remove this member's admin access first, then block them.",
+    ar: "اسحب صلاحية المسؤول من هذا العضو أولًا ثم احظره.",
+  },
+  BLOCKED_MEMBER: {
+    fr: "Ce membre est bloqué : débloquez-le avant de lui donner l'accès admin.",
+    en: "This member is blocked: unblock them before giving admin access.",
+    ar: "هذا العضو محظور: ألغِ الحظر قبل منحه صلاحية المسؤول.",
+  },
   SLOT_TAKEN: {
     fr: "Ce terrain vient d'être réservé par un autre joueur. Choisissez un autre horaire.",
     en: "Another player just booked this court. Pick another time.",
@@ -148,11 +228,6 @@ const BY_CODE: Record<string, Copy> = {
     fr: "Indiquez l'adresse de livraison.",
     en: "Enter the delivery address.",
     ar: "أدخل عنوان التوصيل.",
-  },
-  ORDER_CONFIRMED: {
-    fr: "Le club a déjà confirmé cette commande. Appelez le club pour la modifier.",
-    en: "The club has already confirmed this order. Call the club to change it.",
-    ar: "أكّد النادي هذا الطلب. اتصل بالنادي لتعديله.",
   },
   CASH_DISABLED: {
     fr: "Le paiement au club n'est pas proposé : réglez avec vos tokens.",

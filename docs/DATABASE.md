@@ -72,11 +72,12 @@ Spots per match come from `club_settings.max_players` (kept on each booking as `
 
 ### Boutique
 
-| Table              | Holds                                                                                                                                                     |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shop_products`    | Articles on sale: name, category, `price`, `stock` (taken when an order is placed, given back when it is cancelled), `image_url`, `is_active`.            |
-| `shop_orders`      | An order of a member: `status` (`pending` → `confirmed` → `shipped` → `delivered`, or `cancelled`), `total`, delivery or pick-up, phone to call, address. |
-| `shop_order_items` | The lines of an order, with the article name and unit price at order time.                                                                                |
+| Table              | Holds                                                                                                                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shop_products`    | Articles on sale: name, category, `price`, `stock` (taken when an order is placed, given back when it is cancelled), `image_urls` (6 at most, the first one is the cover), `is_active`. |
+| `media_files`      | One row per photo uploaded by the desk: `key` (its name in the private `media` storage bucket, and the end of its address `/api/media/<key>`), type, size, who, when.                   |
+| `shop_orders`      | An order of a member: `status` (`pending` → `confirmed` → `shipped` → `delivered`, or `cancelled`), `total`, delivery or pick-up, phone to call, address.                               |
+| `shop_order_items` | The lines of an order, with the article name and unit price at order time.                                                                                                              |
 
 Nothing is paid online: the club calls the member (`pending` → `confirmed`), then
 delivers or hands the order over, and is paid in cash. `idempotency_key` makes one
@@ -166,6 +167,10 @@ They hold even if the API had a bug, and are tested by
 | `20261006000000_drop_unused_legacy_tables.sql`              | Drops the empty `clubs`, `staff_roles` and `terrains.capacity` (guarded).                             |
 | `20261007000000_shop.sql`                                   | Boutique: `shop_products`, `shop_orders`, `shop_order_items`, `shop_enabled`.                         |
 | `20261008000000_loyalty.sql`                                | Fidélité: the rule in `club_settings`, `users.loyalty_balance`, `reservation_players.loyalty_earned`. |
+| `20261009000000_drop_unused_storage_buckets.sql`            | Removes the five empty storage buckets of the prototype (guarded): the product stores no file.        |
+| `20261010000000_member_accounts_cash_report.sql`            | Blocked and deleted accounts (`users.blocked_at`, `deleted_at`), cash dated on spots and orders.      |
+| `20261011000000_online_payments.sql`                        | `payments`, `shop_orders.paid_online_at`, `club_settings.online_payment_enabled`.                     |
+| `20261012000000_photo_uploads.sql`                          | The private `media` storage bucket, `media_files`, `shop_products.image_urls` (replaces `image_url`). |
 
 All migrations are additive or guarded; none deletes club data. Apply them with
 `pnpm --filter @workspace/scripts run db:migrate` (or `supabase db push`, or the

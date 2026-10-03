@@ -50,8 +50,11 @@ export async function dropDatabase() {
   await admin.end();
 }
 
-/** Starts the real app. Must be called after createDatabase (env is read at import). */
-export async function startApi() {
+/**
+ * Starts the real app. Must be called after createDatabase (env is read at import).
+ * `overrides`: what a test file needs differently (e.g. a local stand-in as SUPABASE_URL).
+ */
+export async function startApi(overrides: Record<string, string> = {}) {
   Object.assign(process.env, {
     NODE_ENV: "test",
     DATABASE_URL: dbUrl,
@@ -68,6 +71,7 @@ export async function startApi() {
     RESEND_API_KEY: "",
     VAPID_PUBLIC_KEY: "",
     VAPID_PRIVATE_KEY: "",
+    ...overrides,
   });
   const { default: app } = await import("../src/app");
   const { pool } = await import("@workspace/db");

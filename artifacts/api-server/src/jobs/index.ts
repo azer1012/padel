@@ -6,6 +6,8 @@ import { equipmentFor } from "../lib/equipment";
 import { formatClubDate, formatClubTime } from "../lib/club-time";
 import { getSettings } from "../lib/settings";
 import { resetDemoIfDue } from "../lib/demo-seed";
+import { reconcilePayments } from "../lib/payments";
+import { sweepMedia } from "../lib/media";
 import { env } from "../config/env";
 
 const MIN = 60 * 1000;
@@ -112,8 +114,15 @@ export async function runJobs() {
     // The public demo goes back to its starting point every night (lib/demo-seed.ts)
     const demoReset = env.demoMode ? await resetDemoIfDue() : false;
     const [reminders, finished] = [await sendReminders(), await sendMatchFinished()];
-    logger.info({ reminders, finished, demoReset, ms: Date.now() - started }, "jobs run");
-    return { reminders, finished, demoReset };
+    // Online payments left pending are asked again to the gateway (lib/payments)
+    const payments = env.paymentProvider ? await reconcilePayments() : 0;
+    // Uploaded photos that no page shows any more leave the storage (lib/media)
+    const photos = await sweepMedia();
+    logger.info(
+      { reminders, finished, payments, photos, demoReset, ms: Date.now() - started },
+      "jobs run",
+    );
+    return { reminders, finished, payments, photos, demoReset };
   } catch (err) {
     logger.error({ err }, "jobs failed");
     return { error: true };

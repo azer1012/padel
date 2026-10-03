@@ -55,6 +55,13 @@ export interface User {
   createdAt: string;
   /** @nullable */
   updatedAt?: string | null;
+  /**
+   * Blocked by the club since that moment: the member can no longer use the app
+   * @nullable
+   */
+  blockedAt?: string | null;
+  /** @nullable */
+  blockedReason?: string | null;
 }
 
 export type UserUpdateLanguage = (typeof UserUpdateLanguage)[keyof typeof UserUpdateLanguage];

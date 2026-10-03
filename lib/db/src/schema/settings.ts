@@ -55,6 +55,8 @@ export const clubSettingsTable = pgTable(
     invitationsEnabled: boolean("invitations_enabled").notNull().default(true),
     cashPaymentEnabled: boolean("cash_payment_enabled").notNull().default(true),
     shopEnabled: boolean("shop_enabled").notNull().default(true),
+    /** The club's switch for online payment (only effective when a gateway is configured). */
+    onlinePaymentEnabled: boolean("online_payment_enabled").notNull().default(true),
 
     /** Fidélité: every `loyaltySpendTokens` tokens spent on a booking earn `loyaltyRewardTokens`. */
     loyaltyEnabled: boolean("loyalty_enabled").notNull().default(false),

@@ -103,7 +103,7 @@ const ARTICLES = [
     category: "racket",
     price: 349,
     stock: 4,
-    imageUrl: "/shop/raquette-carbone.webp",
+    imageUrls: ["/shop/raquette-carbone.webp", "/shop/raquettes-couleur.webp"],
     description:
       "Cadre 100 % carbone, forme diamant et équilibre en tête : de la puissance pour les joueurs confirmés. Livrée avec sa dragonne.",
   },
@@ -112,7 +112,7 @@ const ARTICLES = [
     category: "racket",
     price: 279,
     stock: 6,
-    imageUrl: "/shop/raquette-controle.webp",
+    imageUrls: ["/shop/raquette-controle.webp"],
     description:
       "Forme ronde et large zone de frappe : de la précision et du confort, idéale pour progresser sans se faire mal au bras.",
   },
@@ -121,7 +121,7 @@ const ARTICLES = [
     category: "racket",
     price: 149,
     stock: 8,
-    imageUrl: "/shop/chaussures-kit.webp",
+    imageUrls: ["/shop/chaussures-kit.webp"],
     description:
       "Légère et tolérante, pour démarrer le padel dans de bonnes conditions. Le premier achat que nous conseillons aux débutants.",
   },
@@ -130,7 +130,7 @@ const ARTICLES = [
     category: "racket",
     price: 520,
     stock: 3,
-    imageUrl: "/shop/raquettes-couleur.webp",
+    imageUrls: ["/shop/raquettes-couleur.webp"],
     description:
       "Deux raquettes polyvalentes à prix réduit, pour jouer en couple ou entre amis. Surgrips offerts.",
   },
@@ -139,7 +139,7 @@ const ARTICLES = [
     category: "balls",
     price: 18,
     stock: 40,
-    imageUrl: "/shop/balles-tube.webp",
+    imageUrls: ["/shop/balles-tube.webp", "/shop/balles-seau.webp"],
     description:
       "Balles pressurisées homologuées, rebond régulier sur gazon synthétique. Le tube est scellé pour garder la pression.",
   },
@@ -148,7 +148,7 @@ const ARTICLES = [
     category: "balls",
     price: 120,
     stock: 5,
-    imageUrl: "/shop/balles-seau.webp",
+    imageUrls: ["/shop/balles-seau.webp"],
     description:
       "Pour les séances de paniers et les cours : 24 balles d'entraînement dans leur seau de transport.",
   },
@@ -426,6 +426,9 @@ async function seed(tx: Tx, authIds: Map<string, string>) {
       avatarUrl: null,
       tokenBalance: 0,
       loyaltyBalance: 0,
+      blockedAt: null,
+      blockedReason: null,
+      deletedAt: null,
       language: "fr" as const,
       emailNotifications: true,
       pushNotifications: false,

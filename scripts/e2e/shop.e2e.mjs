@@ -51,7 +51,11 @@ await step("the admin adds two articles from the form", async () => {
     await admin.page.getByRole("option", { name: category }).click();
     await dialog.locator("#sp-price").fill(price);
     await dialog.locator("#sp-stock").fill(qty);
-    await dialog.locator("#sp-image").fill("/club-detail-960.webp");
+    // A photo by its link (uploads have their own suite: photos.e2e.mjs)
+    await dialog.getByTestId("product-photos-link-toggle").click();
+    await dialog.getByTestId("product-photos-link").fill("/club-detail-960.webp");
+    await dialog.getByTestId("product-photos-link-add").click();
+    await dialog.getByTestId("product-photos-item-0").waitFor();
     await dialog.getByRole("button", { name: "Enregistrer" }).click();
     await admin.page.getByText("Article ajouté").first().waitFor({ timeout: 10000 });
     await dialog.waitFor({ state: "hidden" });
@@ -151,8 +155,17 @@ await step("nobody is sold what is not there, whatever the browser says", async 
   });
   equal(cheap.status, 201, "order");
   equal(cheap.body.total, 18, "price from the catalogue");
-  const peek = await api(B, "POST", `/shop/orders/${orderId}/cancel`);
-  equal(peek.status, 404, "another member's order");
+  // No member cancels an order from the site, their own included: the desk does it
+  // after the call
+  for (const who of [A, B])
+    equal(
+      (await api(who, "POST", `/shop/orders/${orderId}/cancel`)).status,
+      404,
+      "cancelling as a member",
+    );
+  const mine = a.page.getByTestId(`order-${orderId}`);
+  equal(await mine.getByRole("button", { name: /Annuler/ }).count(), 0, "cancel button");
+  await mine.getByText(/Dites-le lors de l'appel/).waitFor();
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -295,7 +308,11 @@ await step("an order arriving while the admin edits an article is never undone",
   await dialog.getByRole("button", { name: "Enregistrer" }).click();
   await admin.page.getByText("Article mis à jour").first().waitFor({ timeout: 10000 });
   equal(await stock("Tube de 3 balles"), seen + 10, "new stock");
-  equal((await api(A, "POST", `/shop/orders/${r.body.id}/cancel`)).status, 200, "cancel");
+  equal(
+    (await api(ADMIN, "PATCH", `/admin/shop/orders/${r.body.id}`, { status: "cancelled" })).status,
+    200,
+    "cancelled by the desk",
+  );
 });
 
 await step("switched off in Réglages: no shop in the menus, orders refused", async () => {

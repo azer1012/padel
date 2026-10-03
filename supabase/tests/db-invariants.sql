@@ -176,6 +176,13 @@ do $$ begin
     where table_schema = 'public' and table_name = 'terrains' and column_name = 'capacity'),
     'terrains.capacity remains';
   assert not exists (select 1 from pg_trigger where tgname = 'on_auth_user_created'), 'legacy auth trigger remains';
+  -- One bucket, for the photos the desk uploads: private, the API alone reads and writes it
+  assert not exists (select 1 from storage.buckets where id <> 'media'),
+    'the prototype''s storage buckets remain';
+  assert (select not public and file_size_limit = 5242880 from storage.buckets where id = 'media'),
+    'the media bucket is missing, public or without a size limit';
+  assert not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects'),
+    'a policy opens storage.objects to browsers';
   raise notice 'ok 9 - legacy schema removed';
 end $$;
 

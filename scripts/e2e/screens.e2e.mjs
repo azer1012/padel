@@ -54,6 +54,8 @@ const racket = await api(ADMIN, "POST", "/admin/shop/products", {
   price: 349,
   stock: 2,
   description: "Cadre 100 % carbone, forme diamant et équilibre en tête.",
+  // Several photos: the card shows them in a strip the member moves through
+  imageUrls: ["/club-detail-960.webp", "/club-main-960.webp", "/club-indoor-960.webp"],
 });
 await api(ADMIN, "POST", "/admin/shop/products", {
   name: "Tube de 3 balles",
@@ -106,6 +108,7 @@ const PAGES = {
     "/admin/pricing",
     "/admin/equipment",
     "/admin/shop",
+    "/admin/cash",
     "/admin/settings",
   ],
 };
@@ -346,6 +349,7 @@ if (axe)
       "/admin/tournaments",
       "/admin/news",
       "/admin/shop",
+      "/admin/cash",
       "/admin/settings",
     ],
   }))

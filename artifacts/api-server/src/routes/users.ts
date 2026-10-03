@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { notifyLater } from "../lib/notify";
-import { db, usersTable } from "@workspace/db";
+import { activityTable, db, usersTable, type Tx } from "@workspace/db";
+import { deleteAccount, deletedAuthId } from "../lib/accounts";
 import { logActivity } from "../lib/activity";
-import { and, count, desc, eq, ilike, or } from "drizzle-orm";
+import { logger } from "../lib/logger";
+import { and, count, desc, eq, ilike, isNull, or } from "drizzle-orm";
 import { env } from "../config/env";
 import { assertNotDemo, demoAccountOnly, demoPeopleOnly, isDemoEmail } from "../lib/demo";
 import {
@@ -63,6 +65,32 @@ router.patch("/users/me", requireUser, async (req, res) => {
 });
 
 /**
+ * A member deletes their own account. Nothing is done by accident: the request must
+ * say `confirm: true`, and when tokens are left, how many are given up
+ * (`forfeitTokens`), so a balance that changed since the screen was drawn stops it.
+ */
+router.delete("/users/me", requireUser, async (req, res) => {
+  // The demo's shared accounts belong to every visitor
+  assertNotDemo("Deleting an account");
+  const member = currentUser(req);
+  if (req.body?.confirm !== true)
+    throw new HttpError(400, "Confirm the deletion of the account", "CONFIRMATION_REQUIRED");
+  const lost = await db.transaction((tx: Tx) => deleteAccount(tx, member, req.body?.forfeitTokens));
+  // Filed without a name: the account no longer has one
+  try {
+    await db.insert(activityTable).values({
+      type: "member_updated",
+      message: `A member deleted their account${lost ? ` (${lost} token(s) given up)` : ""}`,
+      userId: member.id,
+      userName: null,
+    });
+  } catch (err) {
+    logger.error({ err }, "activity log entry refused");
+  }
+  res.status(204).end();
+});
+
+/**
  * Idempotent fallback after sign-in. The database already creates the profile at
  * signup (auth.users trigger); this only fills it in for older accounts and never
  * overwrites what the player edited in their profile.
@@ -80,10 +108,19 @@ router.post("/users/sync", requireAuth, async (req, res) => {
   const phone = rawPhone && PHONE.test(rawPhone) ? rawPhone : null;
   const gender = oneOf(req.body?.gender, GENDERS) ?? null;
 
+  // A session still open after its account was deleted never brings the account back
+  const [gone] = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.supabaseAuthId, deletedAuthId(authUserId)));
+  if (gone) throw new HttpError(403, "This account was deleted", "ACCOUNT_DELETED");
+
   const [existing] = await db
     .select()
     .from(usersTable)
     .where(eq(usersTable.supabaseAuthId, authUserId));
+  if (existing?.blockedAt)
+    throw new HttpError(403, "This account is suspended: contact the club", "ACCOUNT_BLOCKED");
   let user: DbUser;
   let created = false;
   if (existing) {
@@ -145,6 +182,8 @@ router.get("/users", requireAdmin, async (req, res) => {
         )
       : undefined,
     demoPeopleOnly(),
+    // A deleted account is nobody any more
+    isNull(usersTable.deletedAt),
   );
   const [{ total }] = await db.select({ total: count() }).from(usersTable).where(where);
   const data = await db
@@ -166,7 +205,14 @@ router.get("/users/:id", requireAdmin, async (req, res) => {
   res.json(user);
 });
 
-/** Admin: edit a member's details or role. Token balances only change through /tokens/admin/adjust. */
+/**
+ * Admin: edit a member's details or role, block or unblock them. Token balances only
+ * change through /tokens/admin/adjust.
+ *
+ * `blocked: true` (with an optional `blockedReason`) closes the API to the member:
+ * no booking, no order, no sign-in beyond the "account suspended" screen. Their
+ * bookings and tokens stay as they are, for the desk to settle.
+ */
 router.patch("/users/:id", requireAdmin, async (req, res) => {
   const admin = currentUser(req);
   const id = requireId(req.params.id);
@@ -178,6 +224,20 @@ router.patch("/users/:id", requireAdmin, async (req, res) => {
   if (role !== undefined) assertNotDemo("Changing roles");
   if (role === "player" && id === admin.id)
     throw new HttpError(400, "You can't remove your own admin access", "SELF_DEMOTE");
+  const blocked = typeof req.body?.blocked === "boolean" ? req.body.blocked : undefined;
+  if (blocked !== undefined) assertNotDemo("Blocking members");
+  if (blocked && id === admin.id)
+    throw new HttpError(400, "You can't block your own account", "SELF_BLOCK");
+  const [target] = await db.select().from(usersTable).where(eq(usersTable.id, id));
+  if (!target || target.deletedAt) throw new HttpError(404, "User not found", "NOT_FOUND");
+  if (blocked && (role ?? target.role) === "admin")
+    throw new HttpError(400, "Remove the admin access before blocking", "ADMIN_NOT_BLOCKABLE");
+  if (role === "admin" && (blocked ?? !!target.blockedAt))
+    throw new HttpError(400, "Unblock this member before giving admin access", "BLOCKED_MEMBER");
+  if (blocked !== undefined) {
+    patch.blockedAt = blocked ? (target.blockedAt ?? new Date()) : null;
+    patch.blockedReason = blocked ? cleanText(req.body?.blockedReason, 200) : null;
+  }
   const [updated] = await db.transaction(async (tx) => {
     if (role === "player") {
       // Locks the admin rows: two admins demoting each other at the same instant
@@ -198,6 +258,15 @@ router.patch("/users/:id", requireAdmin, async (req, res) => {
   });
   if (!updated) throw new HttpError(404, "User not found", "NOT_FOUND");
   if (role) await logActivity(req, "role_changed", `${updated.email} is now ${role}`, updated);
+  if (blocked !== undefined && !!target.blockedAt !== blocked)
+    await logActivity(
+      req,
+      "member_updated",
+      blocked
+        ? `${updated.email} blocked${updated.blockedReason ? `: ${updated.blockedReason}` : ""}`
+        : `${updated.email} unblocked`,
+      updated,
+    );
   res.json(updated);
 });
 

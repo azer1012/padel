@@ -1,7 +1,13 @@
 import { Switch, Route, useLocation, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useRef } from "react";
-import { setAuthTokenGetter, setBaseUrl, useGetMe } from "@workspace/api-client-react";
+import {
+  apiErrorCode,
+  setAuthTokenGetter,
+  setBaseUrl,
+  useGetMe,
+} from "@workspace/api-client-react";
+import { CLUB } from "@/config/club";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { NavLayout } from "@/components/nav-layout";
@@ -29,6 +35,7 @@ const AdminPricing = lazy(() => import("@/pages/admin-pricing"));
 const AdminEquipment = lazy(() => import("@/pages/admin-equipment"));
 const AdminSettings = lazy(() => import("@/pages/admin-settings"));
 const AdminShop = lazy(() => import("@/pages/admin-shop"));
+const AdminCash = lazy(() => import("@/pages/admin-cash"));
 import Terrains from "@/pages/terrains";
 import Tournaments from "@/pages/tournaments";
 import News from "@/pages/news";
@@ -179,80 +186,128 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   return <Component />;
 }
 
+/**
+ * A member blocked by the club is told so, on every page, instead of meeting refusals
+ * one screen at a time. The API is what enforces it; this only explains it.
+ */
+function BlockedGate({ children }: { children: React.ReactNode }) {
+  const tx = useTx();
+  const { isSignedIn, signOut } = useAuth();
+  const { error } = useGetMe({ query: { enabled: isSignedIn, retry: false } });
+  if (!isSignedIn || apiErrorCode(error) !== "ACCOUNT_BLOCKED") return <>{children}</>;
+  return (
+    <main
+      role="alert"
+      data-testid="account-blocked"
+      className="mx-auto flex min-h-[100dvh] max-w-[480px] flex-col items-center justify-center gap-4 px-5 text-center"
+    >
+      <h1 className="disp m-0 text-3xl">
+        {tx({
+          fr: "Votre compte est suspendu",
+          en: "Your account is suspended",
+          ar: "حسابك موقوف",
+        })}
+      </h1>
+      <p className="m-0 text-muted-foreground">
+        {tx({
+          fr: "Le club a suspendu l'accès de ce compte. Contactez l'accueil pour en savoir plus.",
+          en: "The club has suspended this account. Contact the front desk to find out more.",
+          ar: "أوقف النادي هذا الحساب. تواصل مع الاستقبال لمعرفة المزيد.",
+        })}
+      </p>
+      {CLUB.phone && (
+        <Button asChild variant="dark">
+          <a href={CLUB.phoneHref} dir="ltr">
+            {CLUB.phone}
+          </a>
+        </Button>
+      )}
+      <Button variant="secondary" onClick={() => signOut()}>
+        {tx({ fr: "Se déconnecter", en: "Sign out", ar: "تسجيل الخروج" })}
+      </Button>
+    </main>
+  );
+}
+
 function AppRoutes() {
   return (
     <QueryClientProvider client={queryClient}>
       <QueryClientCacheInvalidator />
       <UserSyncer />
       <TooltipProvider>
-        <NavLayout>
-          <Switch>
-            <Route path="/" component={HomeRedirect} />
-            <Route path="/sign-in/*?" component={() => <AuthPage mode="sign-in" />} />
-            <Route path="/sign-up/*?" component={() => <AuthPage mode="sign-up" />} />
-            <Route path="/reset-password" component={ResetPassword} />
-            <Route path="/auth/confirm" component={AuthConfirm} />
+        <BlockedGate>
+          <NavLayout>
+            <Switch>
+              <Route path="/" component={HomeRedirect} />
+              <Route path="/sign-in/*?" component={() => <AuthPage mode="sign-in" />} />
+              <Route path="/sign-up/*?" component={() => <AuthPage mode="sign-up" />} />
+              <Route path="/reset-password" component={ResetPassword} />
+              <Route path="/auth/confirm" component={AuthConfirm} />
 
-            {/* Protected Player Routes */}
-            <Route path="/dashboard">
-              <ProtectedRoute component={Dashboard} />
-            </Route>
-            <Route path="/reservations">
-              <ProtectedRoute component={PlayerReservations} />
-            </Route>
-            <Route path="/wallet">
-              <ProtectedRoute component={Wallet} />
-            </Route>
-            <Route path="/profile">
-              <ProtectedRoute component={Profile} />
-            </Route>
+              {/* Protected Player Routes */}
+              <Route path="/dashboard">
+                <ProtectedRoute component={Dashboard} />
+              </Route>
+              <Route path="/reservations">
+                <ProtectedRoute component={PlayerReservations} />
+              </Route>
+              <Route path="/wallet">
+                <ProtectedRoute component={Wallet} />
+              </Route>
+              <Route path="/profile">
+                <ProtectedRoute component={Profile} />
+              </Route>
 
-            {/* Protected Admin Routes */}
-            <Route path="/admin">
-              <AdminRoute component={AdminDashboard} />
-            </Route>
-            <Route path="/admin/reservations">
-              <AdminRoute component={AdminReservations} />
-            </Route>
-            <Route path="/admin/terrains">
-              <AdminRoute component={AdminTerrains} />
-            </Route>
-            <Route path="/admin/users">
-              <AdminRoute component={AdminUsers} />
-            </Route>
-            <Route path="/admin/tokens">
-              <AdminRoute component={AdminTokens} />
-            </Route>
-            <Route path="/admin/news">
-              <AdminRoute component={AdminNews} />
-            </Route>
-            <Route path="/admin/tournaments">
-              <AdminRoute component={AdminTournaments} />
-            </Route>
-            <Route path="/admin/pricing">
-              <AdminRoute component={AdminPricing} />
-            </Route>
-            <Route path="/admin/equipment">
-              <AdminRoute component={AdminEquipment} />
-            </Route>
-            <Route path="/admin/settings">
-              <AdminRoute component={AdminSettings} />
-            </Route>
-            <Route path="/admin/shop">
-              <AdminRoute component={AdminShop} />
-            </Route>
+              {/* Protected Admin Routes */}
+              <Route path="/admin">
+                <AdminRoute component={AdminDashboard} />
+              </Route>
+              <Route path="/admin/reservations">
+                <AdminRoute component={AdminReservations} />
+              </Route>
+              <Route path="/admin/terrains">
+                <AdminRoute component={AdminTerrains} />
+              </Route>
+              <Route path="/admin/users">
+                <AdminRoute component={AdminUsers} />
+              </Route>
+              <Route path="/admin/tokens">
+                <AdminRoute component={AdminTokens} />
+              </Route>
+              <Route path="/admin/news">
+                <AdminRoute component={AdminNews} />
+              </Route>
+              <Route path="/admin/tournaments">
+                <AdminRoute component={AdminTournaments} />
+              </Route>
+              <Route path="/admin/pricing">
+                <AdminRoute component={AdminPricing} />
+              </Route>
+              <Route path="/admin/equipment">
+                <AdminRoute component={AdminEquipment} />
+              </Route>
+              <Route path="/admin/settings">
+                <AdminRoute component={AdminSettings} />
+              </Route>
+              <Route path="/admin/shop">
+                <AdminRoute component={AdminShop} />
+              </Route>
+              <Route path="/admin/cash">
+                <AdminRoute component={AdminCash} />
+              </Route>
 
-            {/* Public Routes */}
-            <Route path="/terrains" component={Terrains} />
-            <Route path="/tournaments" component={Tournaments} />
-            <Route path="/news" component={News} />
-            <Route path="/contact" component={Contact} />
-            <Route path="/open-matches" component={OpenMatches} />
-            <Route path="/boutique" component={Boutique} />
-            <Route path="/join/:token" component={JoinInvite} />
-            <Route component={NotFound} />
-          </Switch>
-        </NavLayout>
+              {/* Public Routes */}
+              <Route path="/terrains" component={Terrains} />
+              <Route path="/tournaments" component={Tournaments} />
+              <Route path="/news" component={News} />
+              <Route path="/contact" component={Contact} />
+              <Route path="/open-matches" component={OpenMatches} />
+              <Route path="/boutique" component={Boutique} />
+              <Route path="/join/:token" component={JoinInvite} />
+              <Route component={NotFound} />
+            </Switch>
+          </NavLayout>
+        </BlockedGate>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

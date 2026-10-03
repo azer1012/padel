@@ -18,22 +18,23 @@ Supabase project, domain and keys are only in the environment.
 
 See `.env.example` for the full list with comments. Summary:
 
-| Variable                                              | Where          | Notes                                                          |
-| ----------------------------------------------------- | -------------- | -------------------------------------------------------------- |
-| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`         | website build  | public by design                                               |
-| `VITE_SITE_URL`, `VITE_API_URL`                       | website build  | public                                                         |
-| `VITE_AUTH_GOOGLE_ENABLED`, `VITE_AUTH_APPLE_ENABLED` | website build  | show a provider only once it's configured                      |
-| `DATABASE_URL`                                        | API            | **secret** (database password)                                 |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`           | API            | service role key is **secret**                                 |
-| `SUPABASE_JWT_SECRET`                                 | API (optional) | **secret**; local token verification                           |
-| `CORS_ORIGIN`, `FRONTEND_URL`, `TRUST_PROXY`          | API            |                                                                |
-| `TZ`, `CLUB_TIMEZONE`, `VITE_CLUB_TIMEZONE`           | API + website  | the club's time zone (IANA, e.g. `Africa/Tunis`)               |
-| `CLUB_NAME`, `CLUB_ADDRESS`                           | API            | used in e-mails and push                                       |
-| `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`      | API            | API key is **secret**                                          |
-| `VAPID_*`                                             | API            | private key is **secret**; one key pair per club               |
-| `JOBS_ENABLED`, `CRON_SECRET`                         | API            | cron secret is **secret**                                      |
-| `RATE_LIMIT_WRITES_PER_MINUTE`                        | API            |                                                                |
-| `DEMO_MODE`, `DEMO_PASSWORD`, `DEMO_RESET_HOUR`       | API            | public demo only, **never** on a club: see `docs/DEMO_MODE.md` |
+| Variable                                                      | Where          | Notes                                                                                    |
+| ------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------- |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`                 | website build  | public by design                                                                         |
+| `VITE_SITE_URL`, `VITE_API_URL`                               | website build  | public                                                                                   |
+| `VITE_AUTH_GOOGLE_ENABLED`, `VITE_AUTH_APPLE_ENABLED`         | website build  | show a provider only once it's configured                                                |
+| `DATABASE_URL`                                                | API            | **secret** (database password)                                                           |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`                   | API            | service role key is **secret**                                                           |
+| `SUPABASE_JWT_SECRET`                                         | API (optional) | **secret**; local token verification                                                     |
+| `CORS_ORIGIN`, `FRONTEND_URL`, `TRUST_PROXY`                  | API            |                                                                                          |
+| `TZ`, `CLUB_TIMEZONE`, `VITE_CLUB_TIMEZONE`                   | API + website  | the club's time zone (IANA, e.g. `Africa/Tunis`)                                         |
+| `CLUB_NAME`, `CLUB_ADDRESS`                                   | API            | used in e-mails and push                                                                 |
+| `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`              | API            | API key is **secret**                                                                    |
+| `VAPID_*`                                                     | API            | private key is **secret**; one key pair per club                                         |
+| `JOBS_ENABLED`, `CRON_SECRET`                                 | API            | cron secret is **secret**                                                                |
+| `RATE_LIMIT_WRITES_PER_MINUTE`                                | API            |                                                                                          |
+| `DEMO_MODE`, `DEMO_PASSWORD`, `DEMO_RESET_HOUR`               | API            | public demo only, **never** on a club: see `docs/DEMO_MODE.md`                           |
+| `PAYMENT_PROVIDER`, `KONNECT_*`, `FLOUCI_*`, `API_PUBLIC_URL` | API            | online payment; the keys are **secret** and the club's own: see `docs/ONLINE_PAYMENT.md` |
 
 The time zone is an installation setting (not in Réglages) because changing it
 would shift every existing booking.
@@ -72,7 +73,7 @@ the activity feed with the admin and the old → new values. Each section has
 | **Tarifs**          | Currency (TND), price per player (25), full court price (100). Peak / off-peak / weekend / holiday prices: pricing rules in Admin → Tarifs                                                                                                                                                                                                                                                |
 | **Tokens**          | Tokens per spot (1), per full court (4), price of one token (25), minimum purchase (1), packs (10 = 250, 20 = 480, 50 = 1150): added, changed, taken off sale or deleted in Réglages → Tokens (a pack already sold can only be taken off sale); the packs on sale are shown in the home page prices and the wallet, with the regular price (tokens × price of one token) and the discount |
 | **Horaires**        | Weekly hours per day (08:00–23:00 every day), exceptions: holiday / closure / special hours, whole club or one court                                                                                                                                                                                                                                                                      |
-| **Fonctionnalités** | Open matches (on), invitations: link, QR, member invitation (on), pay at the club (on)                                                                                                                                                                                                                                                                                                    |
+| **Fonctionnalités** | Open matches (on), invitations: link, QR, member invitation (on), pay at the club (on), boutique (on), online payment (on, effective only when the installation has a gateway)                                                                                                                                                                                                            |
 | **Notifications**   | Confirmations, cancellations, invitations, tokens credited, after the match, reminder (on, 120 min before)                                                                                                                                                                                                                                                                                |
 
 ### How a change applies
@@ -105,11 +106,17 @@ the activity feed with the admin and the old → new values. Each section has
   expiry date, and no screen announces one (the `expires_at` column is unused).
 - **Fidélité** (Réglages → Fidélité, off by default): every N tokens spent on a booking
   earn R tokens (e.g. 1 → 0.1). Fractions add up per member; each whole token is
-  credited to the wallet through the ledger. A refunded booking takes its reward back,
-  so booking and cancelling earns nothing. Cash payments and free invited spots earn
-  nothing.
-- **Online payment in the boutique**: an order is never paid on the site. The club
-  calls the member to confirm it and is paid in cash on delivery or at the desk.
+  credited to the wallet through the ledger. A cancelled, refunded booking takes its
+  reward back: when that reward had already become a token, the token leaves the wallet
+  again ("Récompense fidélité reprise" in the history), so booking and cancelling earns
+  nothing. Cash payments and free invited spots earn nothing.
+- **Boutique orders**: the club calls the member to confirm every order. It is paid in
+  cash on delivery or at the desk, or online when the installation has a payment
+  gateway (`docs/ONLINE_PAYMENT.md`). A member cannot cancel an order from the site:
+  they say so when the club calls, and the desk cancels it (the articles go back in
+  stock; an order paid online is then owed back).
+- **Refunds of online payments** are never sent by the platform: the desk refunds in
+  the gateway's merchant space and records it (Admin → Boutique).
 - **Minimum players** never blocks a booking: a player can always book only their
   spot. A match below the minimum shows "1 more to play" to its players.
 - **Automatic refund of cash already paid** for a cancelled match: staff handle it

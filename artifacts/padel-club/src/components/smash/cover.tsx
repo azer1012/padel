@@ -2,6 +2,7 @@ import { useState } from "react";
 import { TrophyIcon } from "@/components/icons";
 import { CourtLines } from "@/components/smash/primitives";
 import { cn } from "@/lib/utils";
+import { mediaSrc } from "@/services/api";
 
 const COURT_TONES = ["bg-court/70", "bg-[#3a2f8f]", "bg-[#1b6f52]"];
 
@@ -26,7 +27,7 @@ export function EventCover({
     return (
       <span className={cn("photo block", className)}>
         <img
-          src={src}
+          src={mediaSrc(src)}
           alt=""
           loading="lazy"
           decoding="async"

@@ -6,15 +6,16 @@ runs its own rules from **Admin → Réglages**.
 
 ## Selling and setting up a club
 
-| Guide                          | Read it when                                                     |
-| ------------------------------ | ---------------------------------------------------------------- |
-| `NEW_CUSTOMER_SETUP.md`        | onboarding a new club, start to launch (start here)              |
-| `SUPABASE_NEW_CUSTOMER.md`     | creating and configuring the club's Supabase project             |
-| `CONFIGURATION.md`             | deciding what is `.env`, what is branding, what is Réglages      |
-| `DOMAIN_SETUP.md`              | connecting the club's domain, DNS and HTTPS                      |
-| `EMAIL_CONFIGURATION.md`       | sign-up / reset e-mails (SMTP) and the club's notification mails |
-| `GOOGLE_AUTH_CONFIGURATION.md` | turning on Google sign-in                                        |
-| `PRODUCTION_DEPLOYMENT.md`     | deploying the database, the API and the website; final checks    |
+| Guide                          | Read it when                                                        |
+| ------------------------------ | ------------------------------------------------------------------- |
+| `NEW_CUSTOMER_SETUP.md`        | onboarding a new club, start to launch (start here)                 |
+| `SUPABASE_NEW_CUSTOMER.md`     | creating and configuring the club's Supabase project                |
+| `CONFIGURATION.md`             | deciding what is `.env`, what is branding, what is Réglages         |
+| `DOMAIN_SETUP.md`              | connecting the club's domain, DNS and HTTPS                         |
+| `EMAIL_CONFIGURATION.md`       | sign-up / reset e-mails (SMTP) and the club's notification mails    |
+| `GOOGLE_AUTH_CONFIGURATION.md` | turning on Google sign-in                                           |
+| `ONLINE_PAYMENT.md`            | card / e-Dinar payment through the club's Konnect or Flouci account |
+| `PRODUCTION_DEPLOYMENT.md`     | deploying the database, the API and the website; final checks       |
 
 ## Running a club
 

@@ -71,7 +71,54 @@ doesn't match its last ledger entry. It should always be empty.
   the booker's notes and a guest's phone stay with the booker and the staff.
 - A member can only remove their own push subscription.
 - Staff actions are written to the audit trail with the admin's name: token
-  moves, cash payments marked, role changes, court and pricing changes, settings.
+  moves, cash payments marked, role changes, court and pricing changes, settings,
+  members blocked or unblocked, teams taken out of a tournament, refunds recorded.
+- A blocked member is refused by every signed-in route (`ACCOUNT_BLOCKED`), whatever
+  their session; an admin is never blocked, nor oneself.
+- A member deletes only their own account, after confirming it and the tokens they
+  give up (the number is checked against the balance under a row lock). The profile is
+  anonymised, the sign-in record deleted in the same transaction, and the old session
+  cannot recreate the profile (`ACCOUNT_DELETED`). The ledger and past matches stay.
+- The cash report is an admin route; it reads what was recorded (ledger cash amounts,
+  spots marked paid, orders handed over), it never takes an amount from the browser.
+
+## Uploaded photos
+
+- Only an admin uploads (`POST /api/admin/media`), one file per request, 5 MB at most.
+- What a file is comes from its first bytes, never from the request's `Content-Type`
+  or a file name: JPEG, PNG and WebP only. SVG and HTML, which can carry script, are
+  refused whatever they claim to be.
+- The file is stored under a random 128-bit name chosen by the API; nothing the
+  browser sends becomes a path. A name that does not have that exact shape never
+  reaches the storage (no path traversal).
+- The bucket is **private** and has no policy: no browser role reads or writes it.
+  The API uploads with the service role key and serves the photos itself, with the
+  stored type, `X-Content-Type-Options: nosniff` and a long cache (a name is never
+  reused). Photos are public by nature (they are on public pages); nothing private
+  goes into this bucket.
+- The website re-encodes a photo through a canvas before sending it, which drops the
+  camera's metadata (GPS position, device). A file sent straight to the API by an
+  admin is stored as it is.
+- Uploads are refused in the public demo.
+
+## Online payment
+
+Details in `docs/ONLINE_PAYMENT.md`. What the API enforces:
+
+- The amount comes from the club's packs, token price or the order's total, never
+  from the request; a member only pays their own order.
+- The member's return, the gateway's callback and the scheduler only make the API
+  **ask the gateway**: the callback routes are public and carry no authority. A
+  payment is settled when the gateway itself answers "paid" for the amount asked;
+  any other amount closes it as failed and credits nothing.
+- Settling locks the payment row and writes the ledger with a key that exists once
+  (`payment:<id>`): checked ten times, a payment credits once.
+- A member reaches only their own payments; the list and the refund record are admin
+  routes. The platform never sends money: a refund is made by the club at the
+  gateway, then recorded.
+- The stand-in gateway of the test suites (`PAYMENT_PROVIDER=test`) and its routes
+  exist only with `NODE_ENV=test`; the API refuses to start with it otherwise.
+- No card data ever reaches the platform: the member types it on the gateway's page.
 - Inputs validated and size-limited, JSON body ≤ 100 kB, uniform JSON errors
   without stack traces, `X-Content-Type-Options`/`X-Frame-Options`/`no-store`
   headers, per-IP write rate limit, per-member limit on the member search.
@@ -86,6 +133,7 @@ doesn't match its last ledger entry. It should always be empty.
 | `DATABASE_URL` (password)                            | API host environment only |
 | `SUPABASE_JWT_SECRET`                                | API host environment only |
 | `RESEND_API_KEY`, `VAPID_PRIVATE_KEY`, `CRON_SECRET` | API host environment only |
+| `KONNECT_API_KEY`, `FLOUCI_PRIVATE_KEY` (the club's) | API host environment only |
 | Google client secret, SMTP password, Apple key       | Supabase dashboard only   |
 
 Only `VITE_*` variables reach the browser bundle (`envPrefix: ["VITE_"]`). No
@@ -105,9 +153,13 @@ cron secret and Google client — never reuse them across clubs.
 - **The public planning shows "First L." of the players of every match** to
   visitors who are not signed in. It's a product choice (members find each other);
   tell the club, and hide names for visitors if the club prefers.
-- **No account deletion in the app**: a member who wants their account removed
-  asks the club; staff delete the auth user in the Supabase dashboard. The profile
-  and its ledger stay for the accounting.
+- **Online payment is not proven against the real gateways**: the Konnect and Flouci
+  adapters follow their published documentation and are tested against a local
+  server. Run the checklist of `docs/ONLINE_PAYMENT.md` with the club's test keys
+  before switching a club to production keys.
+- **A blocked member with `SUPABASE_JWT_SECRET` set** is refused at once (the block is
+  read from the database on every request); only the Supabase session itself lives
+  until it expires, and opens nothing.
 
 - **No CAPTCHA on sign-up**: bots can create accounts and burn the SMTP quota.
   Enable Supabase Attack Protection (Turnstile/hCaptcha) and wire the site key.

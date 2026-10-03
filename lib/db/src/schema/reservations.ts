@@ -111,6 +111,10 @@ export const reservationPlayersTable = pgTable("reservation_players", {
     .default(0),
   notes: text("notes"),
   joinedAt: timestamp("joined_at").notNull().defaultNow(),
+  /** A spot paid at the club: what it brought in, when the desk marked it and who did. */
+  cashAmount: numeric("cash_amount", { precision: 10, scale: 2, mode: "number" }),
+  paidAt: timestamp("paid_at"),
+  paidBy: integer("paid_by").references(() => usersTable.id, { onDelete: "set null" }),
 });
 
 export const reservationPlayersRelations = relations(reservationPlayersTable, ({ one }) => ({

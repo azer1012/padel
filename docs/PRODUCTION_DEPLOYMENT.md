@@ -199,7 +199,8 @@ Tick every line for each club. A line that can't be ticked is a reason not to la
 - [ ] **Auth**: Site URL and Redirect URLs are the club's domain; Confirm email on; leaked-password protection on
 - [ ] **SMTP**: custom SMTP saved in Supabase; a test e-mail arrived (`docs/EMAIL_CONFIGURATION.md`)
 - [ ] **Google** (if sold): client ID and secret saved in Supabase; `VITE_AUTH_GOOGLE_ENABLED=true` (`docs/GOOGLE_AUTH_CONFIGURATION.md`)
-- [ ] **Storage**: no bucket holds private files; club images are in `artifacts/padel-club/public/`
+- [ ] **Storage**: one bucket, `media`, private (`select id, public from storage.buckets` → `media | false`), no policy on `storage.objects`; the club's own images are in `artifacts/padel-club/public/`
+- [ ] **Photo upload**: Admin → Boutique → an article → Choisir une photo: the photo shows in the form, and on `/boutique` once saved
 - [ ] **Domain**: DNS points to the website and the API hosts (`docs/DOMAIN_SETUP.md`)
 - [ ] **HTTPS**: both hosts answer on `https://` with a valid certificate; `http://` redirects
 - [ ] **Build**: `pnpm run build` succeeds with the club's environment

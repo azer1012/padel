@@ -115,7 +115,7 @@ export async function refundPlayers(
       refunds.push({ userId: p.userId, amount: p.tokensCharged });
     }
     // The tokens come back, so does the loyalty reward they had earned
-    await revokeLoyalty(tx, p.userId, p.loyaltyEarned);
+    await revokeLoyalty(tx, { userId: p.userId, earned: p.loyaltyEarned, reservationId });
     await tx
       .update(reservationPlayersTable)
       .set({ paymentStatus: "refunded", loyaltyEarned: 0 })
@@ -171,7 +171,11 @@ export async function removePlayer(
       description: opts.refundDescription,
     });
     refunded = paidTokens;
-    await revokeLoyalty(tx, row.userId, row.loyaltyEarned);
+    await revokeLoyalty(tx, {
+      userId: row.userId,
+      earned: row.loyaltyEarned,
+      reservationId: reservation.id,
+    });
   }
   await releaseEquipment(tx, reservation.id, row.userId);
 

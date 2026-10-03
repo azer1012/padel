@@ -7,6 +7,7 @@ import {
   useAdminShopProducts,
   useCreateShopProduct,
   useDeleteShopProduct,
+  useMarkPaymentRefunded,
   useUpdateShopOrder,
   useUpdateShopProduct,
   type AdminShopOrder,
@@ -42,6 +43,7 @@ import {
 } from "@/components/ui/select";
 import { EmptyState, ErrorState, Page, PageHeader } from "@/components/smash/primitives";
 import { Field, Pill, Segmented, useConfirm } from "@/components/smash/admin";
+import { PhotoInput } from "@/components/smash/photo-input";
 import { useToast } from "@/hooks/use-toast";
 import { useClubRules } from "@/hooks/use-club-rules";
 import { shopMoney, useOrderStatus, useShopCategories } from "@/hooks/use-order-status";
@@ -50,6 +52,7 @@ import { apiErrorText } from "@/lib/api-errors";
 import { plural } from "@/lib/labels";
 import { clubDateTime } from "@/lib/club-time";
 import { cn } from "@/lib/utils";
+import { mediaSrc } from "@/services/api";
 
 type Filter = "pending" | "open" | "all";
 type Form = {
@@ -58,7 +61,7 @@ type Form = {
   category: string;
   price: string;
   stock: string;
-  imageUrl: string;
+  imageUrls: string[];
   isActive: boolean;
 };
 const blank: Form = {
@@ -67,7 +70,7 @@ const blank: Form = {
   category: "racket",
   price: "",
   stock: "1",
-  imageUrl: "",
+  imageUrls: [],
   isActive: true,
 };
 
@@ -100,6 +103,8 @@ export default function AdminShop() {
     del = useDeleteShopProduct();
   const [editing, setEditing] = useState<AdminShopProduct | "new" | null>(null);
   const [form, setForm] = useState<Form>(blank);
+  /** A photo is on its way to the storage: saving waits for its address. */
+  const [photoBusy, setPhotoBusy] = useState(false);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   const refreshOrders = () => {
@@ -115,6 +120,43 @@ export default function AdminShop() {
   /** Orders the list does not show: the API answers the most recent ones only. */
   const older = Math.max(0, (orders?.total ?? 0) - list.length);
 
+  const markRefunded = useMarkPaymentRefunded();
+  /** The desk refunded an online payment in the gateway's merchant space, and says so. */
+  async function refunded(paymentId: number, amount: number, currency: string) {
+    const ok = await confirm({
+      title: tx({
+        fr: `Avez-vous remboursé ${shopMoney(amount)} ${currency} au membre ?`,
+        en: `Did you refund ${shopMoney(amount)} ${currency} to the member?`,
+        ar: `هل أرجعت ${shopMoney(amount)} ${currency} للعضو؟`,
+      }),
+      description: tx({
+        fr: "Le site ne rembourse pas tout seul : le remboursement se fait dans l'espace marchand de la passerelle de paiement. Confirmez ici une fois qu'il est fait.",
+        en: "The site does not refund by itself: the refund is made in the payment gateway's merchant space. Confirm here once it is done.",
+        ar: "الموقع لا يعيد المبلغ تلقائيًا: يتم الإرجاع من فضاء التاجر في بوابة الدفع. أكّد هنا بعد إتمامه.",
+      }),
+      confirmLabel: tx({
+        fr: "Oui, c'est remboursé",
+        en: "Yes, it is refunded",
+        ar: "نعم، تم الإرجاع",
+      }),
+    });
+    if (!ok) return;
+    markRefunded.mutate(paymentId, {
+      onSuccess: () => {
+        toast({
+          title: tx({ fr: "Remboursement noté", en: "Refund recorded", ar: "تم تسجيل الإرجاع" }),
+        });
+        refreshOrders();
+      },
+      onError: (err) =>
+        toast({
+          title: tx({ fr: "Action impossible", en: "Couldn't do that", ar: "تعذر تنفيذ الإجراء" }),
+          description: apiErrorText(err, tx),
+          variant: "destructive",
+        }),
+    });
+  }
+
   async function move(order: AdminShopOrder, status: ShopOrderStatus) {
     if (status === "cancelled") {
       const ok = await confirm({
@@ -123,11 +165,17 @@ export default function AdminShop() {
           en: `Cancel order #${order.id}?`,
           ar: `إلغاء الطلب رقم ${order.id}؟`,
         }),
-        description: tx({
-          fr: "Les articles retournent en stock et le membre est prévenu.",
-          en: "The articles go back in stock and the member is told.",
-          ar: "تعود المنتجات إلى المخزون ويُبلَّغ العضو.",
-        }),
+        description: order.paidOnlineAt
+          ? tx({
+              fr: `Les articles retournent en stock et le membre est prévenu. Cette commande est payée en ligne : vous devrez lui rembourser ${shopMoney(order.total)} ${order.currency}.`,
+              en: `The articles go back in stock and the member is told. This order is paid online: you will have to refund ${shopMoney(order.total)} ${order.currency}.`,
+              ar: `تعود المنتجات إلى المخزون ويُبلَّغ العضو. هذا الطلب مدفوع عبر الإنترنت: عليك إرجاع ${shopMoney(order.total)} ${order.currency}.`,
+            })
+          : tx({
+              fr: "Les articles retournent en stock et le membre est prévenu.",
+              en: "The articles go back in stock and the member is told.",
+              ar: "تعود المنتجات إلى المخزون ويُبلَّغ العضو.",
+            }),
         confirmLabel: tx({ fr: "Annuler la commande", en: "Cancel the order", ar: "إلغاء الطلب" }),
         destructive: true,
       });
@@ -171,7 +219,7 @@ export default function AdminShop() {
       category: p.category,
       price: String(p.price),
       stock: String(p.stock),
-      imageUrl: p.imageUrl ?? "",
+      imageUrls: p.imageUrls ?? [],
       isActive: p.isActive,
     });
     setEditing(p);
@@ -185,7 +233,7 @@ export default function AdminShop() {
       description: form.description.trim() || null,
       category: form.category,
       price: Number(form.price),
-      imageUrl: form.imageUrl.trim() || null,
+      imageUrls: form.imageUrls,
       isActive: form.isActive,
     };
     const done = (m: string) => () => {
@@ -362,6 +410,16 @@ export default function AdminShop() {
                           {tx({ fr: `n° ${o.id}`, en: `#${o.id}`, ar: `رقم ${o.id}` })}
                         </span>
                         <Pill tone={st.tone}>{st.label}</Pill>
+                        {o.paidOnlineAt && (
+                          <Pill tone="success">
+                            <CheckIcon />
+                            {tx({
+                              fr: "Payée en ligne",
+                              en: "Paid online",
+                              ar: "مدفوع عبر الإنترنت",
+                            })}
+                          </Pill>
+                        )}
                       </span>
                       <span className="text-[17px] font-extrabold">{o.contactName}</span>
                       <span className="text-xs text-muted-foreground">
@@ -391,17 +449,68 @@ export default function AdminShop() {
                     ))}
                     <li className="flex justify-between gap-3 border-t border-[#DCE2F8] pt-2 font-extrabold">
                       <span>
-                        {tx({
-                          fr: "Total à encaisser",
-                          en: "Total to collect",
-                          ar: "المجموع للتحصيل",
-                        })}
+                        {o.paidOnlineAt
+                          ? tx({
+                              fr: "Déjà payée en ligne : rien à encaisser",
+                              en: "Already paid online: nothing to collect",
+                              ar: "مدفوع عبر الإنترنت: لا شيء للتحصيل",
+                            })
+                          : tx({
+                              fr: "Total à encaisser",
+                              en: "Total to collect",
+                              ar: "المجموع للتحصيل",
+                            })}
                       </span>
                       <span dir="ltr">
                         {shopMoney(o.total)} {o.currency}
                       </span>
                     </li>
                   </ul>
+
+                  {/* Paid online then cancelled: the money is owed back to the member */}
+                  {(o.payments ?? [])
+                    .filter((p) => p.status === "refund_due" || p.status === "refunded")
+                    .map((p) => (
+                      <div
+                        key={p.id}
+                        data-testid={`refund-${p.id}`}
+                        className={cn(
+                          "flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-bold",
+                          p.status === "refund_due"
+                            ? "bg-[#FDE4E4] text-[#7A1C20]"
+                            : "bg-secondary text-muted-foreground",
+                        )}
+                      >
+                        <span>
+                          {p.status === "refund_due"
+                            ? tx({
+                                fr: `${shopMoney(p.amount)} ${o.currency} payés en ligne à rembourser au membre (depuis l'espace marchand de la passerelle de paiement).`,
+                                en: `${shopMoney(p.amount)} ${o.currency} paid online to refund to the member (from the payment gateway's merchant space).`,
+                                ar: `${shopMoney(p.amount)} ${o.currency} مدفوعة عبر الإنترنت يجب إرجاعها للعضو.`,
+                              })
+                            : tx({
+                                fr: `${shopMoney(p.amount)} ${o.currency} remboursés au membre.`,
+                                en: `${shopMoney(p.amount)} ${o.currency} refunded to the member.`,
+                                ar: `تم إرجاع ${shopMoney(p.amount)} ${o.currency} للعضو.`,
+                              })}
+                        </span>
+                        {p.status === "refund_due" && (
+                          <Button
+                            size="sm"
+                            variant="dark"
+                            onClick={() => refunded(p.id, p.amount, o.currency)}
+                            disabled={markRefunded.isPending}
+                          >
+                            <CheckIcon />
+                            {tx({
+                              fr: "Remboursement effectué",
+                              en: "Refund done",
+                              ar: "تم الإرجاع",
+                            })}
+                          </Button>
+                        )}
+                      </div>
+                    ))}
 
                   <div className="flex flex-col gap-1 text-sm">
                     <span className="flex items-center gap-2 font-semibold">
@@ -451,11 +560,13 @@ export default function AdminShop() {
                         (o.status === "confirmed" && o.deliveryMethod === "pickup")) && (
                         <Button onClick={() => move(o, "delivered")} disabled={moveOrder.isPending}>
                           <CheckIcon />
-                          {tx({
-                            fr: "Remise et payée",
-                            en: "Handed over and paid",
-                            ar: "سُلّم ودُفع",
-                          })}
+                          {o.paidOnlineAt
+                            ? tx({ fr: "Remise", en: "Handed over", ar: "سُلّم" })
+                            : tx({
+                                fr: "Remise et payée",
+                                en: "Handed over and paid",
+                                ar: "سُلّم ودُفع",
+                              })}
                         </Button>
                       )}
                       <Button
@@ -530,8 +641,13 @@ export default function AdminShop() {
               )}
             >
               <span className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-mist text-court">
-                {p.imageUrl ? (
-                  <img src={p.imageUrl} alt="" loading="lazy" className="size-full object-cover" />
+                {p.imageUrls[0] ? (
+                  <img
+                    src={mediaSrc(p.imageUrls[0])}
+                    alt=""
+                    loading="lazy"
+                    className="size-full object-cover"
+                  />
                 ) : (
                   <ShoppingBagIcon className="size-7" />
                 )}
@@ -549,6 +665,15 @@ export default function AdminShop() {
                       ar: `المخزون ${p.stock}`,
                     })}
                   </Pill>
+                  {p.imageUrls.length > 1 && (
+                    <Pill tone="muted">
+                      {tx({
+                        fr: `${p.imageUrls.length} photos`,
+                        en: `${p.imageUrls.length} photos`,
+                        ar: `${p.imageUrls.length} صور`,
+                      })}
+                    </Pill>
+                  )}
                   {!p.isActive && (
                     <Pill tone="muted">
                       {tx({ fr: "hors vente", en: "off sale", ar: "خارج البيع" })}
@@ -663,22 +788,14 @@ export default function AdminShop() {
                 />
               </Field>
             </div>
-            <Field
-              label={tx({ fr: "Photo (lien)", en: "Photo (link)", ar: "الصورة (رابط)" })}
-              htmlFor="sp-image"
-              hint={tx({
-                fr: "Optionnel. Un lien https://… ou un fichier du site, ex : /club-detail-960.webp",
-                en: "Optional. An https://… link or a file of the site, e.g. /club-detail-960.webp",
-                ar: "اختياري. رابط https://… أو ملف من الموقع.",
-              })}
-            >
-              <Input
+            <Field label={tx({ fr: "Photos", en: "Photos", ar: "الصور" })} htmlFor="sp-image">
+              <PhotoInput
                 id="sp-image"
-                value={form.imageUrl}
-                onChange={(e) => set("imageUrl", e.target.value)}
-                placeholder="https://…"
-                dir="ltr"
-                maxLength={500}
+                testId="product-photos"
+                max={6}
+                value={form.imageUrls}
+                onChange={(v) => set("imageUrls", v)}
+                onBusyChange={setPhotoBusy}
               />
             </Field>
             <Field
@@ -704,7 +821,7 @@ export default function AdminShop() {
             <Button
               type="submit"
               size="lg"
-              disabled={create.isPending || update.isPending}
+              disabled={create.isPending || update.isPending || photoBusy}
               loading={create.isPending || update.isPending}
             >
               {tx({ fr: "Enregistrer", en: "Save", ar: "حفظ" })}

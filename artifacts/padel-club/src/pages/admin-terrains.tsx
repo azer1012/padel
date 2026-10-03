@@ -35,11 +35,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CourtLines, EmptyState, Page, PageHeader } from "@/components/smash/primitives";
 import { Field, Pill, Segmented, useConfirm } from "@/components/smash/admin";
+import { PhotoInput } from "@/components/smash/photo-input";
 import { useToast } from "@/hooks/use-toast";
 import { useTx } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useClubRules } from "@/hooks/use-club-rules";
 import { apiErrorText } from "@/lib/api-errors";
+import { mediaSrc } from "@/services/api";
 import { plural } from "@/lib/labels";
 
 type Form = {
@@ -93,6 +95,8 @@ export default function AdminTerrains() {
     qc.invalidateQueries({ queryKey: ["/api/terrains", "archived"] });
   };
   const saving = createMutation.isPending || updateMutation.isPending;
+  /** A photo is on its way to the storage: saving waits for its address. */
+  const [photoBusy, setPhotoBusy] = useState(false);
   const fail = (title: string) => (e: unknown) =>
     toast({ title, description: apiErrorText(e, tx), variant: "destructive" });
 
@@ -361,7 +365,7 @@ export default function AdminTerrains() {
                       ? "#2B8A5E"
                       : "var(--color-court)"
                     : "var(--color-night-3)",
-                  backgroundImage: t.photos?.[0] ? `url("${t.photos[0]}")` : undefined,
+                  backgroundImage: t.photos?.[0] ? `url("${mediaSrc(t.photos[0])}")` : undefined,
                 }}
               >
                 {!t.photos?.[0] && <CourtLines />}
@@ -628,24 +632,13 @@ export default function AdminTerrains() {
                 ]}
               />
             </Field>
-            <Field
-              label={tx({
-                fr: "Photo (adresse https://)",
-                en: "Photo (https:// address)",
-                ar: "صورة (رابط https://)",
-              })}
-              htmlFor="t-photo"
-              hint={tx({
-                fr: "Optionnel. Ex : /terrain-indoor.webp ou https://…/court.jpg",
-                en: "Optional. e.g. /terrain-indoor.webp or https://…/court.jpg",
-                ar: "اختياري",
-              })}
-            >
-              <Input
+            <Field label={tx({ fr: "Photo", en: "Photo", ar: "الصورة" })} htmlFor="t-photo">
+              <PhotoInput
                 id="t-photo"
-                value={form.photo}
-                maxLength={500}
-                onChange={(e) => set("photo", e.target.value)}
+                testId="court-photo"
+                value={form.photo ? [form.photo] : []}
+                onChange={(v) => set("photo", v[0] ?? "")}
+                onBusyChange={setPhotoBusy}
               />
             </Field>
             <Field
@@ -738,7 +731,7 @@ export default function AdminTerrains() {
               data-testid="btn-save-terrain"
               type="submit"
               size="lg"
-              disabled={saving}
+              disabled={saving || photoBusy}
               loading={saving}
             >
               {saving

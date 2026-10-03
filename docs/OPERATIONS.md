@@ -23,6 +23,49 @@ either a pack (Réglages → Tokens → packs) or a number of tokens with the ca
 received. Every credit stores who did it, the pack and the cash amount.
 "Pay at the club" can be switched off in Réglages → Fonctionnalités.
 
+## Photos (courts, news, tournaments, boutique)
+
+- In each form, **Choisir une photo** opens the computer's files, or the gallery and
+  the camera on a phone. The photo is made lighter in the browser (1600 px on its long
+  side, WebP) before it is sent: a 6 MB phone photo becomes a few hundred kB, and what
+  the camera wrote into the file (place, device) is left behind.
+- Accepted: JPEG, PNG, WebP, 5 MB at most once lightened. Anything else is refused.
+- A court, an article of the news and a tournament have **one photo**: picking another
+  replaces it, the cross removes it. A tournament without a photo keeps the club's
+  drawn cover.
+- A boutique article has **up to 6 photos**. The first one is on the article's card;
+  the star puts another one first. Members swipe through them (arrows on a computer).
+- **Ou coller le lien d'une photo** still takes an `https://` link or a file of the
+  site (`/club-detail-960.webp`).
+- A photo is kept in the club's own storage (`docs/SUPABASE_NEW_CUSTOMER.md` §5). One
+  that no page shows any more (replaced, removed, or picked in a form never saved) is
+  deleted by the scheduled jobs a day later.
+- In the public demo, files cannot be sent: only links.
+
+## Closing the day's cash (Admin → Caisse)
+
+- Everything the desk took in cash over a period (today by default): tokens sold with
+  a cash amount, spots paid at the club, boutique orders handed over. One line per
+  payment with the member and the admin who took it, and the totals.
+- A cash spot enters the report the moment the desk marks it paid, for the slot's desk
+  price (the whole court when the booker pays it all). Un-marking it takes it out.
+- **Exporter (CSV)** gives the same lines to a spreadsheet (semicolons, opens in Excel).
+- Payments made online are shown apart ("Payé en ligne, hors caisse"): they are on the
+  club's gateway account, not in the till. See `docs/ONLINE_PAYMENT.md`.
+- Gifts and corrections of tokens carry no cash and are not in the report.
+
+## Members: blocking, and deleted accounts (Admin → Membres)
+
+- **Bloquer** closes the app to a member: no booking, no order, and a "compte
+  suspendu" screen on every page. Their bookings and tokens stay as they are (cancel
+  their matches from the planning if needed). An admin is never blocked: remove the
+  admin access first. **Débloquer** lets them back in. Both are in the activity feed.
+- A member can **delete their own account** (Profil → Supprimer mon compte). It is
+  refused while they have a match to come or a boutique order in progress. The tokens
+  they still hold are lost: the screen shows how many, and they confirm it. Their
+  name, e-mail and phone are erased everywhere; past matches and the token history
+  stay, under "Compte supprimé". The same e-mail can sign up again as a new member.
+
 ## Peak / off-peak pricing (Admin → Tarifs)
 
 - Base prices are in **Réglages → Tarifs / Tokens** (defaults: 25 TND per player,
@@ -37,7 +80,8 @@ received. Every credit stores who did it, the pack and the cash amount.
 ## Equipment rental (Admin → Matériel)
 
 - Catalogue: name, price (club currency, paid at the front desk), stock **per match slot**.
-- Players add rackets/balls when booking (or later from their booking). Stock is checked under a
+- Players add rackets/balls when booking, or later from Mes réservations → **Matériel**, until
+  the match starts. Stock is checked under a
   database lock, so the last racket can't be rented twice.
 - **Prep list**: everything to hand out today/tomorrow, grouped by match, with "Remis" / "Rendu".
 - Cancelling a booking or leaving a match releases the equipment automatically.

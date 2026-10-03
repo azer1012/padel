@@ -114,6 +114,9 @@ async function loadDbUser(req: Request) {
     .where(eq(usersTable.supabaseAuthId, authUserId));
   // The public demo only lets its own invented accounts in (lib/demo.ts)
   if (user && env.demoMode && !isDemoEmail(user.email)) throw demoAccountOnly();
+  // Blocked by the club: nothing answers but the public pages (as a visitor)
+  if (user?.blockedAt)
+    throw new HttpError(403, "This account is suspended: contact the club", "ACCOUNT_BLOCKED");
   if (user) (req as AuthenticatedRequest).dbUser = user;
   return user ?? null;
 }
@@ -137,7 +140,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
  */
 export async function loadUser(req: Request, _res: Response, next: NextFunction) {
   try {
-    // A refused account (demo mode) browses the public pages as a visitor
+    // A refused account (demo mode, blocked by the club) browses the public pages as a visitor
     if (await verify(req).catch(() => null)) await loadDbUser(req).catch(() => null);
     next();
   } catch (err) {

@@ -12,6 +12,7 @@ import { LightningIcon, SunIcon, WarehouseIcon } from "@/components/icons";
 import { DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { CourtLines } from "@/components/smash/primitives";
 import { useTx, useI18n } from "@/lib/i18n";
+import { mediaSrc } from "@/services/api";
 import { clubTime, clubDay, clubDate } from "@/lib/club-time";
 
 export type Terrain = CalendarTerrain["terrain"];
@@ -59,7 +60,7 @@ export function DialogHero({
       {photo ? (
         <>
           <img
-            src={photo}
+            src={mediaSrc(photo)}
             alt=""
             decoding="async"
             className="absolute inset-0 size-full object-cover"

@@ -28,6 +28,7 @@ const LOADING: ClubRules = {
   loyaltyRewardTokens: 0.1,
   openingHours: [],
   tokenPackages: [],
+  onlinePayment: { enabled: false, provider: null },
   demo: null,
 };
 

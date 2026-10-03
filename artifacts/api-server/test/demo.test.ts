@@ -119,6 +119,19 @@ describe("only the demo accounts get in", () => {
     assert.deepEqual(search.body, []);
   });
 
+  test("no file of a visitor is kept: photos are links in the demo", async () => {
+    const res = await fetch(`${api.base}/admin/media`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${desk.token}`, "content-type": "image/jpeg" },
+      body: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]),
+    });
+    assert.equal(res.status, 403);
+    assert.equal(((await res.json()) as { code: string }).code, "DEMO_LOCKED");
+    // The invented boutique shows the gallery: an article with more than one photo
+    const catalogue = (await call("GET", "/shop/products")).body as { imageUrls: string[] }[];
+    assert.ok(catalogue.some((p) => p.imageUrls.length > 1));
+  });
+
   test("roles can't be changed: a visitor can't lock the next ones out", async () => {
     const r = await call("PATCH", `/users/${player.id}`, {
       token: desk.token,

@@ -1343,9 +1343,9 @@ function LoyaltySection({ settings }: { settings: AdminSettings }) {
       icon={<GiftIcon className="size-5" />}
       title={tx({ fr: "Fidélité", en: "Loyalty", ar: "الوفاء" })}
       description={tx({
-        fr: "Récompensez les joueurs qui réservent : chaque réservation payée en tokens leur rapporte une fraction de token. Dès qu'elles atteignent 1 token, il est ajouté à leur solde. Une réservation remboursée reprend sa récompense.",
-        en: "Reward the players who book: every booking paid with tokens earns them a fraction of a token. As soon as the fractions reach 1 token, it is added to their balance. A refunded booking takes its reward back.",
-        ar: "كافئ اللاعبين الذين يحجزون: كل حجز مدفوع بالرصيد يمنحهم جزءًا من رصيد. عند بلوغ 1 يُضاف إلى حسابهم. الحجز المُسترد تُسحب مكافأته.",
+        fr: "Récompensez les joueurs qui réservent : chaque réservation payée en tokens leur rapporte une fraction de token. Dès qu'elles atteignent 1 token, il est ajouté à leur solde. Une réservation annulée et remboursée reprend sa récompense, y compris le token qu'elle avait déjà rapporté.",
+        en: "Reward the players who book: every booking paid with tokens earns them a fraction of a token. As soon as the fractions reach 1 token, it is added to their balance. A cancelled, refunded booking takes its reward back, including the token it had already earned.",
+        ar: "كافئ اللاعبين الذين يحجزون: كل حجز مدفوع بالرصيد يمنحهم جزءًا من رصيد. عند بلوغ 1 يُضاف إلى حسابهم. الحجز الملغى والمُسترد تُسحب مكافأته، بما فيها الرصيد الذي منحه.",
       })}
       footer={
         <SectionButtons
@@ -1755,8 +1755,15 @@ function FeaturesSection({ settings }: { settings: AdminSettings }) {
     "invitationsEnabled",
     "cashPaymentEnabled",
     "shopEnabled",
+    "onlinePaymentEnabled",
   ]);
   const d = s.draft;
+  // The gateway is set up with the installation (its keys are the club's own account)
+  const gateway = settings.paymentProvider
+    ? (({ konnect: "Konnect", flouci: "Flouci" } as Record<string, string>)[
+        settings.paymentProvider
+      ] ?? settings.paymentProvider)
+    : null;
   return (
     <Section
       id="features"
@@ -1822,6 +1829,25 @@ function FeaturesSection({ settings }: { settings: AdminSettings }) {
         })}
         checked={!!d.shopEnabled}
         onChange={(v) => s.set("shopEnabled", v)}
+      />
+      <ToggleRow
+        testId="toggle-online-payment"
+        label={tx({ fr: "Paiement en ligne", en: "Online payment", ar: "الدفع عبر الإنترنت" })}
+        hint={
+          gateway
+            ? tx({
+                fr: `Les membres achètent leurs tokens et paient leurs commandes par carte ou e-Dinar via ${gateway}. L'argent arrive sur le compte ${gateway} du club. Désactivé : paiement à l'accueil uniquement.`,
+                en: `Members buy tokens and pay their orders by card or e-Dinar through ${gateway}. The money goes to the club's ${gateway} account. Off: payment at the desk only.`,
+                ar: `يشتري الأعضاء الرصيد ويدفعون طلباتهم بالبطاقة أو e-Dinar عبر ${gateway}. يصل المال إلى حساب النادي. عند التعطيل: الدفع في الاستقبال فقط.`,
+              })
+            : tx({
+                fr: "Aucune passerelle de paiement n'est configurée sur cette installation : ce réglage n'a pas d'effet. Contactez AmiVio pour brancher le compte Konnect ou Flouci du club.",
+                en: "No payment gateway is set up on this installation: this switch has no effect. Contact AmiVio to connect the club's Konnect or Flouci account.",
+                ar: "لا توجد بوابة دفع مهيأة: هذا الإعداد بلا أثر. تواصل مع AmiVio لربط حساب Konnect أو Flouci.",
+              })
+        }
+        checked={!!d.onlinePaymentEnabled}
+        onChange={(v) => s.set("onlinePaymentEnabled", v)}
       />
     </Section>
   );

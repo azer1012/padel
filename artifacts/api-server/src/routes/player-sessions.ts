@@ -19,7 +19,7 @@ import { normalizeRequest, reserveEquipment } from "../lib/equipment";
 import { moveTokens } from "../lib/ledger";
 import { assertBookable } from "../lib/slots";
 import { getSettings, scheduleContext, type ClubSettings } from "../lib/settings";
-import { HttpError, cleanText, oneOf, pgCode, pgHint, requireId } from "../lib/http";
+import { HttpError, cleanText, oneOf, pgCode, pgHint, requireId, toMoney } from "../lib/http";
 import { blockedGuestName, bookingConflict, lateCancellation, removePlayer } from "../lib/bookings";
 import { fullName, publicName } from "../lib/members";
 import { logActivity } from "../lib/activity";
@@ -64,7 +64,13 @@ async function addPlayer(
   userId: number,
   method: PayMethod,
   tokensPerSpot: number,
-  opts: { adminId?: number | null; cashPaid?: boolean; viaInvite?: boolean } = {},
+  opts: {
+    adminId?: number | null;
+    /** Cash already handed to the desk, with what it was (for the cash report). */
+    cashPaid?: boolean;
+    cashAmount?: number;
+    viaInvite?: boolean;
+  } = {},
 ) {
   // Lock the reservation: concurrent joins are serialized (the DB trigger also caps at 4)
   const [locked] = await tx
@@ -88,6 +94,9 @@ async function addPlayer(
       paymentStatus: free || method === "token" || opts.cashPaid ? "paid" : "pending",
       tokensCharged: paysTokens ? tokensPerSpot : 0,
       loyaltyEarned,
+      ...(!free && method === "cash_club" && opts.cashPaid
+        ? { cashAmount: opts.cashAmount ?? null, paidAt: new Date(), paidBy: opts.adminId ?? null }
+        : {}),
     })
     .returning();
 
@@ -537,6 +546,9 @@ router.get("/members/search", requireUser, readRateLimit(40), async (req, res) =
       and(
         ne(usersTable.id, user.id),
         demoPeopleOnly(),
+        // Nobody invites an account that is deleted or blocked by the club
+        isNull(usersTable.deletedAt),
+        isNull(usersTable.blockedAt),
         or(
           ilike(usersTable.firstName, like),
           ilike(usersTable.lastName, like),
@@ -577,10 +589,33 @@ router.patch("/reservations/:id/players/:playerId", requireAdmin, async (req, re
   if (row.paymentStatus === "refunded")
     throw new HttpError(400, "This spot was refunded: it can't be changed", "NOT_CASH");
 
+  // What the desk collects, for the cash report: the slot's price at the desk (the whole
+  // court when the booker pays it all), unless the desk says it took another amount
+  const admin = currentUser(req);
+  let cashAmount: number | null = null;
+  if (paymentStatus === "paid") {
+    const given = req.body?.cashAmount;
+    if (given !== undefined && given !== null && given !== "") {
+      cashAmount = toMoney(given, 1_000_000);
+      if (cashAmount === null) throw new HttpError(400, "Invalid cash amount", "VALIDATION_ERROR");
+    } else {
+      const r = await loadMatch(reservationId);
+      const price = await quote(r.terrain!, r.startTime);
+      cashAmount =
+        r.bookingMode === "full_court" && r.userId === row.userId
+          ? price.fullCourtPrice
+          : price.pricePerPerson;
+    }
+  }
+
   // Only a real change is written (and audited): the same click sent twice changes one row once
   const [changed] = await db
     .update(reservationPlayersTable)
-    .set({ paymentStatus })
+    .set(
+      paymentStatus === "paid"
+        ? { paymentStatus, cashAmount, paidAt: new Date(), paidBy: admin.id }
+        : { paymentStatus, cashAmount: null, paidAt: null, paidBy: null },
+    )
     .where(
       and(
         eq(reservationPlayersTable.id, row.id),
@@ -638,7 +673,7 @@ router.post("/reservations/:id/players", requireAdmin, async (req, res) => {
         userId,
         method,
         price.tokensPerSpot,
-        { adminId: admin.id, cashPaid },
+        { adminId: admin.id, cashPaid, cashAmount: price.pricePerPerson },
       ),
     );
   } catch (err) {

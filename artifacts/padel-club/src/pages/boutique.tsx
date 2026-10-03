@@ -3,16 +3,18 @@ import { Link, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   shopKeys,
-  useCancelShopOrder,
   useGetMe,
   useMyShopOrders,
   usePlaceShopOrder,
+  usePayShopOrder,
   useShopProducts,
   type ShopDeliveryMethod,
   type ShopOrder,
   type ShopProduct,
 } from "@workspace/api-client-react";
 import {
+  CaretLeftIcon,
+  CaretRightIcon,
   CheckIcon,
   MinusIcon,
   MoneyIcon,
@@ -24,6 +26,7 @@ import {
   StorefrontIcon,
   TrashIcon,
   TruckIcon,
+  CreditCardIcon,
 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,9 +40,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState, ErrorState, Page, PageHeader } from "@/components/smash/primitives";
-import { Field, Pill, Segmented, useConfirm } from "@/components/smash/admin";
-import { useToast } from "@/hooks/use-toast";
+import { Field, Pill, Segmented } from "@/components/smash/admin";
 import { cart, useCart } from "@/hooks/use-cart";
+import { usePaymentReturn } from "@/hooks/use-payment-return";
+import { PaymentReturn } from "@/components/smash/payment-return";
 import { shopMoney, useOrderStatus, useShopCategories } from "@/hooks/use-order-status";
 import { useClubRules } from "@/hooks/use-club-rules";
 import { useAuth } from "@/lib/auth";
@@ -47,24 +51,13 @@ import { useI18n, useTx } from "@/lib/i18n";
 import { apiErrorText } from "@/lib/api-errors";
 import { clubDateTime } from "@/lib/club-time";
 import { cn } from "@/lib/utils";
+import { mediaSrc } from "@/services/api";
 
 /** Same rule as the API. */
 const PHONE_RE = /^[+\d][\d\s().-]{5,29}$/;
 const money = shopMoney;
 
-function ProductImage({ product, className }: { product: ShopProduct; className?: string }) {
-  const [broken, setBroken] = useState(false);
-  if (product.imageUrl && !broken)
-    return (
-      <img
-        src={product.imageUrl}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        onError={() => setBroken(true)}
-        className={cn("size-full object-cover", className)}
-      />
-    );
+function NoPhoto({ className }: { className?: string }) {
   return (
     <span
       aria-hidden="true"
@@ -72,6 +65,140 @@ function ProductImage({ product, className }: { product: ShopProduct; className?
     >
       <ShoppingBagIcon className="size-12" weight="duotone" />
     </span>
+  );
+}
+
+/** The article's first photo (cart lines). */
+function ProductImage({ product, className }: { product: ShopProduct; className?: string }) {
+  const [broken, setBroken] = useState(false);
+  const cover = product.imageUrls[0];
+  if (cover && !broken)
+    return (
+      <img
+        src={mediaSrc(cover)}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={() => setBroken(true)}
+        className={cn("size-full object-cover", className)}
+      />
+    );
+  return <NoPhoto className={className} />;
+}
+
+/**
+ * The photos of an article on its card. Several photos are side by side in a strip
+ * that snaps: swiped with a finger, moved with the arrows of the card or of the
+ * keyboard. A photo that does not load leaves the strip.
+ */
+function ProductPhotos({ product, className }: { product: ShopProduct; className?: string }) {
+  const tx = useTx();
+  const strip = useRef<HTMLDivElement>(null);
+  const [broken, setBroken] = useState<string[]>([]);
+  const [at, setAt] = useState(0);
+  const photos = product.imageUrls.filter((u) => !broken.includes(u));
+
+  if (photos.length <= 1) {
+    if (!photos.length) return <NoPhoto className={className} />;
+    return (
+      <img
+        src={mediaSrc(photos[0])}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={() => setBroken((b) => [...b, photos[0]])}
+        className={cn("size-full object-cover", className)}
+      />
+    );
+  }
+
+  const go = (to: number) => {
+    const el = strip.current;
+    if (!el) return;
+    const next = Math.max(0, Math.min(photos.length - 1, to));
+    // In a right-to-left page the strip scrolls towards negative positions
+    const sign = getComputedStyle(el).direction === "rtl" ? -1 : 1;
+    const calm = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollTo({ left: sign * next * el.clientWidth, behavior: calm ? "auto" : "smooth" });
+  };
+  const arrow =
+    "absolute top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-night shadow-sm transition-[opacity,transform] hover:scale-105 disabled:opacity-0 [&_svg]:size-4";
+
+  return (
+    <div className="relative size-full" data-testid={`product-photos-${product.id}`}>
+      <div
+        ref={strip}
+        role="region"
+        tabIndex={0}
+        aria-roledescription="carousel"
+        aria-label={tx({
+          fr: `Photos de ${product.name} : ${at + 1} sur ${photos.length}`,
+          en: `Photos of ${product.name}: ${at + 1} of ${photos.length}`,
+          ar: `صور ${product.name}: ${at + 1} من ${photos.length}`,
+        })}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          setAt(Math.round(Math.abs(el.scrollLeft) / Math.max(1, el.clientWidth)));
+        }}
+        onKeyDown={(e) => {
+          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+          e.preventDefault();
+          const rtl = getComputedStyle(e.currentTarget).direction === "rtl";
+          go(at + ((e.key === "ArrowRight") !== rtl ? 1 : -1));
+        }}
+        className={cn(
+          "flex size-full snap-x snap-mandatory overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          className,
+        )}
+      >
+        {photos.map((url) => (
+          <img
+            key={url}
+            src={mediaSrc(url)}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={() => setBroken((b) => [...b, url])}
+            className="size-full shrink-0 snap-center object-cover"
+          />
+        ))}
+      </div>
+      {/* The strip itself takes the keyboard (arrows): these are for the mouse and the finger */}
+      <button
+        type="button"
+        tabIndex={-1}
+        disabled={at === 0}
+        onClick={() => go(at - 1)}
+        aria-label={tx({ fr: "Photo précédente", en: "Previous photo", ar: "الصورة السابقة" })}
+        className={cn(arrow, "start-3")}
+      >
+        <CaretLeftIcon className="rtl:scale-x-[-1]" />
+      </button>
+      <button
+        type="button"
+        tabIndex={-1}
+        disabled={at >= photos.length - 1}
+        onClick={() => go(at + 1)}
+        aria-label={tx({ fr: "Photo suivante", en: "Next photo", ar: "الصورة التالية" })}
+        className={cn(arrow, "end-3")}
+      >
+        <CaretRightIcon className="rtl:scale-x-[-1]" />
+      </button>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center gap-1.5"
+      >
+        {photos.map((url, i) => (
+          <span
+            key={url}
+            className={cn(
+              "h-1.5 rounded-full shadow-sm transition-[width,background-color] duration-300",
+              i === at ? "w-5 bg-white" : "w-1.5 bg-white/60",
+            )}
+          />
+        ))}
+      </span>
+    </div>
   );
 }
 
@@ -123,9 +250,7 @@ export default function Boutique() {
   const rules = useClubRules();
   const { isSignedIn } = useAuth();
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
   const qc = useQueryClient();
-  const { confirm, dialog } = useConfirm();
   const { label: categoryLabel } = useShopCategories();
   const orderStatus = useOrderStatus();
 
@@ -138,7 +263,6 @@ export default function Boutique() {
     refetch: refetchOrders,
   } = useMyShopOrders({ enabled: isSignedIn });
   const place = usePlaceShopOrder();
-  const cancel = useCancelShopOrder();
   const { lines, count, quantityOf } = useCart();
 
   const [tab, setTab] = useState<"shop" | "orders">("shop");
@@ -185,8 +309,41 @@ export default function Boutique() {
   const openCart = () => {
     setDone(null);
     setFormError(null);
+    setPayError(null);
     setCartOpen(true);
   };
+
+  // Online payment: the API opens a payment for the order's own total and answers
+  // with the page to pay on. An order is never lost when that fails: it stays to be
+  // paid later, online or on reception.
+  const online = rules.onlinePayment.enabled;
+  const payOrder = usePayShopOrder();
+  const [payNow, setPayNow] = useState<"reception" | "online">("reception");
+  const [payingOrder, setPayingOrder] = useState<number | null>(null);
+  const [payError, setPayError] = useState<string | null>(null);
+  const payOnline = (orderId: number, onFail?: () => void) => {
+    setPayError(null);
+    setPayingOrder(orderId);
+    payOrder.mutate(orderId, {
+      onSuccess: (payment) => {
+        // Stays "loading" until the browser has left for the payment page
+        if (payment.checkoutUrl) window.location.assign(payment.checkoutUrl);
+        else setPayingOrder(null);
+      },
+      onError: (err) => {
+        setPayingOrder(null);
+        setPayError(apiErrorText(err, tx));
+        onFail?.();
+      },
+    });
+  };
+  const back = usePaymentReturn(() => {
+    qc.invalidateQueries({ queryKey: shopKeys.myOrders });
+  });
+  // Back from the payment page: the member lands on their orders
+  useEffect(() => {
+    if (back.returning) setTab("orders");
+  }, [back.returning]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -240,9 +397,11 @@ export default function Boutique() {
         onSuccess: (order) => {
           cart.clear();
           checkoutKey.current = crypto.randomUUID();
-          setDone(order);
           qc.invalidateQueries({ queryKey: shopKeys.products });
           qc.invalidateQueries({ queryKey: shopKeys.myOrders });
+          // The order exists whatever happens next: paying it online is a second step
+          if (online && payNow === "online") payOnline(order.id, () => setDone(order));
+          else setDone(order);
         },
         onError: (err) => {
           setFormError(apiErrorText(err, tx));
@@ -251,36 +410,6 @@ export default function Boutique() {
         },
       },
     );
-  }
-
-  async function cancelOrder(order: ShopOrder) {
-    if (
-      !(await confirm({
-        title: tx({
-          fr: `Annuler la commande n° ${order.id} ?`,
-          en: `Cancel order #${order.id}?`,
-          ar: `إلغاء الطلب رقم ${order.id}؟`,
-        }),
-        confirmLabel: tx({ fr: "Annuler la commande", en: "Cancel the order", ar: "إلغاء الطلب" }),
-        destructive: true,
-      }))
-    )
-      return;
-    cancel.mutate(order.id, {
-      onSuccess: () => {
-        toast({
-          title: tx({ fr: "Commande annulée", en: "Order cancelled", ar: "تم إلغاء الطلب" }),
-        });
-        qc.invalidateQueries({ queryKey: shopKeys.myOrders });
-        qc.invalidateQueries({ queryKey: shopKeys.products });
-      },
-      onError: (err) =>
-        toast({
-          title: tx({ fr: "Annulation impossible", en: "Couldn't cancel", ar: "تعذر الإلغاء" }),
-          description: apiErrorText(err, tx),
-          variant: "destructive",
-        }),
-    });
   }
 
   if (!rules.isLoading && !rules.shopEnabled)
@@ -334,6 +463,23 @@ export default function Boutique() {
           </Button>
         }
       />
+
+      <PaymentReturn
+        state={back}
+        paid={tx({
+          fr: `Paiement reçu : votre commande n° ${back.payment?.shopOrderId ?? ""} est payée. Le club vous appelle pour la confirmer.`,
+          en: `Payment received: your order #${back.payment?.shopOrderId ?? ""} is paid. The club will call you to confirm it.`,
+          ar: `تم استلام الدفع: طلبك رقم ${back.payment?.shopOrderId ?? ""} مدفوع. سيتصل بك النادي لتأكيده.`,
+        })}
+      />
+      {payError && !cartOpen && (
+        <p
+          role="alert"
+          className="m-0 rounded-2xl bg-[#FDE4E4] px-4 py-3 text-sm font-semibold text-[#7A1C20]"
+        >
+          {payError}
+        </p>
+      )}
 
       {isSignedIn && (
         <div className="enter max-w-[420px]">
@@ -401,7 +547,19 @@ export default function Boutique() {
                         {clubDateTime(o.createdAt, lang)}
                       </span>
                     </span>
-                    <Pill tone={st.tone}>{st.label}</Pill>
+                    <span className="flex flex-wrap items-center gap-2">
+                      {o.paidOnlineAt && (
+                        <Pill tone="success">
+                          <CheckIcon />
+                          {tx({
+                            fr: "Payée en ligne",
+                            en: "Paid online",
+                            ar: "مدفوع عبر الإنترنت",
+                          })}
+                        </Pill>
+                      )}
+                      <Pill tone={st.tone}>{st.label}</Pill>
+                    </span>
                   </div>
                   <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[15px]">
                     {o.items.map((i) => (
@@ -439,25 +597,43 @@ export default function Boutique() {
                     </span>
                   </div>
                   {o.status === "pending" && (
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <span className="flex items-center gap-2 text-sm font-semibold">
-                        <PhoneIcon className="size-4 text-court" />
-                        {tx({
-                          fr: `Le club vous appelle au ${o.contactPhone} pour confirmer.`,
-                          en: `The club will call ${o.contactPhone} to confirm.`,
-                          ar: `سيتصل بك النادي على ${o.contactPhone} للتأكيد.`,
-                        })}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => cancelOrder(o)}
-                        disabled={cancel.isPending}
-                      >
-                        {tx({ fr: "Annuler", en: "Cancel", ar: "إلغاء" })}
-                      </Button>
-                    </div>
+                    // No cancel button: the club calls every order, and cancels it on request
+                    <p className="m-0 flex items-start gap-2 text-sm font-semibold">
+                      <PhoneIcon className="mt-0.5 size-4 shrink-0 text-court" />
+                      {tx({
+                        fr: `Le club vous appelle au ${o.contactPhone} pour confirmer. Vous avez changé d'avis ? Dites-le lors de l'appel : le club annule la commande.`,
+                        en: `The club will call ${o.contactPhone} to confirm. Changed your mind? Say so on the call: the club cancels the order.`,
+                        ar: `سيتصل بك النادي على ${o.contactPhone} للتأكيد. غيّرت رأيك؟ أخبر النادي عند الاتصال ليلغي الطلب.`,
+                      })}
+                    </p>
                   )}
+                  {online &&
+                    !o.paidOnlineAt &&
+                    ["pending", "confirmed", "shipped"].includes(o.status) && (
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <span className="text-sm text-muted-foreground">
+                          {tx({
+                            fr: "À régler en espèces à la réception, ou en ligne dès maintenant.",
+                            en: "To pay in cash on reception, or online right now.",
+                            ar: "يُدفع نقدًا عند الاستلام أو عبر الإنترنت الآن.",
+                          })}
+                        </span>
+                        <Button
+                          size="sm"
+                          onClick={() => payOnline(o.id)}
+                          disabled={payOrder.isPending}
+                          loading={payingOrder === o.id}
+                          data-testid={`btn-pay-order-${o.id}`}
+                        >
+                          <CreditCardIcon />
+                          {tx({
+                            fr: `Payer ${money(o.total)} ${o.currency} en ligne`,
+                            en: `Pay ${money(o.total)} ${o.currency} online`,
+                            ar: `ادفع ${money(o.total)} ${o.currency} عبر الإنترنت`,
+                          })}
+                        </Button>
+                      </div>
+                    )}
                 </li>
               );
             })}
@@ -524,7 +700,7 @@ export default function Boutique() {
                   className="lift group flex flex-col overflow-hidden rounded-[32px] bg-card shadow-sm"
                 >
                   <div className="relative h-[240px] overflow-hidden">
-                    <ProductImage
+                    <ProductPhotos
                       product={p}
                       className="transition-transform duration-700 group-hover:scale-105"
                     />
@@ -614,6 +790,19 @@ export default function Boutique() {
                   ar: `الطلب رقم ${done.id} · ${money(done.total)} ${done.currency}. سيتصل بك النادي على ${done.contactPhone} للتأكيد. الدفع نقدًا عند الاستلام.`,
                 })}
               </DialogDescription>
+              {payError && (
+                // The order is placed; only the payment page did not open
+                <p
+                  role="alert"
+                  className="m-0 rounded-2xl bg-[#FFEBD9] px-4 py-3 text-sm font-semibold text-[#7A3A0E]"
+                >
+                  {tx({
+                    fr: "Votre commande est enregistrée, mais la page de paiement ne s'est pas ouverte. Vous pourrez la payer depuis « Mes commandes », ou en espèces à la réception.",
+                    en: "Your order is placed, but the payment page did not open. You can pay it from “My orders”, or in cash on reception.",
+                    ar: "تم تسجيل طلبك، لكن صفحة الدفع لم تُفتح. يمكنك الدفع من «طلباتي» أو نقدًا عند الاستلام.",
+                  })}
+                </p>
+              )}
               <Button
                 onClick={() => {
                   setCartOpen(false);
@@ -629,9 +818,15 @@ export default function Boutique() {
                 <DialogTitle>{tx({ fr: "Votre panier", en: "Your cart", ar: "سلتك" })}</DialogTitle>
                 <DialogDescription>
                   {tx({
-                    fr: "Aucun paiement en ligne : vous réglez en espèces à la réception.",
-                    en: "No online payment: you pay in cash on reception.",
-                    ar: "لا دفع عبر الإنترنت: تدفع نقدًا عند الاستلام.",
+                    fr: online
+                      ? "Payez en ligne maintenant, ou en espèces à la réception."
+                      : "Aucun paiement en ligne : vous réglez en espèces à la réception.",
+                    en: online
+                      ? "Pay online now, or in cash on reception."
+                      : "No online payment: you pay in cash on reception.",
+                    ar: online
+                      ? "ادفع عبر الإنترنت الآن أو نقدًا عند الاستلام."
+                      : "لا دفع عبر الإنترنت: تدفع نقدًا عند الاستلام.",
                   })}
                 </DialogDescription>
               </DialogHeader>
@@ -829,13 +1024,50 @@ export default function Boutique() {
                           })}
                         />
                       </Field>
+                      {online && (
+                        <Field label={tx({ fr: "Paiement", en: "Payment", ar: "الدفع" })}>
+                          <Segmented<"reception" | "online">
+                            label={tx({ fr: "Paiement", en: "Payment", ar: "الدفع" })}
+                            value={payNow}
+                            onChange={setPayNow}
+                            options={[
+                              {
+                                value: "reception",
+                                label: tx({
+                                  fr: "Espèces à la réception",
+                                  en: "Cash on reception",
+                                  ar: "نقدًا عند الاستلام",
+                                }),
+                              },
+                              {
+                                value: "online",
+                                label: tx({
+                                  fr: "En ligne maintenant",
+                                  en: "Online now",
+                                  ar: "عبر الإنترنت الآن",
+                                }),
+                              },
+                            ]}
+                          />
+                        </Field>
+                      )}
                       <p className="m-0 flex items-start gap-2.5 rounded-2xl bg-ball/50 px-4 py-3 text-sm font-semibold text-night">
-                        <MoneyIcon className="mt-0.5 size-4 shrink-0" />
-                        {tx({
-                          fr: "Rien n'est débité maintenant. Le club vous appelle pour confirmer, et vous payez en espèces à la réception.",
-                          en: "Nothing is charged now. The club calls you to confirm, and you pay in cash on reception.",
-                          ar: "لا يُخصم شيء الآن. يتصل بك النادي للتأكيد وتدفع نقدًا عند الاستلام.",
-                        })}
+                        {online && payNow === "online" ? (
+                          <CreditCardIcon className="mt-0.5 size-4 shrink-0" />
+                        ) : (
+                          <MoneyIcon className="mt-0.5 size-4 shrink-0" />
+                        )}
+                        {online && payNow === "online"
+                          ? tx({
+                              fr: `Vous payez ${money(total)} ${rules.currency} sur la page sécurisée de paiement, puis le club vous appelle pour confirmer la commande. Si elle est annulée, le club vous rembourse.`,
+                              en: `You pay ${money(total)} ${rules.currency} on the secure payment page, then the club calls you to confirm the order. If it is cancelled, the club refunds you.`,
+                              ar: `تدفع ${money(total)} ${rules.currency} في صفحة الدفع الآمنة، ثم يتصل بك النادي لتأكيد الطلب. إن أُلغي يعيد النادي المبلغ.`,
+                            })
+                          : tx({
+                              fr: "Rien n'est débité maintenant. Le club vous appelle pour confirmer, et vous payez en espèces à la réception.",
+                              en: "Nothing is charged now. The club calls you to confirm, and you pay in cash on reception.",
+                              ar: "لا يُخصم شيء الآن. يتصل بك النادي للتأكيد وتدفع نقدًا عند الاستلام.",
+                            })}
                       </p>
                     </>
                   ) : (
@@ -859,12 +1091,18 @@ export default function Boutique() {
                   <Button
                     type="submit"
                     size="lg"
-                    disabled={place.isPending}
-                    loading={place.isPending}
+                    disabled={place.isPending || payingOrder !== null}
+                    loading={place.isPending || payingOrder !== null}
                     data-testid="btn-place-order"
                   >
                     {isSignedIn
-                      ? tx({ fr: "Commander", en: "Place the order", ar: "تأكيد الطلب" })
+                      ? online && payNow === "online"
+                        ? tx({
+                            fr: `Commander et payer ${money(total)} ${rules.currency}`,
+                            en: `Order and pay ${money(total)} ${rules.currency}`,
+                            ar: `اطلب وادفع ${money(total)} ${rules.currency}`,
+                          })
+                        : tx({ fr: "Commander", en: "Place the order", ar: "تأكيد الطلب" })
                       : tx({
                           fr: "Se connecter pour commander",
                           en: "Sign in to order",
@@ -877,7 +1115,6 @@ export default function Boutique() {
           )}
         </DialogContent>
       </Dialog>
-      {dialog}
     </Page>
   );
 }

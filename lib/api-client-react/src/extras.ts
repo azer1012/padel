@@ -4,7 +4,12 @@
  * Kept outside ./generated so `orval` codegen never overwrites it.
  * The same endpoints are documented in lib/api-spec/openapi.yaml.
  */
-import { useMutation, useQuery, type UseQueryOptions } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  type UseQueryOptions,
+} from "@tanstack/react-query";
 import { customFetch } from "./custom-fetch";
 
 const json = (body: unknown): RequestInit => ({
@@ -321,7 +326,151 @@ export type AdminUserUpdate = {
   lastName?: string | null;
   phone?: string | null;
   role?: "admin" | "player";
+  /** Blocks (or unblocks) the member: a blocked member can no longer use the app */
+  blocked?: boolean;
+  blockedReason?: string | null;
 };
+
+// ─── The member's own account ────────────────────────────────────────────────
+
+/**
+ * Deletes the signed-in member's account. `forfeitTokens` is the number of tokens the
+ * screen showed as given up: the API refuses (TOKENS_LEFT) if the balance moved since.
+ */
+export const useDeleteAccount = () =>
+  useMutation({
+    mutationFn: ({ forfeitTokens }: { forfeitTokens: number }) =>
+      customFetch<void>("/api/users/me", {
+        method: "DELETE",
+        ...json({ confirm: true, forfeitTokens }),
+      }),
+  });
+
+// ─── Token history, page after page ──────────────────────────────────────────
+
+export type TokenHistoryPage = {
+  data: {
+    id: number;
+    type: "credit" | "debit" | "adjustment";
+    amount: number;
+    balanceAfter: number | null;
+    description: string;
+    createdAt: string;
+  }[];
+  total: number;
+  page: number;
+  limit: number;
+  received?: number;
+  used?: number;
+};
+/** The member's ledger, 30 entries at a time: `fetchNextPage` brings the older ones. */
+export const useTokenHistory = (pageSize = 30) =>
+  useInfiniteQuery({
+    queryKey: ["/api/tokens/transactions", "history", pageSize] as const,
+    queryFn: ({ pageParam }) =>
+      customFetch<TokenHistoryPage>(`/api/tokens/transactions?limit=${pageSize}&page=${pageParam}`),
+    initialPageParam: 1,
+    getNextPageParam: (last) => (last.page * last.limit < last.total ? last.page + 1 : undefined),
+  });
+
+// ─── Cash report (admin) ─────────────────────────────────────────────────────
+
+export type CashReportLine = {
+  at: string;
+  /** "online": paid through the gateway, it never passed through the desk */
+  kind: "tokens" | "spot" | "order" | "online";
+  label: string;
+  member: string;
+  /** The admin who took the cash; for an online line, the gateway */
+  operator: string | null;
+  amount: number;
+};
+export type CashReport = {
+  from: string;
+  to: string;
+  currency: string;
+  /** `total`: the cash taken at the desk · `online`: paid through the gateway */
+  totals: { tokens: number; spots: number; orders: number; total: number; online: number };
+  lines: CashReportLine[];
+};
+
+// ─── Online payment ──────────────────────────────────────────────────────────
+
+export type PaymentStatus = "pending" | "paid" | "failed" | "expired" | "refund_due" | "refunded";
+export type Payment = {
+  id: number;
+  purpose: "tokens" | "shop_order";
+  status: PaymentStatus;
+  amount: number;
+  currency: string;
+  tokens: number | null;
+  shopOrderId: number | null;
+  /** The page to pay on, while the payment is pending */
+  checkoutUrl: string | null;
+  paidAt: string | null;
+  createdAt: string;
+};
+export type AdminPayment = Payment & {
+  provider: string;
+  /** The gateway's reference: what to look for in its back-office to refund */
+  providerRef: string | null;
+  failureReason: string | null;
+  refundedAt: string | null;
+  refundedBy: string | null;
+  member: { id: number; name: string; email: string; phone: string | null };
+};
+export type AdminPayments = {
+  data: AdminPayment[];
+  total: number;
+  /** Payments owed back to members (a paid order the desk cancelled) */
+  refundDue: number;
+  page: number;
+  limit: number;
+};
+export const paymentKeys = {
+  admin: (status?: PaymentStatus) => ["/api/admin/payments", status ?? "all"] as const,
+  adminAll: ["/api/admin/payments"] as const,
+};
+/** Opens a payment for a pack on sale or a number of tokens: the answer carries the page to pay on. */
+export const useBuyTokens = () =>
+  useMutation({
+    mutationFn: (data: { packageId: number } | { tokens: number }) =>
+      customFetch<Payment>("/api/payments/tokens", { method: "POST", ...json(data) }),
+  });
+/** Opens a payment for one of the member's own boutique orders. */
+export const usePayShopOrder = () =>
+  useMutation({
+    mutationFn: (orderId: number) =>
+      customFetch<Payment>(`/api/payments/orders/${orderId}`, { method: "POST" }),
+  });
+/** Back from the payment page: asks the API what became of the payment. */
+export const useVerifyPayment = () =>
+  useMutation({
+    mutationFn: (id: number) =>
+      customFetch<Payment>(`/api/payments/${id}/verify`, { method: "POST" }),
+  });
+export const useAdminPayments = (status?: PaymentStatus, o?: Opts<AdminPayments>) =>
+  useQuery({
+    queryKey: paymentKeys.admin(status),
+    queryFn: () =>
+      customFetch<AdminPayments>(
+        `/api/admin/payments?limit=100${status ? `&status=${status}` : ""}`,
+      ),
+    ...o,
+  });
+/** The desk refunded the payment in the gateway's back-office and says so. */
+export const useMarkPaymentRefunded = () =>
+  useMutation({
+    mutationFn: (id: number) =>
+      customFetch<Payment>(`/api/admin/payments/${id}/refunded`, { method: "POST" }),
+  });
+/** What the desk took between two club dates (YYYY-MM-DD, both included). */
+export const useCashReport = (from: string, to: string, o?: Opts<CashReport>) =>
+  useQuery({
+    queryKey: ["/api/admin/reports/cash", from, to] as const,
+    queryFn: () => customFetch<CashReport>(`/api/admin/reports/cash?from=${from}&to=${to}`),
+    ...o,
+  });
 export const useAdminUpdateUser = () =>
   useMutation({
     mutationFn: ({ id, data }: { id: number; data: AdminUserUpdate }) =>
@@ -411,6 +560,8 @@ export type ClubRules = {
   loyaltyRewardTokens: number;
   openingHours: OpeningHoursDay[];
   tokenPackages: TokenPackage[];
+  /** Whether members can pay online at this club, and through which gateway */
+  onlinePayment: { enabled: boolean; provider: string | null };
   /** Public demo (DEMO_MODE): the shared accounts to try it with; null on a real club. */
   demo: DemoInfo | null;
 };
@@ -421,7 +572,11 @@ export type DemoInfo = {
   /** null when the installation has no demo password yet. */
   accounts: { player: DemoAccount; admin: DemoAccount } | null;
 };
-export type AdminSettings = Omit<ClubRules, "tokenPackages" | "demo"> & {
+export type AdminSettings = Omit<ClubRules, "tokenPackages" | "demo" | "onlinePayment"> & {
+  /** The club's switch for online payment (effective only with a gateway configured) */
+  onlinePaymentEnabled: boolean;
+  /** The gateway this installation is set up with; null when there is none */
+  paymentProvider?: string | null;
   bookingConfirmationNotificationsEnabled: boolean;
   remindersEnabled: boolean;
   reminderLeadMinutes: number;
@@ -434,7 +589,10 @@ export type AdminSettings = Omit<ClubRules, "tokenPackages" | "demo"> & {
   upcomingBookings: number;
 };
 export type SettingsPatch = Partial<
-  Omit<AdminSettings, "openingHours" | "updatedAt" | "updatedBy" | "upcomingBookings">
+  Omit<
+    AdminSettings,
+    "openingHours" | "updatedAt" | "updatedBy" | "upcomingBookings" | "paymentProvider"
+  >
 >;
 export type SettingsSection =
   | "booking"
@@ -624,6 +782,23 @@ export function apiErrorCode(e: unknown): string | undefined {
     : undefined;
 }
 
+// ─── Photos uploaded by the desk ─────────────────────────────────────────────
+
+export type UploadedPhoto = {
+  key: string;
+  /** What a form saves: "/api/media/<key>" */
+  url: string;
+  contentType: string;
+  bytes: number;
+};
+/** Sends one photo (JPEG, PNG or WebP, 5 MB at most): the body is the file itself. */
+export const uploadPhoto = (file: Blob) =>
+  customFetch<UploadedPhoto>("/api/admin/media", {
+    method: "POST",
+    body: file,
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+  });
+
 // ─── Boutique (articles sold by the club, orders confirmed by phone) ─────────
 
 export type ShopProduct = {
@@ -634,7 +809,8 @@ export type ShopProduct = {
   price: number;
   /** Units left to sell */
   stock: number;
-  imageUrl: string | null;
+  /** Photos of the article, the first one on its card (6 at most). */
+  imageUrls: string[];
 };
 export type AdminShopProduct = ShopProduct & {
   isActive: boolean;
@@ -645,7 +821,7 @@ export type AdminShopProduct = ShopProduct & {
 export type ShopProductInput = Partial<
   Pick<
     AdminShopProduct,
-    "name" | "description" | "category" | "price" | "stock" | "imageUrl" | "isActive" | "sortOrder"
+    "name" | "description" | "category" | "price" | "stock" | "imageUrls" | "isActive" | "sortOrder"
   >
 > & {
   /** With `stock`: the stock the admin saw; refused (STOCK_CHANGED) if orders moved it since. */
@@ -674,12 +850,16 @@ export type ShopOrder = {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Paid through the gateway: nothing left to pay on reception */
+  paidOnlineAt?: string | null;
   items: ShopOrderItem[];
 };
 export type AdminShopOrder = ShopOrder & {
   adminNotes: string | null;
   handledBy: number | null;
   member: { id: number; name: string; email: string } | null;
+  /** What was paid online for the order: paid, owed back (refund_due) or refunded */
+  payments?: { id: number; status: PaymentStatus; amount: number }[];
 };
 export type AdminShopOrders = {
   data: AdminShopOrder[];
@@ -730,11 +910,6 @@ export const usePlaceShopOrder = () =>
   useMutation({
     mutationFn: (data: ShopOrderInput) =>
       customFetch<ShopOrder>("/api/shop/orders", { method: "POST", ...json(data) }),
-  });
-export const useCancelShopOrder = () =>
-  useMutation({
-    mutationFn: (id: number) =>
-      customFetch<ShopOrder>(`/api/shop/orders/${id}/cancel`, { method: "POST" }),
   });
 
 export const useAdminShopProducts = (o?: Opts<AdminShopProduct[]>) =>

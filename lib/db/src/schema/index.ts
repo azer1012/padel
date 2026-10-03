@@ -11,3 +11,5 @@ export * from "./equipment";
 export * from "./push";
 export * from "./settings";
 export * from "./shop";
+export * from "./payments";
+export * from "./media";

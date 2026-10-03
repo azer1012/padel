@@ -78,7 +78,15 @@ export function memberName(
   u?: { firstName?: string | null; lastName?: string | null; email?: string } | null,
 ) {
   if (!u) return "";
-  return `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email || "";
+  const name = `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim();
+  // A deleted account keeps its past matches, under no name
+  if (!name && u.email?.endsWith("@deleted.invalid"))
+    return (
+      { fr: "Compte supprimé", en: "Deleted account", ar: "حساب محذوف" }[
+        uiLang() as "fr" | "en" | "ar"
+      ] ?? "Compte supprimé"
+    );
+  return name || u.email || "";
 }
 
 /**
@@ -103,6 +111,18 @@ export function ledgerLabel(tx: ReturnType<typeof useTx>, description: string) {
       );
     case "Loyalty reward":
       return withTail(tx({ fr: "Récompense fidélité", en: "Loyalty reward", ar: "مكافأة الوفاء" }));
+    case "Online purchase":
+      return withTail(tx({ fr: "Achat en ligne", en: "Online purchase", ar: "شراء عبر الإنترنت" }));
+    case "Account deleted":
+      return withTail(tx({ fr: "Compte supprimé", en: "Account deleted", ar: "حساب محذوف" }));
+    case "Loyalty reward taken back":
+      return withTail(
+        tx({
+          fr: "Récompense fidélité reprise (réservation annulée)",
+          en: "Loyalty reward taken back (booking cancelled)",
+          ar: "استرجاع مكافأة الوفاء (حجز ملغى)",
+        }),
+      );
     case "Refund": {
       const refund = tx({ fr: "Remboursement", en: "Refund", ar: "استرداد" });
       if (rest[0] === "left match")

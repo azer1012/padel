@@ -31,7 +31,8 @@ export const shopProductsTable = pgTable("shop_products", {
   price: money("price").notNull(),
   /** Units left to sell: taken when an order is placed, given back when it is cancelled. */
   stock: integer("stock").notNull().default(0),
-  imageUrl: text("image_url"),
+  /** Photos of the article, the first one on its card. */
+  imageUrls: text("image_urls").array().notNull().default([]),
   isActive: boolean("is_active").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -60,6 +61,10 @@ export const shopOrdersTable = pgTable("shop_orders", {
   idempotencyKey: text("idempotency_key"),
   /** The admin who last moved the order on. */
   handledBy: integer("handled_by").references(() => usersTable.id, { onDelete: "set null" }),
+  /** When the order was handed over and paid (the day it counts in the cash report). */
+  deliveredAt: timestamp("delivered_at"),
+  /** Paid through the club's payment gateway: nothing left to collect on reception. */
+  paidOnlineAt: timestamp("paid_online_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

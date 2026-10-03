@@ -7,6 +7,7 @@ import {
   useGetTokenBalance,
   useListNotifications,
   useMarkAllNotificationsRead,
+  useMarkNotificationRead,
   getListNotificationsQueryKey,
 } from "@workspace/api-client-react";
 import {
@@ -17,6 +18,7 @@ import {
   CalendarDotsIcon,
   CalendarPlusIcon,
   CalendarXIcon,
+  CashRegisterIcon,
   ClockIcon,
   CoinsIcon,
   CourtIcon,
@@ -461,6 +463,12 @@ function NotificationsBell({ dark = true }: { dark?: boolean }) {
       onSuccess: () => qc.invalidateQueries({ queryKey: getListNotificationsQueryKey() }),
     },
   });
+  // Opening one notification reads that one: the others stay unread
+  const markOne = useMarkNotificationRead({
+    mutation: {
+      onSuccess: () => qc.invalidateQueries({ queryKey: getListNotificationsQueryKey() }),
+    },
+  });
   const [open, setOpen] = useState(false);
   const list = Array.isArray(data) ? data : [];
   const unread = list.filter((n) => !n.isRead).length;
@@ -530,7 +538,11 @@ function NotificationsBell({ dark = true }: { dark?: boolean }) {
               <li key={n.id}>
                 <Link
                   href={kind.href}
-                  onClick={() => setOpen(false)}
+                  data-testid={`notification-${n.id}`}
+                  onClick={() => {
+                    if (!n.isRead) markOne.mutate({ id: n.id });
+                    setOpen(false);
+                  }}
                   className={cn(
                     "flex gap-3 rounded-2xl px-3 py-3 transition-colors hover:bg-secondary",
                     !n.isRead && "bg-accent",
@@ -730,6 +742,11 @@ function AppShell({ children }: { children: ReactNode }) {
       href: "/admin/tokens",
       label: tx({ fr: "Tokens", en: "Tokens", ar: "الرصيد" }),
       icon: CoinsIcon,
+    },
+    {
+      href: "/admin/cash",
+      label: tx({ fr: "Caisse", en: "Cash report", ar: "الصندوق" }),
+      icon: CashRegisterIcon,
     },
     {
       href: "/admin/pricing",

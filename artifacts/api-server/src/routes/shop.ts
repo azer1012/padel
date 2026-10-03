@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   db,
+  paymentsTable,
   shopOrderItemsTable,
   shopOrdersTable,
   shopProductsTable,
@@ -13,6 +14,7 @@ import { currentUser, requireAdmin, requireUser } from "../lib/auth";
 import { logActivity } from "../lib/activity";
 import { fullName } from "../lib/members";
 import { notifyLater } from "../lib/notify";
+import { refundDueFor } from "../lib/payments";
 import { getSettings } from "../lib/settings";
 import {
   HttpError,
@@ -39,6 +41,8 @@ const MAX_QUANTITY = 20;
  * could empty the shelves with orders nobody confirms.
  */
 const MAX_PENDING_ORDERS = 3;
+/** Photos of one article (the database holds the same limit). */
+const MAX_PHOTOS = 6;
 
 /** One line of text: what goes into an e-mail subject or a push never spans lines. */
 const oneLine = (s: string | null) => (s === null ? null : s.replace(/\s+/g, " "));
@@ -83,7 +87,7 @@ router.get("/shop/products", async (_req, res) => {
       category: p.category,
       price: p.price,
       stock: p.stock,
-      imageUrl: p.imageUrl,
+      imageUrls: p.imageUrls,
     })),
   );
 });
@@ -318,38 +322,8 @@ async function restock(tx: Tx, orderId: number) {
       .where(eq(shopProductsTable.id, item.productId));
 }
 
-/** A member may cancel their own order until the club has confirmed it. */
-router.post("/shop/orders/:id/cancel", requireUser, async (req, res) => {
-  const id = requireId(req.params.id);
-  const member = currentUser(req);
-  const order = await db.transaction(async (tx: Tx) => {
-    const [locked] = await tx
-      .select()
-      .from(shopOrdersTable)
-      .where(and(eq(shopOrdersTable.id, id), eq(shopOrdersTable.userId, member.id)))
-      .for("update");
-    // Somebody else's order is answered like one that does not exist
-    if (!locked) throw new HttpError(404, "Order not found", "NOT_FOUND");
-    if (locked.status === "cancelled")
-      throw new HttpError(400, "This order is already cancelled", "ALREADY_CANCELLED");
-    if (locked.status !== "pending")
-      throw new HttpError(
-        400,
-        "The club has confirmed this order: call the club to change it",
-        "ORDER_CONFIRMED",
-      );
-    await restock(tx, id);
-    const [updated] = await tx
-      .update(shopOrdersTable)
-      .set({ status: "cancelled", updatedAt: new Date() })
-      .where(eq(shopOrdersTable.id, id))
-      .returning();
-    return updated;
-  });
-  await logActivity(req, "order_updated", `Shop order #${id} cancelled by the member`, member);
-  const { adminNotes: _staffOnly, handledBy: _admin, ...mine } = order;
-  res.json(mine);
-});
+// A member never cancels an order from the site: the club calls every order, the
+// member says so on the phone and the desk cancels it (PATCH /admin/shop/orders/:id).
 
 // ─── Admin: catalogue ────────────────────────────────────────────────────────
 
@@ -374,7 +348,19 @@ function parseProduct(body: Body, creating: boolean) {
       throw new HttpError(400, "Stock must be a whole number", "VALIDATION_ERROR");
     out.stock = stock;
   }
-  if (body?.imageUrl !== undefined) out.imageUrl = cleanImageUrl(body.imageUrl);
+  if (body?.imageUrls !== undefined) {
+    if (!Array.isArray(body.imageUrls))
+      throw new HttpError(400, "The photos must be a list", "VALIDATION_ERROR");
+    // In the order given: the first photo is the one on the article's card
+    const photos = [
+      ...new Set(body.imageUrls.map((u) => cleanImageUrl(u)).filter((u): u is string => !!u)),
+    ];
+    if (photos.length > MAX_PHOTOS)
+      throw new HttpError(400, `At most ${MAX_PHOTOS} photos per article`, "TOO_MANY_PHOTOS", {
+        max: MAX_PHOTOS,
+      });
+    out.imageUrls = photos;
+  }
   if (typeof body?.isActive === "boolean") out.isActive = body.isActive;
   if (body?.sortOrder !== undefined) {
     const sortOrder = Number(body.sortOrder);
@@ -498,10 +484,31 @@ router.get("/admin/shop/orders", requireAdmin, async (req, res) => {
     .select({ pending: count() })
     .from(shopOrdersTable)
     .where(eq(shopOrdersTable.status, "pending"));
+  // What was paid online for these orders: nothing to collect, or money to give back
+  const paid = data.length
+    ? await db
+        .select({
+          id: paymentsTable.id,
+          orderId: paymentsTable.shopOrderId,
+          status: paymentsTable.status,
+          amount: paymentsTable.amount,
+        })
+        .from(paymentsTable)
+        .where(
+          and(
+            inArray(
+              paymentsTable.shopOrderId,
+              data.map((o) => o.id),
+            ),
+            inArray(paymentsTable.status, ["paid", "refund_due", "refunded"]),
+          ),
+        )
+    : [];
   res.json({
     data: data.map(({ user, ...order }) => ({
       ...order,
       member: user ? { id: user.id, name: fullName(user), email: user.email } : null,
+      payments: paid.filter((p) => p.orderId === order.id).map(({ orderId: _order, ...p }) => p),
     })),
     total: Number(total),
     pending: Number(pending),
@@ -536,11 +543,17 @@ router.patch("/admin/shop/orders/:id", requireAdmin, async (req, res) => {
         "INVALID_TRANSITION",
         { from: locked.status, allowed: NEXT[locked.status] },
       );
-    if (moving && status === "cancelled") await restock(tx, id);
+    if (moving && status === "cancelled") {
+      await restock(tx, id);
+      // Already paid online: the money is owed back (the desk refunds it, then says so)
+      await refundDueFor(tx, id);
+    }
     const [updated] = await tx
       .update(shopOrdersTable)
       .set({
         ...(moving ? { status, handledBy: admin.id } : {}),
+        // Handed over and paid: the day the order counts in the cash report
+        ...(moving && status === "delivered" ? { deliveredAt: new Date() } : {}),
         ...(adminNotes !== undefined ? { adminNotes } : {}),
         updatedAt: new Date(),
       })
@@ -559,6 +572,7 @@ router.patch("/admin/shop/orders/:id", requireAdmin, async (req, res) => {
           kind: "order_update",
           orderId: id,
           status: order.status,
+          paidOnline: !!order.paidOnlineAt,
           total: order.total,
           currency: order.currency,
         },

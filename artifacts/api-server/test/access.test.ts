@@ -31,11 +31,20 @@ const PUBLIC = new Set([
   "GET /pricing/quote",
   "GET /equipment",
   "GET /shop/products",
+  // Photos uploaded by the desk: shown on public pages, under names nobody can guess
+  "GET /media/:key",
   "GET /settings",
   "GET /push/public-key",
   // Guarded by its own secret (x-cron-secret), checked below
   "POST /internal/jobs/run",
   "POST /internal/demo/reset",
+  // The payment gateway calls these: they only make the API ask the gateway itself
+  "GET /payments/webhook/konnect",
+  "GET /payments/webhook/flouci",
+  "POST /payments/webhook/flouci",
+  // The test suites' stand-in gateway: answers "not found" outside PAYMENT_PROVIDER=test
+  "GET /internal/payments/test/pay",
+  "POST /internal/payments/test/next",
 ]);
 
 type Layer = {
@@ -148,9 +157,12 @@ describe("every route has the guard it needs", () => {
       /^\/notifications\//,
       /^\/push\/(subscribe|unsubscribe|test)$/,
       /^\/tournaments\/:id\/register$/,
-      /^\/shop\/orders(\/:id\/cancel)?$/,
+      // Placing an order; cancelling one is the desk's (an admin route)
+      /^\/shop\/orders$/,
+      // Paying online for their own tokens or order; the gateway's callback
+      /^\/payments\/(tokens|orders\/:orderId|:id\/verify|webhook\/flouci)$/,
       // The cron's own secret (below); the demo reset also answers only in DEMO_MODE
-      /^\/internal\/(jobs\/run|demo\/reset)$/,
+      /^\/internal\/(jobs\/run|demo\/reset|payments\/test\/next)$/,
     ];
     const unguarded = (await endpoints())
       .filter((e) => e.method !== "GET")

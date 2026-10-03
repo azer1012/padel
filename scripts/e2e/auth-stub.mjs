@@ -1,5 +1,7 @@
 /**
- * Local stand-in for Supabase Auth (GoTrue), for the browser tests only.
+ * Local stand-in for Supabase Auth (GoTrue), for the browser tests only. It also
+ * answers the three Storage calls the API makes (upload, download, remove), keeping
+ * the files in memory, so photo uploads run end to end without a Supabase project.
  *
  * The real service can't run offline and must never receive test sign-ups. This
  * answers the handful of endpoints supabase-js calls (sign-up with e-mail
@@ -20,8 +22,17 @@ import pg from "pg";
 
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 
-export async function startAuthStub({ port, databaseUrl, jwtSecret, defaultPassword }) {
+export async function startAuthStub({
+  port,
+  databaseUrl,
+  jwtSecret,
+  defaultPassword,
+  serviceRoleKey = "e2e-service-role",
+}) {
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 2 });
+  /** Storage: "bucket/name" → { body, type } */
+  const stored = new Map();
+  let storageDown = false;
   /** email → { id, password, confirmed, banned, meta } */
   const accounts = new Map();
   /** email → links of the last e-mail "sent": { hash, legacy } */
@@ -131,6 +142,51 @@ export async function startAuthStub({ port, databaseUrl, jwtSecret, defaultPassw
     };
     const fail = (status, error_code, msg) => send(status, { code: status, error_code, msg });
     if (req.method === "OPTIONS") return send(204);
+
+    // ── Supabase Storage (service role): the photos the desk uploads ──────────
+    // The API is the only caller. Files are kept in memory, per bucket and name.
+    const object = url.pathname.match(/^\/storage\/v1\/object\/([\w-]+)(?:\/(.+))?$/);
+    if (object) {
+      if (req.headers.authorization !== `Bearer ${serviceRoleKey}`)
+        return send(403, { statusCode: "403", error: "Unauthorized", message: "invalid key" });
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      const raw = Buffer.concat(chunks);
+      const [, bucket, name] = object;
+      const key = `${bucket}/${name ?? ""}`;
+      if (req.method === "POST" && name) {
+        if (storageDown)
+          return send(500, { statusCode: "500", error: "Internal", message: "storage is down" });
+        if (stored.has(key))
+          return send(409, { statusCode: "409", error: "Duplicate", message: "already exists" });
+        stored.set(key, { body: raw, type: req.headers["content-type"] ?? "" });
+        return send(200, { Id: crypto.randomUUID(), Key: key });
+      }
+      if (req.method === "GET" && name) {
+        const file = stored.get(key);
+        if (!file)
+          return send(404, { statusCode: "404", error: "not_found", message: "Object not found" });
+        res.writeHead(200, { ...cors, "content-type": file.type });
+        return res.end(file.body);
+      }
+      if (req.method === "DELETE" && !name) {
+        const removed = [];
+        for (const prefix of JSON.parse(raw.toString() || "{}").prefixes ?? [])
+          if (stored.delete(`${bucket}/${prefix}`))
+            removed.push({ name: prefix, bucket_id: bucket });
+        return send(200, removed);
+      }
+      return send(404, { statusCode: "404", error: "not_found", message: "not implemented" });
+    }
+    if (url.pathname === "/__test/storage") {
+      if (req.method === "GET")
+        return send(200, { files: [...stored.keys()].sort(), down: storageDown });
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      // { down: true }: uploads fail until told otherwise
+      storageDown = !!JSON.parse(Buffer.concat(chunks).toString() || "{}").down;
+      return send(200, {});
+    }
 
     let body = {};
     if (req.method === "POST" || req.method === "PUT") {

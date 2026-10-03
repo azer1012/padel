@@ -10,6 +10,10 @@ import {
   getListUpcomingReservationsQueryKey,
   getGetTokenBalanceQueryKey,
   getOpenMatchesQueryKey,
+  extrasKeys,
+  useAddReservationEquipment,
+  useEquipment,
+  type EquipmentLine,
 } from "@workspace/api-client-react";
 import type { Reservation } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -17,6 +21,7 @@ import {
   CalendarDotsIcon,
   CalendarPlusIcon,
   DownloadSimpleIcon,
+  PackageIcon,
   SignOutIcon,
   SpinnerIcon,
   UserCircleIcon,
@@ -37,7 +42,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
+import { EquipmentPicker } from "@/components/smash/equipment-picker";
 import { PaymentBadge } from "@/components/smash/payment-badge";
 import { InvitePanel } from "@/components/smash/invite-panel";
 import { useToast } from "@/hooks/use-toast";
@@ -101,6 +114,46 @@ export default function PlayerReservations() {
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
   const [toCancel, setToCancel] = useState<Reservation | null>(null);
   const [inviteFor, setInviteFor] = useState<number | null>(null);
+  /** The booking gear is being added to, and what is picked for it. */
+  const [gearFor, setGearFor] = useState<Reservation | null>(null);
+  const [gear, setGear] = useState<EquipmentLine[]>([]);
+  const addEquipment = useAddReservationEquipment();
+  const { data: catalogue } = useEquipment(gearFor?.startTime, { enabled: !!gearFor });
+  const addGear = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!gearFor || !gear.length) return;
+    addEquipment.mutate(
+      { id: gearFor.id, items: gear },
+      {
+        onSuccess: () => {
+          toast({
+            title: tx({ fr: "Matériel réservé", en: "Equipment reserved", ar: "تم حجز المعدات" }),
+            description: tx({
+              fr: "Il vous attend à l'accueil, à régler sur place.",
+              en: "It will be waiting at the front desk, to pay there.",
+              ar: "ستجده في الاستقبال، يُدفع هناك.",
+            }),
+          });
+          setGearFor(null);
+          qc.invalidateQueries({ queryKey: extrasKeys.equipmentAll });
+          refresh();
+        },
+        onError: (err) => {
+          toast({
+            title: tx({
+              fr: "Matériel non réservé",
+              en: "Equipment not reserved",
+              ar: "لم يتم حجز المعدات",
+            }),
+            description: apiErrorText(err, tx),
+            variant: "destructive",
+          });
+          // Somebody took the last one: show what is really left
+          qc.invalidateQueries({ queryKey: extrasKeys.equipmentAll });
+        },
+      },
+    );
+  };
   const rules = useClubRules();
   // Inside the club's notice period a cancellation is refused or refund-less: say so before, not after
   const isLate = (r: Reservation) =>
@@ -336,6 +389,20 @@ export default function PlayerReservations() {
                           {tx({ fr: "Inviter", en: "Invite", ar: "دعوة" })}
                         </Button>
                       )}
+                      {r.status === "confirmed" && !started && (mine || organiser) && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setGear([]);
+                            setGearFor(r);
+                          }}
+                          data-testid={`btn-gear-${r.id}`}
+                        >
+                          <PackageIcon />
+                          {tx({ fr: "Matériel", en: "Equipment", ar: "معدات" })}
+                        </Button>
+                      )}
                       {r.status === "confirmed" && !started && organiser && (
                         <Button
                           variant="outline-destructive"
@@ -445,6 +512,49 @@ export default function PlayerReservations() {
           ))}
         </ul>
       )}
+
+      {/* Rackets and balls added to a booking already made */}
+      <Dialog open={!!gearFor} onOpenChange={(o) => !o && setGearFor(null)}>
+        <DialogContent className="max-w-[480px]">
+          <DialogHeader className="text-start">
+            <DialogTitle>
+              {tx({ fr: "Louer du matériel", en: "Rent equipment", ar: "استئجار معدات" })}
+            </DialogTitle>
+            <DialogDescription>
+              {gearFor &&
+                `${gearFor.terrain?.name ?? ""}, ${clubDateTime(gearFor.startTime, lang, "long")}`}
+            </DialogDescription>
+          </DialogHeader>
+          {gearFor && catalogue && catalogue.length === 0 ? (
+            <p className="m-0 rounded-2xl bg-mist px-4 py-8 text-center text-muted-foreground">
+              {tx({
+                fr: "Le club ne loue pas de matériel pour l'instant.",
+                en: "The club has no equipment to rent for now.",
+                ar: "لا يؤجر النادي معدات حاليًا.",
+              })}
+            </p>
+          ) : (
+            gearFor && (
+              <form className="flex flex-col gap-4" onSubmit={addGear}>
+                <EquipmentPicker startTime={gearFor.startTime} value={gear} onChange={setGear} />
+                <Button
+                  type="submit"
+                  size="lg"
+                  disabled={gear.length === 0 || addEquipment.isPending}
+                  loading={addEquipment.isPending}
+                  data-testid="btn-add-gear"
+                >
+                  {tx({
+                    fr: "Ajouter à ma réservation",
+                    en: "Add to my booking",
+                    ar: "إضافة إلى حجزي",
+                  })}
+                </Button>
+              </form>
+            )
+          )}
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!toCancel} onOpenChange={(o) => !o && setToCancel(null)}>
         <AlertDialogContent className="max-w-[440px]">

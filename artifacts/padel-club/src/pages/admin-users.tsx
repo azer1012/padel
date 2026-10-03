@@ -10,7 +10,9 @@ import type { User } from "@workspace/api-client-react";
 import {
   CoinsIcon,
   EnvelopeSimpleIcon,
+  LockOpenIcon,
   PhoneIcon,
+  ProhibitIcon,
   ShieldCheckIcon,
   ShieldSlashIcon,
   UsersIcon,
@@ -99,6 +101,63 @@ export default function AdminUsers() {
     );
   }
 
+  /** Blocks a member (they can no longer use the app) or lets them back in. */
+  async function toggleBlocked(u: User) {
+    const block = !u.blockedAt;
+    const ok = await confirm({
+      title: block
+        ? tx({
+            fr: `Bloquer ${memberName(u)} ?`,
+            en: `Block ${memberName(u)}?`,
+            ar: `حظر ${memberName(u)}؟`,
+          })
+        : tx({
+            fr: `Débloquer ${memberName(u)} ?`,
+            en: `Unblock ${memberName(u)}?`,
+            ar: `إلغاء حظر ${memberName(u)}؟`,
+          }),
+      description: block
+        ? tx({
+            fr: "Ce membre ne pourra plus réserver, rejoindre un match ni commander. Ses réservations et ses tokens restent tels quels : annulez ses matchs depuis le planning si besoin.",
+            en: "This member can no longer book, join a match or order. Their bookings and tokens stay as they are: cancel their matches from the planning if needed.",
+            ar: "لن يتمكن هذا العضو من الحجز أو الانضمام أو الطلب. تبقى حجوزاته ورصيده كما هي.",
+          })
+        : tx({
+            fr: "Ce membre pourra de nouveau utiliser l'application.",
+            en: "This member can use the app again.",
+            ar: "سيتمكن هذا العضو من استخدام التطبيق مجددًا.",
+          }),
+      confirmLabel: block
+        ? tx({ fr: "Bloquer", en: "Block", ar: "حظر" })
+        : tx({ fr: "Débloquer", en: "Unblock", ar: "إلغاء الحظر" }),
+      destructive: block,
+    });
+    if (!ok) return;
+    updateUser.mutate(
+      { id: u.id, data: { blocked: block } },
+      {
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: getListUsersQueryKey() });
+          toast({
+            title: block
+              ? tx({ fr: "Membre bloqué", en: "Member blocked", ar: "تم حظر العضو" })
+              : tx({ fr: "Membre débloqué", en: "Member unblocked", ar: "تم إلغاء الحظر" }),
+          });
+        },
+        onError: (e) =>
+          toast({
+            title: tx({
+              fr: "Action impossible",
+              en: "Couldn't do that",
+              ar: "تعذر تنفيذ الإجراء",
+            }),
+            description: apiErrorText(e, tx),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
+
   // Debounced so the API is not hit on every keystroke
   const query = useDebounced(search.trim(), 300);
   const { data, isLoading } = useListUsers({ page, limit: PAGE, search: query || undefined });
@@ -116,6 +175,11 @@ export default function AdminUsers() {
               {u.role === "admin" && (
                 <Pill tone="court" className="h-6">
                   Admin
+                </Pill>
+              )}
+              {u.blockedAt && (
+                <Pill tone="danger" className="h-6">
+                  {tx({ fr: "Bloqué", en: "Blocked", ar: "محظور" })}
                 </Pill>
               )}
             </span>
@@ -221,6 +285,37 @@ export default function AdminUsers() {
               }
             >
               {u.role === "admin" ? <ShieldSlashIcon /> : <ShieldCheckIcon />}
+            </Button>
+          )}
+          {/* An admin is never blocked: their access is removed first */}
+          {u.id !== me?.id && !demo && u.role !== "admin" && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={u.blockedAt ? undefined : "text-destructive"}
+              onClick={() => toggleBlocked(u)}
+              disabled={updateUser.isPending}
+              data-testid={`btn-block-${u.id}`}
+              aria-label={
+                u.blockedAt
+                  ? tx({
+                      fr: `Débloquer ${memberName(u)}`,
+                      en: `Unblock ${memberName(u)}`,
+                      ar: `إلغاء حظر ${memberName(u)}`,
+                    })
+                  : tx({
+                      fr: `Bloquer ${memberName(u)}`,
+                      en: `Block ${memberName(u)}`,
+                      ar: `حظر ${memberName(u)}`,
+                    })
+              }
+              title={
+                u.blockedAt
+                  ? tx({ fr: "Débloquer", en: "Unblock", ar: "إلغاء الحظر" })
+                  : tx({ fr: "Bloquer", en: "Block", ar: "حظر" })
+              }
+            >
+              {u.blockedAt ? <LockOpenIcon /> : <ProhibitIcon />}
             </Button>
           )}
         </span>

@@ -14,6 +14,9 @@ const stock = async (id: number) =>
 const order = (token: string, body: Record<string, unknown>) =>
   call("POST", "/shop/orders", { token, body });
 const pickup = { deliveryMethod: "pickup" };
+/** The desk cancels an order (as the admin, unless another token is given). */
+const deskCancel = (id: number, token = admin.token) =>
+  call("PATCH", `/admin/shop/orders/${id}`, { token, body: { status: "cancelled" } });
 /** Notifications are sent after the answer: wait until `n` rows match. */
 async function notices(userId: number, type: string, n: number) {
   let rows: { title: string; message: string }[] = [];
@@ -66,7 +69,7 @@ describe("catalogue", () => {
         category: "racket",
         price: 349.9,
         stock: 3,
-        imageUrl: "/club-detail-1920.webp",
+        imageUrls: ["/club-detail-1920.webp"],
         description: "Carbone 12K",
       },
     });
@@ -84,7 +87,8 @@ describe("catalogue", () => {
       { name: "Sac", price: -1 },
       { name: "Sac", price: 0 },
       { name: "Sac", price: 10, stock: 1.5 },
-      { name: "Sac", price: 10, imageUrl: "javascript:alert(1)" },
+      { name: "Sac", price: 10, imageUrls: ["javascript:alert(1)"] },
+      { name: "Sac", price: 10, imageUrls: "/club-detail-1920.webp" },
     ]) {
       const bad = await call("POST", "/admin/shop/products", { token: admin.token, body });
       assert.equal(bad.status, 400, JSON.stringify(body));
@@ -252,19 +256,29 @@ describe("ordering", () => {
     assert.equal(players.status, 403);
   });
 
-  test("cancelling: only the owner, only while the club has not confirmed, stock comes back once", async () => {
-    const stranger = await call("POST", `/shop/orders/${aliceOrder}/cancel`, { token: bob.token });
-    assert.equal(stranger.status, 404, "another member's order looks like no order");
+  test("a member cannot cancel an order from the site: the desk does, and the stock comes back once", async () => {
+    // Neither their own nor anybody's: there is no such route for members
+    for (const who of [alice, bob]) {
+      const r = await call("POST", `/shop/orders/${aliceOrder}/cancel`, { token: who.token });
+      assert.equal(r.status, 404);
+    }
+    // Nor through the desk's route
+    const sneaky = await deskCancel(aliceOrder, alice.token);
+    assert.equal(sneaky.status, 403);
+    const [row] = await q("select status from shop_orders where id = $1", [aliceOrder]);
+    assert.equal(row.status, "pending", "the order is untouched");
 
+    // The desk cancels after the call; pressed five times, the stock comes back once
     const before = await stock(balls);
-    const answers = await Promise.all(
-      Array.from({ length: 5 }, () =>
-        call("POST", `/shop/orders/${aliceOrder}/cancel`, { token: alice.token }),
-      ),
-    );
-    assert.equal(answers.filter((a) => a.status === 200).length, 1);
+    const answers = await Promise.all(Array.from({ length: 5 }, () => deskCancel(aliceOrder)));
+    assert.ok(answers.every((a) => a.status === 200 && a.body.status === "cancelled"));
     assert.equal(await stock(balls), before + 2);
     assert.equal(await stock(racket), 1);
+    const told = await notices(alice.id, "order_update", 2);
+    assert.ok(
+      told.some((n) => /annul/i.test(`${n.title} ${n.message}`)),
+      "the member is told",
+    );
   });
 });
 
@@ -308,10 +322,6 @@ describe("the desk handles an order", () => {
       body: { status: "pending" },
     });
     assert.equal(reopen.status, 400);
-
-    const late = await call("POST", `/shop/orders/${id}/cancel`, { token: alice.token });
-    assert.equal(late.status, 400);
-    assert.equal(late.body.code, "ORDER_CONFIRMED");
 
     // pending (at order time) + confirmed + shipped + delivered, once each
     const told = await notices(alice.id, "order_update", 5);
@@ -362,7 +372,7 @@ describe("the desk handles an order", () => {
       all.body.total > open.body.total,
       "delivered and cancelled orders are in the full list",
     );
-    await call("POST", `/shop/orders/${waiting.body.id}/cancel`, { token: alice.token });
+    await deskCancel(waiting.body.id);
   });
 
   test("an article with orders is archived, not deleted; a price change never rewrites an order", async () => {
@@ -416,14 +426,13 @@ describe("guards", () => {
     assert.equal(fourth.status, 409);
     assert.equal(fourth.body.code, "TOO_MANY_PENDING_ORDERS");
     assert.equal(await stock(grip), 47, "the refused order took nothing");
-    // Once the club has called (or one is cancelled), the member can order again
+    // Once the club has called (confirmed or cancelled by the desk), the member can order again
     await call("PATCH", `/admin/shop/orders/${ids[0]}`, {
       token: admin.token,
       body: { status: "confirmed" },
     });
     assert.equal((await order(carol.token, one)).status, 201);
-    for (const id of ids.slice(1))
-      await call("POST", `/shop/orders/${id}/cancel`, { token: carol.token });
+    for (const id of ids.slice(1)) await deskCancel(id);
   });
 
   test("the name and phone given are kept on one line (they go into e-mail subjects)", async () => {
@@ -434,7 +443,7 @@ describe("guards", () => {
     });
     assert.equal(r.status, 201);
     assert.equal(r.body.contactName, "Carol Bcc: someone@else.tn");
-    await call("POST", `/shop/orders/${r.body.id}/cancel`, { token: carol.token });
+    await deskCancel(r.body.id);
   });
 
   test("editing an article never undoes the stock taken by orders placed meanwhile", async () => {
@@ -462,7 +471,7 @@ describe("guards", () => {
       body: { price: 6 },
     });
     assert.equal(price.status, 200);
-    await call("POST", `/shop/orders/${r.body.id}/cancel`, { token: carol.token });
+    await deskCancel(r.body.id);
   });
 });
 

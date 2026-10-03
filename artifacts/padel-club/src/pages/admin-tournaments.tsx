@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState, ErrorState, Page, PageHeader } from "@/components/smash/primitives";
 import { Field, Pill, useConfirm, type Tone } from "@/components/smash/admin";
+import { PhotoInput } from "@/components/smash/photo-input";
 import { useToast } from "@/hooks/use-toast";
 import { useTx, useI18n } from "@/lib/i18n";
 import { clubDate, clubDateTime, toClubInput, fromClubInput } from "@/lib/club-time";
@@ -94,6 +95,8 @@ export default function AdminTournaments() {
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
   const refresh = () => qc.invalidateQueries({ queryKey: getListTournamentsQueryKey() });
   const saving = createMutation.isPending || updateMutation.isPending;
+  /** A photo is on its way to the storage: saving waits for its address. */
+  const [photoBusy, setPhotoBusy] = useState(false);
   /** The tournament whose teams are shown: who registered, and how to reach them. */
   const [teamsOf, setTeamsOf] = useState<Tournament | null>(null);
   const teams = useTournamentTeams(teamsOf?.id ?? null);
@@ -197,7 +200,8 @@ export default function AdminTournaments() {
       maxTeams: form.maxTeams ? parseInt(form.maxTeams) : undefined,
       status: form.status,
       prizeInfo: form.prizeInfo || undefined,
-      imageUrl: form.imageUrl || undefined,
+      // Sent even when empty: a removed photo is removed
+      imageUrl: form.imageUrl,
     };
     const done = (msg: string) => () => {
       toast({ title: msg });
@@ -599,28 +603,27 @@ export default function AdminTournaments() {
               />
             </Field>
             <Field
-              label={tx({ fr: "Image (URL)", en: "Image (URL)", ar: "الصورة (رابط)" })}
+              label={tx({ fr: "Photo", en: "Photo", ar: "الصورة" })}
               htmlFor="tr-img"
               hint={tx({
-                fr: "Vide = photo par défaut du club.",
-                en: "Empty = default club photo.",
-                ar: "فارغ = صورة النادي الافتراضية.",
+                fr: "Sans photo, le tournoi garde l'illustration du club.",
+                en: "Without a photo, the tournament keeps the club's illustration.",
+                ar: "بدون صورة، تبقى البطولة برسم النادي.",
               })}
             >
-              <Input
+              <PhotoInput
                 id="tr-img"
-                type="url"
-                dir="ltr"
-                value={form.imageUrl}
-                onChange={(e) => set("imageUrl", e.target.value)}
-                placeholder="https://…"
+                testId="tournament-photo"
+                value={form.imageUrl ? [form.imageUrl] : []}
+                onChange={(v) => set("imageUrl", v[0] ?? "")}
+                onBusyChange={setPhotoBusy}
               />
             </Field>
             <Button
               data-testid="btn-save-tournament"
               type="submit"
               size="lg"
-              disabled={saving}
+              disabled={saving || photoBusy}
               loading={saving}
             >
               {saving

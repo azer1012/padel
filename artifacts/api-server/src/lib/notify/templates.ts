@@ -56,6 +56,8 @@ export type NotificationEvent =
       kind: "order_update";
       orderId: number;
       status: "pending" | "confirmed" | "shipped" | "delivered" | "cancelled";
+      /** The order was paid through the gateway: nothing to pay on reception */
+      paidOnline?: boolean;
       total: number;
       currency: string;
     }
@@ -429,12 +431,35 @@ function copy(e: NotificationEvent, lang: Lang, f: ClubFacts): Copy {
         heading: title,
         lines: [
           what,
-          t(
-            lang,
-            `Total : ${e.total} ${e.currency}, à régler en espèces à la réception.`,
-            `Total: ${e.total} ${e.currency}, paid in cash on reception.`,
-            `المجموع: ${e.total} ${e.currency}، يُدفع نقدًا عند الاستلام.`,
-          ),
+          // Nothing to pay for an order that was cancelled; nothing left for one paid online
+          ...(e.status === "cancelled"
+            ? e.paidOnline
+              ? [
+                  t(
+                    lang,
+                    `Vous aviez payé ${e.total} ${e.currency} en ligne : le club vous rembourse.`,
+                    `You had paid ${e.total} ${e.currency} online: the club refunds you.`,
+                    `كنت قد دفعت ${e.total} ${e.currency} عبر الإنترنت: سيعيد النادي المبلغ إليك.`,
+                  ),
+                ]
+              : []
+            : e.paidOnline
+              ? [
+                  t(
+                    lang,
+                    `Total : ${e.total} ${e.currency}, déjà payé en ligne.`,
+                    `Total: ${e.total} ${e.currency}, already paid online.`,
+                    `المجموع: ${e.total} ${e.currency}، مدفوع عبر الإنترنت.`,
+                  ),
+                ]
+              : [
+                  t(
+                    lang,
+                    `Total : ${e.total} ${e.currency}, à régler en espèces à la réception.`,
+                    `Total: ${e.total} ${e.currency}, paid in cash on reception.`,
+                    `المجموع: ${e.total} ${e.currency}، يُدفع نقدًا عند الاستلام.`,
+                  ),
+                ]),
         ],
         cta: {
           label: t(lang, "Voir ma commande", "View my order", "عرض طلبي"),

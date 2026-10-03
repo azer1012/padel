@@ -1,13 +1,24 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "wouter";
 import {
   useGetMe,
   useUpdateMe,
+  useDeleteAccount,
   getGetMeQueryKey,
   type UserGender,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { FloppyDiskIcon, KeyIcon, SignOutIcon } from "@/components/icons";
+import { FloppyDiskIcon, KeyIcon, SignOutIcon, TrashIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { apiErrorText } from "@/lib/api-errors";
+import { plural, tokensLabel } from "@/lib/labels";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,6 +41,11 @@ export default function Profile() {
   const { data: user, isLoading } = useGetMe();
   const demo = useDemo();
   const updateMutation = useUpdateMe();
+  const deleteAccount = useDeleteAccount();
+  const [, setLocation] = useLocation();
+  const [deleting, setDeleting] = useState(false);
+  const [understood, setUnderstood] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -101,6 +117,32 @@ export default function Profile() {
               ar: "تم إرسال الرابط",
             }),
           },
+    );
+  }
+
+  // Deleting the account: the tokens shown as given up are sent along, so a balance
+  // that moved meanwhile stops the deletion instead of losing more than was agreed
+  const tokensLeft = user?.tokenBalance ?? 0;
+  function confirmDelete(e: React.FormEvent) {
+    e.preventDefault();
+    setDeleteError(null);
+    deleteAccount.mutate(
+      { forfeitTokens: tokensLeft },
+      {
+        onSuccess: async () => {
+          setDeleting(false);
+          toast({
+            title: tx({ fr: "Compte supprimé", en: "Account deleted", ar: "تم حذف الحساب" }),
+          });
+          await signOut();
+          setLocation("/");
+        },
+        onError: (err) => {
+          setDeleteError(apiErrorText(err, tx));
+          // The balance moved since the screen was drawn: show the current one
+          qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
+        },
+      },
     );
   }
 
@@ -281,6 +323,113 @@ export default function Profile() {
         </div>
       )}
       {!isLoading && <NotificationSettings me={user} />}
+
+      {/* The demo's accounts are shared by every visitor: they can't be deleted */}
+      {!isLoading && user && !demo && (
+        <section className="enter flex flex-col gap-3 rounded-[28px] border border-[#F3C9C9] bg-card p-6 sm:flex-row sm:items-center sm:justify-between">
+          <span className="flex flex-col gap-1">
+            <span className="text-[17px] font-extrabold">
+              {tx({ fr: "Supprimer mon compte", en: "Delete my account", ar: "حذف حسابي" })}
+            </span>
+            <span className="text-sm text-muted-foreground">
+              {tx({
+                fr: "Votre nom, votre e-mail et votre téléphone sont effacés. C'est définitif.",
+                en: "Your name, e-mail and phone are erased. This cannot be undone.",
+                ar: "يُمحى اسمك وبريدك وهاتفك. لا يمكن التراجع.",
+              })}
+            </span>
+          </span>
+          <Button
+            variant="outline-destructive"
+            onClick={() => {
+              setUnderstood(false);
+              setDeleteError(null);
+              setDeleting(true);
+            }}
+            data-testid="btn-delete-account"
+          >
+            <TrashIcon />
+            {tx({ fr: "Supprimer mon compte", en: "Delete my account", ar: "حذف حسابي" })}
+          </Button>
+        </section>
+      )}
+
+      <Dialog open={deleting} onOpenChange={setDeleting}>
+        <DialogContent className="max-w-[480px]">
+          <DialogHeader className="text-start">
+            <DialogTitle>
+              {tx({
+                fr: "Supprimer définitivement votre compte ?",
+                en: "Delete your account for good?",
+                ar: "حذف حسابك نهائيًا؟",
+              })}
+            </DialogTitle>
+            <DialogDescription>
+              {tx({
+                fr: "Vous ne pourrez plus vous connecter. Vos matchs passés restent dans l'historique du club, sans votre nom.",
+                en: "You will no longer be able to sign in. Your past matches stay in the club's history, without your name.",
+                ar: "لن تتمكن من تسجيل الدخول. تبقى مبارياتك السابقة في سجل النادي دون اسمك.",
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <form className="flex flex-col gap-4" onSubmit={confirmDelete}>
+            {tokensLeft > 0 && (
+              <p
+                data-testid="delete-tokens-lost"
+                className="m-0 rounded-2xl bg-[#FDE4E4] px-4 py-3 text-sm font-semibold text-[#7A1C20]"
+              >
+                {tx({
+                  fr: `Il vous reste ${tokensLabel(tokensLeft)} : ${plural(tokensLeft, "il sera perdu", "ils seront perdus")}. Pour les utiliser ou vous les faire rembourser, voyez d'abord l'accueil du club.`,
+                  en: `You still have ${tokensLabel(tokensLeft)}: ${plural(tokensLeft, "it", "they")} will be lost. To use them or be refunded, see the club's front desk first.`,
+                  ar: `ما زال لديك ${tokensLabel(tokensLeft)}: ستخسرها. لاستخدامها أو استرجاعها راجع استقبال النادي أولًا.`,
+                })}
+              </p>
+            )}
+            <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-secondary p-4 text-sm font-bold">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-5 shrink-0 accent-[#A3262B]"
+                checked={understood}
+                onChange={(e) => setUnderstood(e.target.checked)}
+                data-testid="check-delete-account"
+              />
+              {tokensLeft > 0
+                ? tx({
+                    fr: `Je supprime mon compte et je renonce à ${tokensLabel(tokensLeft)}.`,
+                    en: `I delete my account and give up ${tokensLabel(tokensLeft)}.`,
+                    ar: `أحذف حسابي وأتخلى عن ${tokensLabel(tokensLeft)}.`,
+                  })
+                : tx({
+                    fr: "Je supprime mon compte, c'est définitif.",
+                    en: "I delete my account, for good.",
+                    ar: "أحذف حسابي نهائيًا.",
+                  })}
+            </label>
+            {deleteError && (
+              <p
+                role="alert"
+                className="m-0 rounded-2xl bg-[#FDE4E4] px-4 py-3 text-sm font-semibold text-[#7A1C20]"
+              >
+                {deleteError}
+              </p>
+            )}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="secondary" onClick={() => setDeleting(false)}>
+                {tx({ fr: "Garder mon compte", en: "Keep my account", ar: "الإبقاء على حسابي" })}
+              </Button>
+              <Button
+                type="submit"
+                variant="destructive"
+                disabled={!understood || deleteAccount.isPending}
+                loading={deleteAccount.isPending}
+                data-testid="btn-confirm-delete-account"
+              >
+                {tx({ fr: "Supprimer mon compte", en: "Delete my account", ar: "حذف حسابي" })}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </Page>
   );
 }

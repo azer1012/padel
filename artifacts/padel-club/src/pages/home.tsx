@@ -23,6 +23,7 @@ import { Avatar, Eyebrow, LiveDot } from "@/components/smash/primitives";
 import { useTx, useI18n } from "@/lib/i18n";
 import { CLUB, CLUB_PHOTOS, PHOTOS } from "@/config/club";
 import { cn } from "@/lib/utils";
+import { mediaSrc } from "@/services/api";
 import { clubTime, clubDate } from "@/lib/club-time";
 import { useClubRules } from "@/hooks/use-club-rules";
 import { money, packSaving, plural, tokenWord, tokensLabel } from "@/lib/labels";
@@ -1096,7 +1097,7 @@ export default function Home() {
                     className="lift group flex flex-col overflow-hidden rounded-[32px] bg-white"
                   >
                     <EventCover
-                      src={t.imageUrl}
+                      src={mediaSrc(t.imageUrl)}
                       seed={t.id}
                       className="h-[200px]"
                       imgClassName="transition-transform duration-500 group-hover:scale-105"

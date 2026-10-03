@@ -64,6 +64,8 @@ const SUITES = {
     seed: false,
     env: { DEMO_MODE: "true", DEMO_PASSWORD: "Demo-padel-2026", JOBS_ENABLED: "false" },
   },
+  // Online payment through the stand-in gateway (nothing leaves the machine)
+  "payments.e2e.mjs": { env: { PAYMENT_PROVIDER: "test" } },
 };
 
 async function createDatabase({ seed = true } = {}) {

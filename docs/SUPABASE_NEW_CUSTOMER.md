@@ -81,7 +81,20 @@ are intended (browsers have no table access; the API uses `DATABASE_URL`).
 
 ## 5. Storage, Realtime, extensions
 
-- Storage: not used by the app (court photos are URLs). Leave buckets private.
+- Storage: one **private** bucket, `media`, created by the migrations (5 MB per file,
+  JPEG / PNG / WebP only). It holds the photos the desk uploads (courts, news,
+  tournaments, boutique). Create no other bucket and add no policy on
+  `storage.objects`: browsers never reach the bucket, the API uploads with the service
+  role key and serves the photos itself (`/api/media/<name>`). Check after migrating:
+
+  ```sql
+  select id, public, file_size_limit from storage.buckets;   -- media | false | 5242880
+  select count(*) from pg_policies where schemaname = 'storage' and tablename = 'objects';  -- 0
+  ```
+
+  Storage counts in the project's quota (1 GB on Free, 100 GB on Pro): a photo weighs
+  about 150 to 400 kB once lightened.
+
 - Realtime: the migrations empty the `supabase_realtime` publication on purpose.
 - Extensions: `btree_gist` (installed by the migrations in `extensions`).
 

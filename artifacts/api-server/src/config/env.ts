@@ -71,6 +71,18 @@ const envSchema = z.object({
   DEMO_PASSWORD: z.union([z.literal(""), z.string().min(8)]).optional(),
   // Club-local hour of the nightly reset (0-23)
   DEMO_RESET_HOUR: z.coerce.number().int().min(0).max(23).default(4),
+  // Online payment (docs/ONLINE_PAYMENT.md). Empty = off: tokens are sold at the desk only.
+  // The gateway's account is the club's own: the money goes straight to the club.
+  PAYMENT_PROVIDER: z.enum(["", "konnect", "flouci", "test"]).default(""),
+  KONNECT_API_URL: z.string().url().default("https://api.konnect.network/api/v2"),
+  KONNECT_API_KEY: z.string().optional(),
+  KONNECT_WALLET_ID: z.string().optional(),
+  FLOUCI_API_URL: z.string().url().default("https://developers.flouci.com/api/v2"),
+  FLOUCI_PUBLIC_KEY: z.string().optional(),
+  FLOUCI_PRIVATE_KEY: z.string().optional(),
+  // Public address of this API (https://api.club.tn): where the gateway calls back.
+  // Without it, payments are confirmed when the member returns and by the scheduler.
+  API_PUBLIC_URL: z.union([z.literal(""), z.string().url()]).optional(),
 });
 
 // Normalize environment variables
@@ -78,6 +90,20 @@ process.env.SUPABASE_URL ||= process.env.VITE_SUPABASE_URL;
 process.env.SUPABASE_ANON_KEY ||= process.env.VITE_SUPABASE_ANON_KEY;
 
 const parsed = envSchema.parse(process.env);
+
+// A gateway without its keys would fail at the first payment: refuse to start instead
+if (parsed.PAYMENT_PROVIDER === "konnect" && !(parsed.KONNECT_API_KEY && parsed.KONNECT_WALLET_ID))
+  throw new Error("PAYMENT_PROVIDER=konnect needs KONNECT_API_KEY and KONNECT_WALLET_ID");
+if (
+  parsed.PAYMENT_PROVIDER === "flouci" &&
+  !(parsed.FLOUCI_PUBLIC_KEY && parsed.FLOUCI_PRIVATE_KEY)
+)
+  throw new Error("PAYMENT_PROVIDER=flouci needs FLOUCI_PUBLIC_KEY and FLOUCI_PRIVATE_KEY");
+// The stand-in gateway pays whatever it is asked: tests only
+if (parsed.PAYMENT_PROVIDER === "test" && parsed.NODE_ENV !== "test")
+  throw new Error("PAYMENT_PROVIDER=test is only allowed with NODE_ENV=test");
+if (parsed.PAYMENT_PROVIDER && parsed.PAYMENT_PROVIDER !== "test" && !parsed.FRONTEND_URL)
+  throw new Error("Online payment needs FRONTEND_URL: where members come back after paying");
 
 export const env = {
   nodeEnv: parsed.NODE_ENV,
@@ -109,4 +135,16 @@ export const env = {
   demoMode: parsed.DEMO_MODE === "true",
   demoPassword: parsed.DEMO_PASSWORD || undefined,
   demoResetHour: parsed.DEMO_RESET_HOUR,
+  paymentProvider: parsed.PAYMENT_PROVIDER || null,
+  konnect: {
+    apiUrl: parsed.KONNECT_API_URL,
+    apiKey: parsed.KONNECT_API_KEY ?? "",
+    walletId: parsed.KONNECT_WALLET_ID ?? "",
+  },
+  flouci: {
+    apiUrl: parsed.FLOUCI_API_URL,
+    publicKey: parsed.FLOUCI_PUBLIC_KEY ?? "",
+    privateKey: parsed.FLOUCI_PRIVATE_KEY ?? "",
+  },
+  apiPublicUrl: parsed.API_PUBLIC_URL || null,
 };
