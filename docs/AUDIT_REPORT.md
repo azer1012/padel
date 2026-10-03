@@ -85,8 +85,8 @@ Asked by the owner after the pass, built and tested the same day:
   documentation and are tested against a local server answering like it; a club's
   test keys are needed for the checklist in that guide.
 - Migrations `20261010000000` and `20261011000000`, additive, with rollbacks, applied
-  to the hosted project: 14 migrations on both sides; `payments` is closed to the
-  browser roles like every other table.
+  to the hosted project; `payments` is closed to the browser roles like every other
+  table.
 
 - **Photo upload** (`docs/OPERATIONS.md`, `docs/SECURITY.md`): the desk picks a file
   instead of pasting a link, for courts, news, tournaments and boutique articles; a
@@ -96,9 +96,13 @@ Asked by the owner after the pass, built and tested the same day:
   (1600 px, WebP, camera metadata dropped); photos no page shows any more are removed
   a day later. Migration `20261012000000` (bucket, `media_files`,
   `shop_products.image_urls` in place of `image_url`), with a guarded rollback.
-  **Not verified against the real Supabase Storage**: tested against a local stand-in
-  answering the three calls the API makes; the migration is not applied to the hosted
-  project yet.
+  Applied to the hosted project (15 migrations on both sides; the six articles kept
+  their photo as first photo). Checked against the real bucket through the API's own
+  code: a photo stored and read back, the public address and the public key both
+  refused (reading and writing), an HTML file refused by the bucket itself, the test
+  photo removed and the bucket left empty. The storage can still serve a removed file
+  from its cache for a short while. Not checked: an upload from the deployed website
+  and from a real phone.
 - Tests after these requests, on the final code: typecheck 0 errors, lint clean,
   **189 / 189** API tests, **11 / 11** database blocks, **220 / 220** browser steps
   over 12 suites (members 9, payments 10 and photos 12 are new), production build OK,
