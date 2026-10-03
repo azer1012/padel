@@ -346,6 +346,25 @@ describe("the desk handles an order", () => {
     assert.equal(await stock(balls), before + 3);
   });
 
+  test("the list of orders in progress leaves out the delivered and the cancelled", async () => {
+    const waiting = await order(alice.token, {
+      ...pickup,
+      items: [{ productId: balls, quantity: 1 }],
+    });
+    const open = await call("GET", "/admin/shop/orders?status=open", { token: admin.token });
+    assert.equal(open.status, 200);
+    const states = open.body.data.map((o: { status: string }) => o.status);
+    assert.ok(states.length > 0 && open.body.total === states.length);
+    assert.ok(states.every((s: string) => ["pending", "confirmed", "shipped"].includes(s)));
+    assert.ok(open.body.data.some((o: { id: number }) => o.id === waiting.body.id));
+    const all = await call("GET", "/admin/shop/orders", { token: admin.token });
+    assert.ok(
+      all.body.total > open.body.total,
+      "delivered and cancelled orders are in the full list",
+    );
+    await call("POST", `/shop/orders/${waiting.body.id}/cancel`, { token: alice.token });
+  });
+
   test("an article with orders is archived, not deleted; a price change never rewrites an order", async () => {
     await call("PATCH", `/admin/shop/products/${balls}`, {
       token: admin.token,

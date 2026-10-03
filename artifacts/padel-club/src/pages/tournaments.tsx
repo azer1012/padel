@@ -2,16 +2,26 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import {
   useListTournaments,
-  useRegisterForTournament,
+  useRegisterTournamentTeam,
+  useUnregisterTournament,
   getListTournamentsQueryKey,
 } from "@workspace/api-client-react";
 import type { Tournament } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { CalendarDotsIcon, GiftIcon, TrophyIcon, UsersIcon } from "@/components/icons";
+import { CalendarDotsIcon, CheckIcon, GiftIcon, TrophyIcon, UsersIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { EmptyState, ErrorState, Page, PageHeader } from "@/components/smash/primitives";
+import { Field, useConfirm } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { useI18n, useTx } from "@/lib/i18n";
@@ -28,10 +38,15 @@ export default function Tournaments() {
   const { isSignedIn } = useAuth();
   const [, setLocation] = useLocation();
   const { data: tournaments, isLoading, isError, refetch } = useListTournaments();
-  const registerMutation = useRegisterForTournament();
+  const registerMutation = useRegisterTournamentTeam();
+  const unregisterMutation = useUnregisterTournament();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { confirm, dialog } = useConfirm();
   const [filter, setFilter] = useState<Filter>("all");
+  /** The tournament a team is being registered for, and the name given to the team. */
+  const [joining, setJoining] = useState<Tournament | null>(null);
+  const [teamName, setTeamName] = useState("");
 
   const statusLabel = (s: Tournament["status"]) =>
     ({
@@ -60,13 +75,60 @@ export default function Tournaments() {
           : x.status === "open"),
   );
 
-  const register = (id: number) => {
+  const openRegister = (t: Tournament) => {
     if (!isSignedIn) {
       setLocation(`/sign-in?redirect=${encodeURIComponent("/tournaments")}`);
       return;
     }
+    setTeamName("");
+    setJoining(t);
+  };
+
+  async function unregister(t: Tournament) {
+    const ok = await confirm({
+      title: tx({
+        fr: `Retirer votre équipe de ${t.name} ?`,
+        en: `Withdraw your team from ${t.name}?`,
+        ar: `سحب فريقك من ${t.name}؟`,
+      }),
+      description: tx({
+        fr: "Votre place est rendue à une autre équipe.",
+        en: "Your place goes back to another team.",
+        ar: "يعود مكانك لفريق آخر.",
+      }),
+      confirmLabel: tx({ fr: "Me désinscrire", en: "Withdraw", ar: "انسحاب" }),
+      destructive: true,
+    });
+    if (!ok) return;
+    unregisterMutation.mutate(t.id, {
+      onSuccess: () => {
+        toast({
+          title: tx({
+            fr: "Inscription annulée",
+            en: "Registration cancelled",
+            ar: "تم إلغاء التسجيل",
+          }),
+        });
+        qc.invalidateQueries({ queryKey: getListTournamentsQueryKey() });
+      },
+      onError: (e) =>
+        toast({
+          title: tx({
+            fr: "Désinscription impossible",
+            en: "Couldn't withdraw",
+            ar: "تعذر الانسحاب",
+          }),
+          description: apiErrorText(e, tx),
+          variant: "destructive",
+        }),
+    });
+  }
+
+  const register = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!joining) return;
     registerMutation.mutate(
-      { id },
+      { id: joining.id, teamName: teamName.trim() || undefined },
       {
         onSuccess: () => {
           toast({
@@ -76,6 +138,7 @@ export default function Tournaments() {
               ar: "تم التسجيل!",
             }),
           });
+          setJoining(null);
           qc.invalidateQueries({ queryKey: getListTournamentsQueryKey() });
         },
         onError: (e) =>
@@ -110,7 +173,15 @@ export default function Tournaments() {
           ar: "بطولات النادي لكل المستويات. سجّل فريقك بنقرة.",
         })}
       />
-      <div role="group" className="enter pill-group">
+      <div
+        role="group"
+        aria-label={tx({
+          fr: "Tournois affichés",
+          en: "Tournaments shown",
+          ar: "البطولات المعروضة",
+        })}
+        className="enter pill-group"
+      >
         {filters.map((f) => (
           <button
             key={f.id}
@@ -210,24 +281,47 @@ export default function Tournaments() {
                       </span>
                     </div>
                   )}
-                  {x.status === "open" && (
-                    <Button
-                      className="mt-auto"
-                      size="lg"
-                      onClick={() => register(x.id)}
-                      disabled={full}
-                      loading={
-                        registerMutation.isPending && registerMutation.variables?.id === x.id
-                      }
+                  {x.isRegistered ? (
+                    <div
+                      data-testid={`registered-${x.id}`}
+                      className="mt-auto flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-ball/60 px-4 py-3"
                     >
-                      {full
-                        ? tx({ fr: "Complet", en: "Full", ar: "مكتمل" })
-                        : tx({
-                            fr: "Inscrire mon équipe",
-                            en: "Register my team",
-                            ar: "سجّل فريقي",
-                          })}
-                    </Button>
+                      <span className="flex items-center gap-2 text-[15px] font-extrabold text-night">
+                        <CheckIcon className="size-4" />
+                        {tx({
+                          fr: "Votre équipe est inscrite",
+                          en: "Your team is registered",
+                          ar: "فريقك مسجل",
+                        })}
+                      </span>
+                      {(x.status === "open" || x.status === "upcoming") && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => unregister(x)}
+                          disabled={unregisterMutation.isPending}
+                        >
+                          {tx({ fr: "Me désinscrire", en: "Withdraw", ar: "انسحاب" })}
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    x.status === "open" && (
+                      <Button
+                        className="mt-auto"
+                        size="lg"
+                        onClick={() => openRegister(x)}
+                        disabled={full}
+                      >
+                        {full
+                          ? tx({ fr: "Complet", en: "Full", ar: "مكتمل" })
+                          : tx({
+                              fr: "Inscrire mon équipe",
+                              en: "Register my team",
+                              ar: "سجّل فريقي",
+                            })}
+                      </Button>
+                    )
                   )}
                 </div>
               </article>
@@ -235,6 +329,51 @@ export default function Tournaments() {
           })}
         </div>
       )}
+
+      <Dialog open={!!joining} onOpenChange={(o) => !o && setJoining(null)}>
+        <DialogContent className="max-w-[480px]">
+          <DialogHeader className="text-start">
+            <DialogTitle>
+              {tx({ fr: "Inscrire mon équipe", en: "Register my team", ar: "سجّل فريقي" })}
+            </DialogTitle>
+            <DialogDescription>{joining?.name}</DialogDescription>
+          </DialogHeader>
+          <form className="flex flex-col gap-4" onSubmit={register}>
+            <Field
+              label={tx({ fr: "Nom de l'équipe", en: "Team name", ar: "اسم الفريق" })}
+              htmlFor="team-name"
+              hint={tx({
+                fr: "Optionnel. Par exemple vos deux prénoms : le club sait ainsi avec qui vous jouez.",
+                en: "Optional. Your two first names, for example: the club then knows who you play with.",
+                ar: "اختياري. مثلًا اسماكما: ليعرف النادي مع من تلعب.",
+              })}
+            >
+              <Input
+                id="team-name"
+                value={teamName}
+                onChange={(e) => setTeamName(e.target.value)}
+                placeholder="Karim & Mehdi"
+                maxLength={80}
+                autoComplete="off"
+              />
+            </Field>
+            <Button
+              type="submit"
+              size="lg"
+              disabled={registerMutation.isPending}
+              loading={registerMutation.isPending}
+              data-testid="btn-register-team"
+            >
+              {tx({
+                fr: "Confirmer l'inscription",
+                en: "Confirm registration",
+                ar: "تأكيد التسجيل",
+              })}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+      {dialog}
     </Page>
   );
 }

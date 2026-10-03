@@ -953,6 +953,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TournamentRegistration"
+    delete:
+      operationId: unregisterFromTournament
+      tags: [tournaments]
+      summary: Withdraw the member's own team (while the tournament is announced or open)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Registration cancelled
+
+  /tournaments/{id}/registrations:
+    get:
+      operationId: listTournamentRegistrations
+      tags: [tournaments]
+      summary: "The teams of a tournament with the member to reach (admin)"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Teams in registration order
+
+  /tournaments/{id}/registrations/{registrationId}:
+    delete:
+      operationId: removeTournamentRegistration
+      tags: [tournaments]
+      summary: "Take a team out of a tournament (admin)"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: registrationId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Team removed
 
   # ─── Dashboard ────────────────────────────────────────────────────────
   /dashboard/stats:
@@ -1593,6 +1641,15 @@ components:
           type: integer
         limit:
           type: integer
+        circulating:
+          type: integer
+          description: "Admin list only: tokens held by all members right now"
+        received:
+          type: integer
+          description: "Member's own list only: every token ever credited (purchases, refunds, rewards)"
+        used:
+          type: integer
+          description: "Member's own list only: every token ever spent on bookings"
 
     # ─── News ─────────────────────────────────────────────────────────
     NewsArticle:

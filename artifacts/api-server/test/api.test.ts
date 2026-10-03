@@ -187,6 +187,20 @@ describe("tokens", () => {
     assert.ok(r.body.data.length > 0);
     assert.ok(r.body.data.every((t: any) => t.userId === alice.id));
   });
+
+  test("the history's totals cover the whole ledger, not only the page shown", async () => {
+    const one = await call("GET", "/tokens/transactions?limit=1", { token: alice.token });
+    assert.equal(one.body.data.length, 1);
+    const [sums] = await q(
+      `select coalesce(sum(amount) filter (where type = 'credit'), 0)::int as received,
+              coalesce(sum(amount) filter (where type = 'debit'), 0)::int as used
+         from token_transactions where user_id = $1`,
+      [alice.id],
+    );
+    assert.ok(sums.received > 0);
+    assert.equal(one.body.received, sums.received);
+    assert.equal(one.body.used, sums.used);
+  });
 });
 
 describe("reservations", () => {
@@ -391,6 +405,12 @@ describe("own spot: 1/4 → 4/4 with tokens, cash and admin", () => {
     const m = om.body.find((x: any) => x.reservationId === reservationId);
     assert.equal(m.openSpots, 3);
     assert.ok(!JSON.stringify(m).includes("@"), "no emails in public data");
+    // A member is told which open matches they already play in; nobody else is
+    assert.equal(m.joined, false, "a visitor has joined nothing");
+    const mine = await call("GET", "/open-matches", { token: alice.token });
+    assert.equal(mine.body.find((x: any) => x.reservationId === reservationId).joined, true);
+    const others = await call("GET", "/open-matches", { token: bob.token });
+    assert.equal(others.body.find((x: any) => x.reservationId === reservationId).joined, false);
   });
 
   test("a player joins with a token, another reserves to pay cash at the club", async () => {
@@ -622,6 +642,7 @@ describe("admin desk", () => {
     assert.equal(r.body.slotsPerDay, 20); // 2 courts × 10 slots (08:00–23:00)
   });
 
+  let tournamentId: number;
   test("tournament registration: once, only while open, never above max", async () => {
     const t = await call("POST", "/tournaments", {
       token: admin.token,
@@ -643,6 +664,61 @@ describe("admin desk", () => {
     assert.equal(
       (await call("POST", `/tournaments/${t.body.id}/register`, { token: carol.token })).body.code,
       "TOURNAMENT_FULL",
+    );
+    tournamentId = t.body.id;
+  });
+
+  test("a member sees their own registration and can withdraw while it is open", async () => {
+    const mine = await call("GET", "/tournaments", { token: alice.token });
+    assert.equal(mine.body.find((x: any) => x.id === tournamentId).isRegistered, true);
+    const visitor = await call("GET", "/tournaments");
+    assert.equal(visitor.body.find((x: any) => x.id === tournamentId).isRegistered, false);
+    const out = await call("DELETE", `/tournaments/${tournamentId}/register`, {
+      token: alice.token,
+    });
+    assert.equal(out.status, 200);
+    const twice = await call("DELETE", `/tournaments/${tournamentId}/register`, {
+      token: alice.token,
+    });
+    assert.equal(twice.body.code, "NOT_REGISTERED");
+    const [row] = await q("select registered_teams from tournaments where id = $1", [tournamentId]);
+    assert.equal(row.registered_teams, 1, "the place is given back once");
+    // The place freed goes to the next team, under the name they give it
+    const back = await call("POST", `/tournaments/${tournamentId}/register`, {
+      token: carol.token,
+      body: { teamName: "Carol & Dave" },
+    });
+    assert.equal(back.status, 201);
+  });
+
+  test("the desk sees the teams and how to reach them, and can take one out; players cannot", async () => {
+    const path = `/tournaments/${tournamentId}/registrations`;
+    assert.equal((await call("GET", path, { token: alice.token })).status, 403);
+    assert.equal((await call("GET", path)).status, 401);
+    const teams = await call("GET", path, { token: admin.token });
+    assert.equal(teams.status, 200);
+    assert.equal(teams.body.length, 2);
+    const carols = teams.body.find((x: any) => x.teamName === "Carol & Dave");
+    assert.equal(carols.member.id, carol.id);
+    assert.ok(carols.member.email.includes("@"), "the desk gets the member's contact");
+    assert.equal(
+      (await call("DELETE", `${path}/${carols.id}`, { token: carol.token })).status,
+      403,
+      "a player never removes a team",
+    );
+    assert.equal(
+      (await call("DELETE", `${path}/${carols.id}`, { token: admin.token })).status,
+      204,
+    );
+    assert.equal(
+      (await call("DELETE", `${path}/${carols.id}`, { token: admin.token })).body.code,
+      "NOT_FOUND",
+    );
+    const [row] = await q("select registered_teams from tournaments where id = $1", [tournamentId]);
+    assert.equal(row.registered_teams, 1);
+    assert.equal(
+      (await call("GET", "/tournaments/987654/registrations", { token: admin.token })).status,
+      404,
     );
   });
 

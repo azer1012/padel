@@ -1,11 +1,122 @@
 # Audit and hardening report — reusable padel club product
 
-Five passes on `main`: (1) production audit and hardening of the platform,
+Six passes on `main`: (1) production audit and hardening of the platform,
 (2) turning it into a reusable product sold one club at a time, with every
 operational rule configurable by the club, (3) a full re-audit against the code
 and the live database (2026-10-02), (4) a code-level review and refactor
-(2026-10-02), (5) an end-to-end verification pass (2026-10-02). This report
-covers the current state.
+(2026-10-02), (5) an end-to-end verification pass (2026-10-02), (6) an audit of
+what was built after pass 5, with every screen size and the accessibility rules
+(2026-10-03). This report covers the current state.
+
+## Pass 6 (2026-10-03): the features added after pass 5, every screen size, accessibility
+
+Scope: the boutique, the fidélité programme, token packs, demo mode and the new home
+page were read line by line (API, screens, migrations); everything else was judged
+by running its suites, not by reading it again. The hosted database was inspected
+read-only. Overall: **ready with fixes**. No P0 or P1.
+
+Found and fixed (all covered by a test unless noted):
+
+| Sev | Found                                                                                                                                                              | Now                                                                                                                             |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| P2  | Tournaments: the desk saw how many teams had registered, never which ones (no endpoint, no screen)                                                                 | Admin → Tournois → "Équipes inscrites": team name, member, phone to call, and a team can be taken out                           |
+| P3  | A registered member was still offered "Inscrire mon équipe" (a second tap answered an error), could not withdraw and was never asked a team name                   | "Votre équipe est inscrite", "Me désinscrire" while the tournament is announced or open, an optional team name when registering |
+| P3  | A member's own open match was offered back to them with "Rejoindre" on the dashboard and on Open matches                                                           | The API says which open matches the member already plays in; the dashboard leaves them out, the list links to "voir mon match"  |
+| P3  | The wallet and the dashboard showed "0 token" when the balance could not be read                                                                                   | "Votre solde n'a pas chargé" with a retry (not covered by a test)                                                               |
+| P3  | The wallet's "Tokens reçus / utilisés" added up the last 30 movements only                                                                                         | Totals of the whole ledger, computed by the API                                                                                 |
+| P3  | Admin → Tarifs: on a phone the day × hour grid scrolled sideways but could not be reached from the keyboard (WCAG 2.1.1)                                           | Focusable, named region                                                                                                         |
+| P3  | The screen-size and accessibility suite did not cover the boutique or the admin shop, nor 360, 430 and 1920 px, and ran the accessibility rules on 5 admin screens | Both screens added; 11 widths; the rules run on every admin screen (this is how the Tarifs defect was found)                    |
+| P4  | Admin shop: "En cours" was filtered in the browser among the 100 latest orders, older ones silently missing                                                        | Filtered by the API; the list says how many older orders it does not show                                                       |
+| P4  | Deleting an article ordered at that very instant answered a server error                                                                                           | The article is taken off sale instead, like any ordered article (not covered by a test: needs two requests at the same instant) |
+| P4  | Home page: "Les 4 places", "Invitez 3 amis" and "Annulation = token remboursé" were written whatever the club's settings                                           | Players per match and the cancellation deadline come from Réglages                                                              |
+| P4  | The cron secret check could throw (500 instead of 401) on a header with accented characters                                                                        | Compared as bytes                                                                                                               |
+| P5  | Boutique: "Aucune commande" shown while the orders load or when they fail; admin shop without error states; two filter groups without a name for screen readers    | Loading and error states; named groups                                                                                          |
+
+Looked wrong, checked, and is not a defect: the white pill of the sidebar drawn
+under the wrong link, and blank sections of the home page, both only in full-page
+screenshots (the capture resizes the page; the home sections are drawn by the
+scroll). On a real screen the pill is under the current page after every load and
+every click (measured on 14 routes), and the sections appear on scroll or at once
+with reduced motion.
+
+Hosted database (read-only, this pass): 24 tables, row level security on all, no
+policy, no privilege for `anon` or `authenticated`; no security-definer function
+callable by them; the two views are `security_invoker`; every foreign key indexed;
+11 migrations, the same as the repository; ledger reconciled, no negative balance,
+no negative stock, no overlapping booking, no orphan order line; realtime empty.
+Advisors: the intended "RLS enabled, no policy" notices and "leaked password
+protection disabled".
+
+Open, for the owner:
+
+- **Fidélité gives the reward before the match is played.** Ten bookings earn a token;
+  cancelling them refunds the ten and leaves the reward in the wallet, owed back out of
+  the next rewards (documented, tested). A member who stops playing keeps it. Taking it
+  back from the wallet, or crediting rewards after the match, is a product decision.
+- **Hosted project**: leaked-password protection is off; e-mail confirmation, SMTP,
+  Google sign-in and the domain still need the accounts (e-mail confirmation not
+  re-checked this pass). Five public storage buckets of the first prototype
+  (`avatars`, `clubs`, `courts`, `tournaments`, `gallery`) are still there: empty, no
+  policy, used by nothing. Dropping them is a change to the hosted project.
+- **A team taken out by the desk** is not told and leaves no entry in the activity
+  feed (the feed's types are a database constraint: a migration).
+- **A member cancelling a boutique order** does not notify the admins (the order
+  leaves "À appeler" within a minute).
+- Not built, on purpose or not yet: online payment, tournament brackets and scores,
+  booking 2 or 3 spots in one go (own spot, then invitations), a request to join an
+  open match (joining is immediate), notifications for tournaments, damaged or
+  missing rental gear, editing a recurring series (cancel and recreate), account
+  deletion, older wallet movements than the last 30.
+- Still without a button (API only): adding rental gear to an existing booking,
+  marking one notification read.
+
+Feature matrix. PASS = proven by a test or a check run this pass; "suites" = judged
+by its suites only, not read again.
+
+| Feature              | UI   | API  | DB   | Security | Tested                                 | Status      | Problems                                                                                  |
+| -------------------- | ---- | ---- | ---- | -------- | -------------------------------------- | ----------- | ----------------------------------------------------------------------------------------- |
+| Public website       | PASS | PASS | n/a  | PASS     | screens, auth                          | IMPLEMENTED | SEO, Open Graph and map links not checked this pass                                       |
+| Court listing        | PASS | PASS | PASS | PASS     | screens, acceptance                    | IMPLEMENTED | suites                                                                                    |
+| Online booking       | PASS | PASS | PASS | PASS     | booking, acceptance, API (10-way race) | IMPLEMENTED | suites                                                                                    |
+| Full court booking   | PASS | PASS | PASS | PASS     | booking, acceptance, API               | IMPLEMENTED | suites                                                                                    |
+| Single spot booking  | PASS | PASS | PASS | PASS     | booking, acceptance, API               | IMPLEMENTED | 2 or 3 spots in one booking is not a mode                                                 |
+| Open matches         | PASS | PASS | PASS | PASS     | acceptance, API                        | IMPLEMENTED | joining is immediate, no request to accept; own match offered back: fixed                 |
+| Invitations          | PASS | PASS | PASS | PASS     | acceptance, API                        | IMPLEMENTED | suites; link expiry not checked this pass                                                 |
+| Tokens               | PASS | PASS | PASS | PASS     | acceptance, packs, API                 | IMPLEMENTED | bought at the desk only; totals and "0 token" fixed                                       |
+| Cash payment         | PASS | PASS | PASS | PASS     | acceptance, API                        | IMPLEMENTED | suites; refund of cash is manual                                                          |
+| Cancellation/refund  | PASS | PASS | PASS | PASS     | acceptance, API                        | IMPLEMENTED | suites                                                                                    |
+| Equipment            | PASS | PASS | PASS | PASS     | API; screens for the pages             | PARTIAL     | gear cannot be added after booking from the app; no damaged or missing state              |
+| Tournaments          | PASS | PASS | PASS | PASS     | acceptance, API                        | IMPLEMENTED | content and team registration only (no brackets, scores); team list and withdrawal: fixed |
+| Boutique             | PASS | PASS | PASS | PASS     | shop, screens, API                     | IMPLEMENTED | no online payment (by design)                                                             |
+| Loyalty              | PASS | PASS | PASS | PASS     | loyalty, API                           | IMPLEMENTED | reward given before the match: owner decision                                             |
+| Notifications        | PASS | PASS | PASS | PASS     | acceptance, API (in-app only)          | PARTIAL     | e-mail and push delivery NOT TESTED (no SMTP, no push keys); none for tournaments         |
+| PWA                  | –    | n/a  | n/a  | –        | NOT TESTED                             | NOT TESTED  | install, offline start and push not exercised this pass                                   |
+| Dashboard            | PASS | PASS | PASS | PASS     | screens, API                           | IMPLEMENTED | suites; "revenue" is a token equivalent                                                   |
+| Planning desk        | PASS | PASS | PASS | PASS     | booking, acceptance, screens           | IMPLEMENTED | suites                                                                                    |
+| Recurring bookings   | PASS | PASS | PASS | PASS     | API; screens for the page              | IMPLEMENTED | suites; a series is cancelled, not edited                                                 |
+| Courts               | PASS | PASS | PASS | PASS     | acceptance, API                        | IMPLEMENTED | suites                                                                                    |
+| Pricing              | PASS | PASS | PASS | PASS     | acceptance, API, screens               | IMPLEMENTED | keyboard access of the grid: fixed                                                        |
+| Opening hours        | PASS | PASS | PASS | PASS     | acceptance, API                        | IMPLEMENTED | suites                                                                                    |
+| Token administration | PASS | PASS | PASS | PASS     | packs, acceptance, API                 | IMPLEMENTED | suites; tokens never expire                                                               |
+| Members              | PASS | PASS | PASS | PASS     | auth, API (every route), screens       | IMPLEMENTED | suites; no blocking of a member from the app, no account deletion                         |
+| Equipment admin      | PASS | PASS | PASS | PASS     | API; screens for the page              | IMPLEMENTED | suites                                                                                    |
+| Content              | PASS | PASS | PASS | PASS     | shop, acceptance, API, screens         | IMPLEMENTED | news and tournaments judged by their suites                                               |
+| Settings             | PASS | PASS | PASS | PASS     | booking, packs, loyalty, API           | IMPLEMENTED | suites                                                                                    |
+
+Tests this pass (local Postgres 18, real API, Chromium), on the final code:
+
+| Command                                         | Result                                                                                                                  |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `pnpm run typecheck`                            | 0 errors                                                                                                                |
+| `pnpm run lint`                                 | clean                                                                                                                   |
+| `pnpm --filter @workspace/api-server test`      | **145 / 145** (141 before the pass, 4 new)                                                                              |
+| `pnpm --filter @workspace/scripts run db:test`  | **11 / 11** blocks                                                                                                      |
+| `pnpm run test:e2e <name>`, one suite at a time | **189 / 189** steps: acceptance 41, screens 39, auth 32, booking 26, resilience 17, shop 14, loyalty 7, demo 7, packs 6 |
+| `pnpm -r --if-present run build`                | OK                                                                                                                      |
+| `pnpm audit --prod`                             | no known vulnerabilities                                                                                                |
+
+Not testable here, as before: real e-mails, Google sign-in, push on a phone, the
+installed app.
 
 ## Pass 5 (2026-10-02): end-to-end verification
 

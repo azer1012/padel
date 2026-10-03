@@ -58,6 +58,9 @@ export default function Home() {
   const outdoor = active.filter((t) => t.type === "outdoor").length;
   const tokenPrice = rules.tokenUnitPrice || null;
   const packs = rules.tokenPackages;
+  /** The friends one booker brings: every spot of a match but their own. */
+  const friends = Math.max(1, rules.maxPlayers - 1);
+  const noticeHours = rules.cancellationNoticeHours;
   // The pack with the lowest price per token, when one is cheaper than the others
   const bestPack = useMemo(() => {
     const each = (p: (typeof packs)[number]) => p.price / p.tokens;
@@ -194,7 +197,7 @@ export default function Home() {
                 <span className="flex size-[38px] items-center justify-center rounded-full border-2 border-night bg-court text-xs font-extrabold">
                   {tx({ fr: "Vous", en: "You", ar: "أنت" })}
                 </span>
-                {[0, 1, 2].map((i) => (
+                {Array.from({ length: Math.min(friends, 5) }, (_, i) => (
                   <span
                     key={i}
                     className="-ms-2 size-[38px] rounded-full border-2 border-dashed border-white/40"
@@ -203,9 +206,9 @@ export default function Home() {
               </span>
               <span className="text-[15px] text-soft-d">
                 {tx({
-                  fr: "Invitez 3 amis avec un seul lien. Chacun paie sa place.",
-                  en: "Invite 3 friends with one link. Everyone pays their own spot.",
-                  ar: "ادعُ 3 أصدقاء برابط واحد. كل واحد يدفع مكانه.",
+                  fr: `Invitez ${friends} ${plural(friends, "ami", "amis")} avec un seul lien. Chacun paie sa place.`,
+                  en: `Invite ${friends} ${plural(friends, "friend", "friends")} with one link. Everyone pays their own spot.`,
+                  ar: `ادعُ ${friends} ${plural(friends, "صديقًا", "أصدقاء")} برابط واحد. كل واحد يدفع مكانه.`,
                 })}
               </span>
             </div>
@@ -907,9 +910,9 @@ export default function Home() {
               label: tx({ fr: "Terrain complet", en: "Full court", ar: "ملعب كامل" }),
               n: rules.tokenCostFullCourt,
               sub: tx({
-                fr: "Les 4 places, pour jouer entre amis",
-                en: "All 4 spots, for playing with friends",
-                ar: "الأماكن الأربعة للعب مع الأصدقاء",
+                fr: `Les ${rules.maxPlayers} places, pour jouer entre amis`,
+                en: `All ${rules.maxPlayers} spots, for playing with friends`,
+                ar: `الأماكن الـ ${rules.maxPlayers} كلها للعب مع الأصدقاء`,
               }),
               cta: tx({ fr: "Réserver un terrain", en: "Book a court", ar: "احجز ملعبًا" }),
               href: "/terrains",
@@ -930,7 +933,7 @@ export default function Home() {
                 <span className="disp text-[110px] leading-[0.82] tracking-[-0.05em] lg:text-[160px]">
                   {p.n}
                 </span>
-                <span className="disp text-3xl">token{p.n > 1 ? "s" : ""}</span>
+                <span className="disp text-3xl">{tokenWord(p.n)}</span>
               </p>
               <div
                 className={cn(
@@ -1042,10 +1045,21 @@ export default function Home() {
           className="m-0 self-center text-center text-[15px] text-muted-foreground"
         >
           {tx({
-            fr: "Les tokens et les packs se paient à l'accueil du club. Annulation = token remboursé.",
-            en: "Tokens and packs are paid at the club front desk. Cancel and your token is refunded.",
-            ar: "يُدفع الرصيد والباقات في استقبال النادي. الإلغاء يعيد الرصيد.",
-          })}
+            fr: "Les tokens et les packs se paient à l'accueil du club.",
+            en: "Tokens and packs are paid at the club front desk.",
+            ar: "يُدفع الرصيد والباقات في استقبال النادي.",
+          })}{" "}
+          {noticeHours > 0
+            ? tx({
+                fr: `Annulation jusqu'à ${noticeHours} h avant le match = tokens remboursés.`,
+                en: `Cancel up to ${noticeHours} h before the match and your tokens are refunded.`,
+                ar: `الإلغاء قبل المباراة بـ ${noticeHours} ساعة يعيد الرصيد.`,
+              })
+            : tx({
+                fr: "Annulation avant le match = tokens remboursés.",
+                en: "Cancel before the match and your tokens are refunded.",
+                ar: "الإلغاء قبل المباراة يعيد الرصيد.",
+              })}
         </p>
       </section>
 

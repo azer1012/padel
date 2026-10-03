@@ -9,11 +9,11 @@ const router = Router();
 
 /** For external cron (Supabase pg_cron, GitHub Actions, Cloudflare Cron…). Header: x-cron-secret. */
 function assertCron(given: unknown) {
-  const value = String(given ?? "");
+  // Compared as bytes: timingSafeEqual throws on buffers of different lengths
+  const value = Buffer.from(String(given ?? ""));
+  const secret = Buffer.from(env.cronSecret ?? "");
   const ok =
-    !!env.cronSecret &&
-    value.length === env.cronSecret.length &&
-    crypto.timingSafeEqual(Buffer.from(value), Buffer.from(env.cronSecret));
+    secret.length > 0 && value.length === secret.length && crypto.timingSafeEqual(value, secret);
   if (!ok) throw new HttpError(401, "Unauthorized", "UNAUTHORIZED");
 }
 

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, tournamentsTable, tournamentRegistrationsTable } from "@workspace/db";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { currentUser, optionalUser, requireAdmin, requireUser, loadUser } from "../lib/auth";
+import { fullName } from "../lib/members";
 import {
   HttpError,
   cleanImageUrl,
@@ -159,6 +160,58 @@ router.delete("/tournaments/:id/register", requireUser, async (req, res) => {
       .where(eq(tournamentsTable.id, id));
   });
   res.json({ message: "Registration cancelled" });
+});
+
+/** The teams of a tournament, for the desk: who registered and how to reach them. */
+router.get("/tournaments/:id/registrations", requireAdmin, async (req, res) => {
+  const id = requireId(req.params.id);
+  const [t] = await db
+    .select({ id: tournamentsTable.id })
+    .from(tournamentsTable)
+    .where(eq(tournamentsTable.id, id));
+  if (!t) throw new HttpError(404, "Tournament not found", "NOT_FOUND");
+  const rows = await db.query.tournamentRegistrationsTable.findMany({
+    where: eq(tournamentRegistrationsTable.tournamentId, id),
+    with: { user: true },
+    orderBy: [asc(tournamentRegistrationsTable.createdAt), asc(tournamentRegistrationsTable.id)],
+  });
+  res.json(
+    rows.map((r) => ({
+      id: r.id,
+      teamName: r.teamName,
+      createdAt: r.createdAt,
+      member: { id: r.user.id, name: fullName(r.user), email: r.user.email, phone: r.user.phone },
+    })),
+  );
+});
+
+/** The desk takes a team out (a withdrawal by phone, a mistake), whatever the tournament's state. */
+router.delete("/tournaments/:id/registrations/:registrationId", requireAdmin, async (req, res) => {
+  const id = requireId(req.params.id);
+  const registrationId = requireId(req.params.registrationId, "registration");
+  await db.transaction(async (tx) => {
+    const [t] = await tx
+      .select({ id: tournamentsTable.id })
+      .from(tournamentsTable)
+      .where(eq(tournamentsTable.id, id))
+      .for("update");
+    if (!t) throw new HttpError(404, "Tournament not found", "NOT_FOUND");
+    const deleted = await tx
+      .delete(tournamentRegistrationsTable)
+      .where(
+        and(
+          eq(tournamentRegistrationsTable.id, registrationId),
+          eq(tournamentRegistrationsTable.tournamentId, id),
+        ),
+      )
+      .returning();
+    if (!deleted.length) throw new HttpError(404, "Registration not found", "NOT_FOUND");
+    await tx
+      .update(tournamentsTable)
+      .set({ registeredTeams: sql`greatest(${tournamentsTable.registeredTeams} - 1, 0)` })
+      .where(eq(tournamentsTable.id, id));
+  });
+  res.status(204).end();
 });
 
 export default router;

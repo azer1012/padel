@@ -264,7 +264,17 @@ export default function AdminPricing() {
             </SelectContent>
           </Select>
         </div>
-        <div className="relative overflow-x-auto">
+        {/* Scrolls sideways on small screens: reachable from the keyboard too */}
+        <div
+          className="relative overflow-x-auto"
+          role="region"
+          tabIndex={0}
+          aria-label={tx({
+            fr: "Tokens par place selon le jour et l'heure",
+            en: "Tokens per spot by day and time",
+            ar: "الرصيد لكل مكان حسب اليوم والساعة",
+          })}
+        >
           <table className="w-full min-w-[720px] border-separate border-spacing-1" dir="ltr">
             <caption className="sr-only">
               {tx({

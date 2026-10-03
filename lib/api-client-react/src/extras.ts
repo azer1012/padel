@@ -336,6 +336,39 @@ export const useUnregisterTournament = () =>
       customFetch<unknown>(`/api/tournaments/${id}/register`, { method: "DELETE" }),
   });
 
+/** Registers the member's team, under the name they give it (optional). */
+export const useRegisterTournamentTeam = () =>
+  useMutation({
+    mutationFn: ({ id, teamName }: { id: number; teamName?: string }) =>
+      customFetch<unknown>(`/api/tournaments/${id}/register`, {
+        method: "POST",
+        ...json({ teamName }),
+      }),
+  });
+
+/** A team of a tournament, as the desk sees it. */
+export type TournamentTeam = {
+  id: number;
+  teamName: string | null;
+  createdAt: string;
+  member: { id: number; name: string; email: string; phone: string | null };
+};
+export const tournamentTeamsKey = (id: number) =>
+  ["/api/tournaments", id, "registrations"] as const;
+export const useTournamentTeams = (id: number | null) =>
+  useQuery({
+    queryKey: tournamentTeamsKey(id ?? 0),
+    queryFn: () => customFetch<TournamentTeam[]>(`/api/tournaments/${id}/registrations`),
+    enabled: id !== null,
+  });
+export const useRemoveTournamentTeam = () =>
+  useMutation({
+    mutationFn: ({ id, registrationId }: { id: number; registrationId: number }) =>
+      customFetch<void>(`/api/tournaments/${id}/registrations/${registrationId}`, {
+        method: "DELETE",
+      }),
+  });
+
 // ─── Club settings (operational rules, edited in Admin → Réglages) ────────────
 
 export type OpeningHoursDay = {
@@ -675,8 +708,10 @@ export const shopKeys = {
   adminProducts: ["/api/admin/shop/products"] as const,
   /** Every admin order list, whatever the filter */
   adminOrdersAll: ["/api/admin/shop/orders"] as const,
-  adminOrders: (status?: ShopOrderStatus) => ["/api/admin/shop/orders", status ?? "all"] as const,
+  adminOrders: (status?: ShopOrderFilter) => ["/api/admin/shop/orders", status ?? "all"] as const,
 };
+/** A status, or "open": every order the club still has something to do with. */
+export type ShopOrderFilter = ShopOrderStatus | "open";
 
 export const useShopProducts = (o?: Opts<ShopProduct[]>) =>
   useQuery({
@@ -728,7 +763,7 @@ export const useDeleteShopProduct = () =>
         method: "DELETE",
       }),
   });
-export const useAdminShopOrders = (status?: ShopOrderStatus, o?: Opts<AdminShopOrders>) =>
+export const useAdminShopOrders = (status?: ShopOrderFilter, o?: Opts<AdminShopOrders>) =>
   useQuery({
     queryKey: shopKeys.adminOrders(status),
     queryFn: () =>

@@ -28,14 +28,29 @@ router.get("/tokens/transactions", requireUser, async (req, res) => {
   const user = currentUser(req);
   const { page, limit, offset } = paging(req.query as Record<string, string>, 20, 100);
   const where = eq(tokenTransactionsTable.userId, user.id);
-  const [{ total }] = await db.select({ total: count() }).from(tokenTransactionsTable).where(where);
+  // Totals of the whole ledger: the page below holds the latest entries only
+  const [{ total, received, used }] = await db
+    .select({
+      total: count(),
+      received: sql<number>`coalesce(sum(${tokenTransactionsTable.amount}) filter (where ${tokenTransactionsTable.type} = 'credit'), 0)::int`,
+      used: sql<number>`coalesce(sum(${tokenTransactionsTable.amount}) filter (where ${tokenTransactionsTable.type} = 'debit'), 0)::int`,
+    })
+    .from(tokenTransactionsTable)
+    .where(where);
   const data = await db.query.tokenTransactionsTable.findMany({
     where,
     orderBy: [desc(tokenTransactionsTable.createdAt), desc(tokenTransactionsTable.id)],
     limit,
     offset,
   });
-  res.json({ data, total: Number(total), page, limit });
+  res.json({
+    data,
+    total: Number(total),
+    page,
+    limit,
+    received: Number(received),
+    used: Number(used),
+  });
 });
 
 /**

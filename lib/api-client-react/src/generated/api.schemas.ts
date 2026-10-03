@@ -300,6 +300,10 @@ export interface TokenTransactionListResponse {
   limit: number;
   /** Admin list only: tokens held by all members right now */
   circulating?: number;
+  /** Member's own list only: every token ever credited (purchases, refunds, rewards) */
+  received?: number;
+  /** Member's own list only: every token ever spent on bookings */
+  used?: number;
 }
 
 export interface NewsArticle {
@@ -370,6 +374,8 @@ export interface Tournament {
   /** @nullable */
   imageUrl?: string | null;
   createdAt: string;
+  /** The signed-in member has a team in it (always false for a visitor) */
+  isRegistered?: boolean;
 }
 
 export type TournamentInputStatus =
@@ -779,6 +785,8 @@ export interface OpenMatch {
   tokensPerSpot: number;
   isPeak: boolean;
   players: { name: string }[];
+  /** The signed-in member already plays in this match (always false for a visitor) */
+  joined?: boolean;
 }
 
 export type ReservationBookingMode =

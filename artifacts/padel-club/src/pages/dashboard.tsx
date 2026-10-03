@@ -37,9 +37,11 @@ export default function Dashboard() {
   const locale = useDateLocale();
   const { lang } = useI18n();
   const { data: user } = useGetMe();
-  const { data: balance, isLoading: loadingBalance } = useGetTokenBalance();
+  const { data: balance, isLoading: loadingBalance, isError: balanceError } = useGetTokenBalance();
   const { data: reservations, isLoading: loadingRes } = useListUpcomingReservations();
-  const { data: matches } = useGetOpenMatches();
+  const { data: openMatches } = useGetOpenMatches();
+  // "Spots waiting for you": the member's own matches are theirs already (shown above)
+  const matches = openMatches?.filter((m) => !m.joined);
   const { data: activity } = useListTokenTransactions({ limit: 3 });
   const recent = activity?.data ?? [];
   const { run, pendingId } = useJoinMatch();
@@ -203,6 +205,11 @@ export default function Dashboard() {
           </span>
           {loadingBalance ? (
             <Skeleton className="h-20 w-32 bg-night/10" />
+          ) : balanceError ? (
+            // Never "0" when the balance could not be read
+            <span className="disp relative text-[96px] leading-[0.8]" aria-hidden="true">
+              –
+            </span>
           ) : (
             <CountUp
               value={bal}
@@ -210,23 +217,29 @@ export default function Dashboard() {
             />
           )}
           <span className="text-[15px] font-semibold">
-            {bal >= rules.tokenCostFullCourt
+            {balanceError
               ? tx({
-                  fr: `De quoi réserver ${fullCourts} ${plural(fullCourts, "terrain complet", "terrains complets")}`,
-                  en: `Enough for ${fullCourts} ${plural(fullCourts, "full court", "full courts")}`,
-                  ar: `يكفي لـ ${fullCourts} ملعب كامل`,
+                  fr: "Votre solde n'a pas chargé : ouvrez votre portefeuille",
+                  en: "Your balance didn't load: open your wallet",
+                  ar: "لم يتم تحميل رصيدك: افتح محفظتك",
                 })
-              : bal > 0
+              : bal >= rules.tokenCostFullCourt && rules.tokenCostFullCourt > 0
                 ? tx({
-                    fr: "Assez pour rejoindre un open match",
-                    en: "Enough to join an open match",
-                    ar: "يكفي للانضمام لمباراة مفتوحة",
+                    fr: `De quoi réserver ${fullCourts} ${plural(fullCourts, "terrain complet", "terrains complets")}`,
+                    en: `Enough for ${fullCourts} ${plural(fullCourts, "full court", "full courts")}`,
+                    ar: `يكفي لـ ${fullCourts} ملعب كامل`,
                   })
-                : tx({
-                    fr: "Rechargez à l'accueil du club",
-                    en: "Top up at the front desk",
-                    ar: "اشحن في الاستقبال",
-                  })}
+                : bal > 0 && bal >= rules.tokenCostPlayer
+                  ? tx({
+                      fr: "Assez pour rejoindre un open match",
+                      en: "Enough to join an open match",
+                      ar: "يكفي للانضمام لمباراة مفتوحة",
+                    })
+                  : tx({
+                      fr: "Rechargez à l'accueil du club",
+                      en: "Top up at the front desk",
+                      ar: "اشحن في الاستقبال",
+                    })}
           </span>
         </Link>
       </div>

@@ -1,5 +1,6 @@
+import { Link } from "wouter";
 import type { OpenMatch } from "@workspace/api-client-react";
-import { CoinsIcon, PlusIcon, SunIcon, WarehouseIcon } from "@/components/icons";
+import { CheckIcon, CoinsIcon, PlusIcon, SunIcon, WarehouseIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/smash/primitives";
 import { useTx, useI18n } from "@/lib/i18n";
@@ -95,14 +96,28 @@ export function MatchCard({
           </span>
         </span>
       </div>
-      <Button onClick={onJoin} loading={pending} className="-mt-1 w-full">
-        <CoinsIcon weight="fill" />
-        {tx({
-          fr: `Rejoindre · ${tokensLabel(cost)}`,
-          en: `Join · ${tokensLabel(cost)}`,
-          ar: `انضم · ${cost} رصيد`,
-        })}
-      </Button>
+      {match.joined ? (
+        // The member's own match: nothing to join, their booking is one tap away
+        <Button asChild variant="outline" className="-mt-1 w-full">
+          <Link href="/reservations">
+            <CheckIcon />
+            {tx({
+              fr: "Vous y jouez · voir mon match",
+              en: "You're in · see my match",
+              ar: "أنت مشارك · عرض مباراتي",
+            })}
+          </Link>
+        </Button>
+      ) : (
+        <Button onClick={onJoin} loading={pending} className="-mt-1 w-full">
+          <CoinsIcon weight="fill" />
+          {tx({
+            fr: `Rejoindre · ${tokensLabel(cost)}`,
+            en: `Join · ${tokensLabel(cost)}`,
+            ar: `انضم · ${cost} رصيد`,
+          })}
+        </Button>
+      )}
     </article>
   );
 }

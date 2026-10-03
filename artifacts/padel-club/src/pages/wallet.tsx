@@ -14,7 +14,7 @@ import {
 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CountUp, EmptyState, Page, PageHeader } from "@/components/smash/primitives";
+import { CountUp, EmptyState, ErrorState, Page, PageHeader } from "@/components/smash/primitives";
 import { useI18n, useTx } from "@/lib/i18n";
 import { CLUB } from "@/config/club";
 import { cn } from "@/lib/utils";
@@ -35,11 +35,23 @@ export default function Wallet() {
   const tx = useTx();
   const { t } = useI18n();
   const { lang } = useI18n();
-  const { data: balance, isLoading: loadingBalance } = useGetTokenBalance();
-  const { data: transactions, isLoading: loadingTx } = useListTokenTransactions({ limit: 30 });
+  const {
+    data: balance,
+    isLoading: loadingBalance,
+    isError: balanceError,
+    refetch: refetchBalance,
+  } = useGetTokenBalance();
+  const {
+    data: transactions,
+    isLoading: loadingTx,
+    isError: txError,
+    refetch: refetchTx,
+  } = useListTokenTransactions({ limit: 30 });
   const list = transactions?.data ?? [];
-  const credits = list.filter((x) => x.type === "credit").reduce((s, x) => s + x.amount, 0);
-  const debits = list.filter((x) => x.type === "debit").reduce((s, x) => s + x.amount, 0);
+  // Totals of the whole ledger, from the API: the list below holds the latest entries only
+  const credits = transactions?.received ?? 0;
+  const debits = transactions?.used ?? 0;
+  const older = Math.max(0, (transactions?.total ?? 0) - list.length);
   const bal = balance?.balance ?? 0;
   const fullCourts = Math.floor(bal / Math.max(1, rules.tokenCostFullCourt));
   const spots = Math.floor(bal / Math.max(1, rules.tokenCostPlayer));
@@ -70,13 +82,27 @@ export default function Wallet() {
           </span>
           {loadingBalance ? (
             <Skeleton className="h-24 w-40 bg-white/10" />
+          ) : balanceError ? (
+            // Never "0 token" when the balance could not be read
+            <div role="alert" className="relative flex flex-col items-start gap-3">
+              <span className="text-[17px] font-bold">
+                {tx({
+                  fr: "Votre solde n'a pas chargé.",
+                  en: "Your balance didn't load.",
+                  ar: "لم يتم تحميل رصيدك.",
+                })}
+              </span>
+              <Button variant="lime" size="sm" onClick={() => refetchBalance()}>
+                {tx({ fr: "Réessayer", en: "Try again", ar: "إعادة المحاولة" })}
+              </Button>
+            </div>
           ) : (
             <p className="relative m-0 flex items-baseline gap-3">
               <CountUp value={bal} className="disp text-[120px] leading-[0.8] tracking-[-0.05em]" />
               <span className="disp text-3xl">{tokenWord(bal)}</span>
             </p>
           )}
-          <div className="relative flex flex-wrap gap-2">
+          <div className={cn("relative flex flex-wrap gap-2", balanceError && "hidden")}>
             <span className="rounded-full bg-white/10 px-4 py-2 text-sm font-bold">
               {tx({
                 fr: `${fullCourts} ${plural(fullCourts, "terrain complet", "terrains complets")}`,
@@ -238,7 +264,16 @@ export default function Wallet() {
 
       <section className="flex flex-col gap-4">
         <h2 className="disp m-0 text-3xl">{t("transactionHistory")}</h2>
-        {loadingTx ? (
+        {txError ? (
+          <ErrorState
+            text={tx({
+              fr: "L'historique n'a pas chargé.",
+              en: "The history didn't load.",
+              ar: "لم يتم تحميل السجل.",
+            })}
+            onRetry={() => refetchTx()}
+          />
+        ) : loadingTx ? (
           <div className="flex flex-col gap-2">
             {[0, 1, 2, 3].map((i) => (
               <Skeleton key={i} className="h-[72px] !rounded-[22px]" />
@@ -316,6 +351,15 @@ export default function Wallet() {
               );
             })}
           </ul>
+        )}
+        {older > 0 && (
+          <p className="m-0 text-center text-sm text-muted-foreground">
+            {tx({
+              fr: `Les ${list.length} derniers mouvements. Pour les plus anciens, demandez à l'accueil.`,
+              en: `Your ${list.length} latest movements. Ask the front desk for older ones.`,
+              ar: `آخر ${list.length} حركة. للأقدم، اسأل في الاستقبال.`,
+            })}
+          </p>
         )}
       </section>
     </Page>

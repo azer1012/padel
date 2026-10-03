@@ -131,7 +131,12 @@ export default function Boutique() {
 
   const { data: products, isLoading, isError, refetch } = useShopProducts();
   const { data: me } = useGetMe({ query: { enabled: isSignedIn } });
-  const { data: orders } = useMyShopOrders({ enabled: isSignedIn });
+  const {
+    data: orders,
+    isLoading: ordersLoading,
+    isError: ordersError,
+    refetch: refetchOrders,
+  } = useMyShopOrders({ enabled: isSignedIn });
   const place = usePlaceShopOrder();
   const cancel = useCancelShopOrder();
   const { lines, count, quantityOf } = useCart();
@@ -348,7 +353,22 @@ export default function Boutique() {
       )}
 
       {tab === "orders" ? (
-        !orders?.length ? (
+        ordersError ? (
+          <ErrorState
+            text={tx({
+              fr: "Vos commandes n'ont pas chargé.",
+              en: "Your orders didn't load.",
+              ar: "لم يتم تحميل طلباتك.",
+            })}
+            onRetry={() => refetchOrders()}
+          />
+        ) : ordersLoading ? (
+          <div className="flex flex-col gap-4">
+            {[0, 1].map((i) => (
+              <Skeleton key={i} className="h-[200px] !rounded-[28px]" />
+            ))}
+          </div>
+        ) : !orders?.length ? (
           <EmptyState
             icon={<PackageIcon className="size-7" />}
             title={tx({ fr: "Aucune commande", en: "No orders yet", ar: "لا طلبات بعد" })}
@@ -475,7 +495,11 @@ export default function Boutique() {
       ) : (
         <>
           {categories.length > 1 && (
-            <div role="group" className="enter pill-group">
+            <div
+              role="group"
+              aria-label={tx({ fr: "Catégorie", en: "Category", ar: "الفئة" })}
+              className="enter pill-group"
+            >
               {["all", ...categories].map((c) => (
                 <button
                   key={c}

@@ -47,8 +47,28 @@ await api(A, "POST", "/reservations", {
   publicDescription: "Niveau intermédiaire",
 });
 await api(A, "POST", `/reservations/${full.body.id}/invite`, { userId: B.n });
+// The shop with something on its shelves, one article nearly gone, and an order to call
+const racket = await api(ADMIN, "POST", "/admin/shop/products", {
+  name: "Raquette Carbone Pro",
+  category: "racket",
+  price: 349,
+  stock: 2,
+  description: "Cadre 100 % carbone, forme diamant et équilibre en tête.",
+});
+await api(ADMIN, "POST", "/admin/shop/products", {
+  name: "Tube de 3 balles",
+  category: "balls",
+  price: 18,
+  stock: 40,
+});
+await api(A, "POST", "/shop/orders", {
+  items: [{ productId: racket.body.id, quantity: 1 }],
+  deliveryMethod: "pickup",
+  contactPhone: "+216 20 000 000",
+  idempotencyKey: "screens-order",
+});
 
-const WIDTHS = [320, 375, 390, 414, 768, 1024, 1280, 1440];
+const WIDTHS = [320, 360, 375, 390, 414, 430, 768, 1024, 1280, 1440, 1920];
 const PAGES = {
   visitor: [
     "/",
@@ -56,6 +76,7 @@ const PAGES = {
     "/open-matches",
     "/tournaments",
     "/news",
+    "/boutique",
     "/contact",
     "/sign-in",
     "/sign-up",
@@ -72,6 +93,7 @@ const PAGES = {
     "/profile",
     "/tournaments",
     "/news",
+    "/boutique",
   ],
   admin: [
     "/admin",
@@ -83,6 +105,7 @@ const PAGES = {
     "/admin/tournaments",
     "/admin/pricing",
     "/admin/equipment",
+    "/admin/shop",
     "/admin/settings",
   ],
 };
@@ -293,9 +316,38 @@ async function violations(page) {
 
 if (axe)
   for (const [role, routes] of Object.entries({
-    visitor: ["/", "/terrains", "/sign-in", "/sign-up", "/contact"],
-    player: ["/dashboard", "/terrains", "/reservations", "/wallet", "/profile", "/open-matches"],
-    admin: ["/admin", "/admin/reservations", "/admin/users", "/admin/terrains", "/admin/settings"],
+    visitor: [
+      "/",
+      "/terrains",
+      "/tournaments",
+      "/news",
+      "/boutique",
+      "/sign-in",
+      "/sign-up",
+      "/contact",
+    ],
+    player: [
+      "/dashboard",
+      "/terrains",
+      "/reservations",
+      "/wallet",
+      "/profile",
+      "/open-matches",
+      "/boutique",
+    ],
+    admin: [
+      "/admin",
+      "/admin/reservations",
+      "/admin/users",
+      "/admin/terrains",
+      "/admin/tokens",
+      "/admin/pricing",
+      "/admin/equipment",
+      "/admin/tournaments",
+      "/admin/news",
+      "/admin/shop",
+      "/admin/settings",
+    ],
   }))
     await step(`no serious accessibility violation · ${role}`, async () => {
       const found = [];

@@ -570,6 +570,16 @@ await step("an open match is listed for the club with its free spots", async () 
   const rows = (await reservation(open.id)).players;
   equal(rows.length, 2, "players");
   equal(rows.filter((p) => p.userId === B.n).length, 1, "rows for the member who joined");
+  // Once in, the match is theirs: the list sends them to their booking, not to "join"
+  await b.page.reload();
+  const card = b.page.locator("article").filter({ hasText: "Niveau 3, bonne humeur" });
+  await card.getByRole("link", { name: /Vous y jouez/ }).waitFor({ timeout: 15000 });
+  equal(await card.getByRole("button", { name: /Rejoindre/ }).count(), 0, "join button left");
+  // And their dashboard no longer offers them their own match
+  await b.page.goto(`${WEB}/dashboard`);
+  await b.page.getByText("Des places vous attendent").waitFor({ timeout: 15000 });
+  await b.page.waitForLoadState("networkidle");
+  equal(await b.page.getByText("Niveau 3, bonne humeur").count(), 0, "own match offered");
   await b.ctx.close();
 });
 
@@ -1188,6 +1198,53 @@ await step("the reminder goes out once, however often the job runs", async () =>
   await api(ADMIN, "POST", `/reservations/${r.body.id}/cancel`);
   await api(ADMIN, "POST", "/admin/settings/reset", { section: "notifications" });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+section("Tournaments");
+
+await step(
+  "a member registers a team under its name, the desk sees who to call, the member withdraws",
+  async () => {
+    const t = await api(ADMIN, "POST", "/tournaments", {
+      name: "Open de test",
+      status: "open",
+      startDate: slot("09:00", 9),
+      maxTeams: 8,
+    });
+    equal(t.status, 201, "tournament");
+    const m = await as(C);
+    await m.page.goto(`${WEB}/tournaments`);
+    const card = m.page.locator("article").filter({ hasText: "Open de test" });
+    await card.getByRole("button", { name: "Inscrire mon équipe" }).click();
+    await m.page.getByLabel("Nom de l'équipe").fill("Ines & Dalia");
+    await m.page.getByTestId("btn-register-team").click();
+    await m.page.getByTestId(`registered-${t.body.id}`).waitFor({ timeout: 15000 });
+    equal(
+      await card.getByRole("button", { name: "Inscrire mon équipe" }).count(),
+      0,
+      "register button once registered",
+    );
+    // The desk: the team under its name, and the member behind it
+    const d = await as(ADMIN);
+    await d.page.goto(`${WEB}/admin/tournaments`);
+    await d.page.getByTestId(`btn-teams-${t.body.id}`).click();
+    const teams = d.page.getByTestId("tournament-teams");
+    await teams.getByText("Ines & Dalia").waitFor({ timeout: 15000 });
+    equal(await teams.getByRole("listitem").count(), 1, "teams listed");
+    await shot(d.page, "acc-tournament-teams");
+    await d.ctx.close();
+    // The member withdraws: the place is given back
+    await card.getByRole("button", { name: "Me désinscrire" }).click();
+    await m.page.getByRole("alertdialog").getByRole("button", { name: "Me désinscrire" }).click();
+    await card.getByRole("button", { name: "Inscrire mon équipe" }).waitFor({ timeout: 15000 });
+    equal(
+      (await api(ADMIN, "GET", `/tournaments/${t.body.id}/registrations`)).body.length,
+      0,
+      "teams after the withdrawal",
+    );
+    await m.ctx.close();
+  },
+);
 
 // ════════════════════════════════════════════════════════════════════════════
 section("The database after all of it");

@@ -11,7 +11,7 @@ import {
 } from "@workspace/db";
 import { eq, and, asc, desc, gt, ilike, isNull, ne, or, sql } from "drizzle-orm";
 import crypto from "node:crypto";
-import { currentUser, requireUser, requireAdmin } from "../lib/auth";
+import { currentUser, loadUser, optionalUser, requireUser, requireAdmin } from "../lib/auth";
 import { loadActiveRules, priceFor, quote } from "../lib/pricing";
 import { notifyLater } from "../lib/notify";
 import { clubParts, formatClubDate, formatClubStamp, formatClubTime } from "../lib/club-time";
@@ -675,7 +675,8 @@ router.delete("/reservations/:id/players/:playerId", requireAdmin, async (req, r
 });
 
 // ─── Open matches (public matches with open spots) ───────────────────────────
-router.get("/open-matches", async (_req, res) => {
+router.get("/open-matches", loadUser, async (req, res) => {
+  const viewer = optionalUser(req);
   const settings = await getSettings();
   if (!settings.openMatchesEnabled) {
     res.json([]);
@@ -712,6 +713,8 @@ router.get("/open-matches", async (_req, res) => {
       isPeak: price.isPeak,
       // Public-safe: first name + initial only, no payment details
       players: s.players.map((p) => ({ name: publicName(p.user) })),
+      // The member asking already plays in it: nothing to join
+      joined: !!viewer && s.players.some((p) => p.userId === viewer.id),
     });
   }
   res.json(out);

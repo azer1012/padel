@@ -40,13 +40,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
+import { EmptyState, ErrorState, Page, PageHeader } from "@/components/smash/primitives";
 import { Field, Pill, Segmented, useConfirm } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
 import { useClubRules } from "@/hooks/use-club-rules";
 import { shopMoney, useOrderStatus, useShopCategories } from "@/hooks/use-order-status";
 import { useI18n, useTx } from "@/lib/i18n";
 import { apiErrorText } from "@/lib/api-errors";
+import { plural } from "@/lib/labels";
 import { clubDateTime } from "@/lib/club-time";
 import { cn } from "@/lib/utils";
 
@@ -81,10 +82,18 @@ export default function AdminShop() {
   const categories = useShopCategories();
 
   const [filter, setFilter] = useState<Filter>("pending");
-  const { data: orders, isLoading: loadingOrders } = useAdminShopOrders(
-    filter === "pending" ? "pending" : undefined,
-  );
-  const { data: products, isLoading } = useAdminShopProducts();
+  const {
+    data: orders,
+    isLoading: loadingOrders,
+    isError: ordersError,
+    refetch: refetchOrders,
+  } = useAdminShopOrders(filter === "all" ? undefined : filter);
+  const {
+    data: products,
+    isLoading,
+    isError: productsError,
+    refetch: refetchProducts,
+  } = useAdminShopProducts();
   const moveOrder = useUpdateShopOrder();
   const create = useCreateShopProduct(),
     update = useUpdateShopProduct(),
@@ -102,9 +111,9 @@ export default function AdminShop() {
     qc.invalidateQueries({ queryKey: shopKeys.products });
   };
 
-  const list = (orders?.data ?? []).filter(
-    (o) => filter !== "open" || !["delivered", "cancelled"].includes(o.status),
-  );
+  const list = orders?.data ?? [];
+  /** Orders the list does not show: the API answers the most recent ones only. */
+  const older = Math.max(0, (orders?.total ?? 0) - list.length);
 
   async function move(order: AdminShopOrder, status: ShopOrderStatus) {
     if (status === "cancelled") {
@@ -315,7 +324,16 @@ export default function AdminShop() {
             />
           </div>
         </div>
-        {loadingOrders ? (
+        {ordersError ? (
+          <ErrorState
+            text={tx({
+              fr: "Les commandes n'ont pas chargé.",
+              en: "The orders didn't load.",
+              ar: "لم يتم تحميل الطلبات.",
+            })}
+            onRetry={() => refetchOrders()}
+          />
+        ) : loadingOrders ? (
           <Skeleton className="h-28" />
         ) : list.length === 0 ? (
           <p className="m-0 rounded-2xl bg-mist px-4 py-8 text-center text-muted-foreground">
@@ -455,13 +473,31 @@ export default function AdminShop() {
             })}
           </ul>
         )}
+        {older > 0 && (
+          <p className="m-0 text-center text-sm text-muted-foreground">
+            {tx({
+              fr: `Les ${list.length} commandes les plus récentes. ${older} plus ${plural(older, "ancienne", "anciennes")} non ${plural(older, "affichée", "affichées")}.`,
+              en: `The ${list.length} most recent orders. ${older} older not shown.`,
+              ar: `أحدث ${list.length} طلبًا. ${older} أقدم غير معروضة.`,
+            })}
+          </p>
+        )}
       </section>
 
       {/* Catalogue */}
       <h2 className="disp m-0 text-2xl">
         {tx({ fr: "Articles en vente", en: "Articles on sale", ar: "المنتجات المعروضة" })}
       </h2>
-      {isLoading ? (
+      {productsError ? (
+        <ErrorState
+          text={tx({
+            fr: "Les articles n'ont pas chargé.",
+            en: "The articles didn't load.",
+            ar: "لم يتم تحميل المنتجات.",
+          })}
+          onRetry={() => refetchProducts()}
+        />
+      ) : isLoading ? (
         <Skeleton className="h-[140px] !rounded-[26px]" />
       ) : !products?.length ? (
         <EmptyState

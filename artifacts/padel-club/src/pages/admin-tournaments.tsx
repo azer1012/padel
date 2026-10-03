@@ -3,7 +3,11 @@ import {
   useListTournaments,
   useCreateTournament,
   useUpdateTournament,
+  useTournamentTeams,
+  useRemoveTournamentTeam,
+  tournamentTeamsKey,
   getListTournamentsQueryKey,
+  type TournamentTeam,
 } from "@workspace/api-client-react";
 import type { Tournament } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -11,8 +15,10 @@ import {
   CalendarDotsIcon,
   GiftIcon,
   PencilSimpleIcon,
+  PhoneIcon,
   PlusIcon,
   ProhibitIcon,
+  TrashIcon,
   TrophyIcon,
   UsersIcon,
 } from "@/components/icons";
@@ -27,8 +33,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { EmptyState, Page, PageHeader } from "@/components/smash/primitives";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { EmptyState, ErrorState, Page, PageHeader } from "@/components/smash/primitives";
 import { Field, Pill, useConfirm, type Tone } from "@/components/smash/admin";
 import { useToast } from "@/hooks/use-toast";
 import { useTx, useI18n } from "@/lib/i18n";
@@ -82,6 +94,49 @@ export default function AdminTournaments() {
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
   const refresh = () => qc.invalidateQueries({ queryKey: getListTournamentsQueryKey() });
   const saving = createMutation.isPending || updateMutation.isPending;
+  /** The tournament whose teams are shown: who registered, and how to reach them. */
+  const [teamsOf, setTeamsOf] = useState<Tournament | null>(null);
+  const teams = useTournamentTeams(teamsOf?.id ?? null);
+  const removeTeam = useRemoveTournamentTeam();
+
+  async function takeOut(t: Tournament, team: TournamentTeam) {
+    const who = team.teamName || team.member.name;
+    const ok = await confirm({
+      title: tx({
+        fr: `Retirer ${who} de ${t.name} ?`,
+        en: `Remove ${who} from ${t.name}?`,
+        ar: `إزالة ${who} من ${t.name}؟`,
+      }),
+      description: tx({
+        fr: "La place est rendue. Prévenez l'équipe : elle ne reçoit pas de message.",
+        en: "The place is freed. Tell the team: they get no message.",
+        ar: "يُحرَّر المكان. أبلغ الفريق: لا تصله رسالة.",
+      }),
+      confirmLabel: tx({ fr: "Retirer l'équipe", en: "Remove the team", ar: "إزالة الفريق" }),
+      destructive: true,
+    });
+    if (!ok) return;
+    removeTeam.mutate(
+      { id: t.id, registrationId: team.id },
+      {
+        onSuccess: () => {
+          toast({ title: tx({ fr: "Équipe retirée", en: "Team removed", ar: "أُزيل الفريق" }) });
+          qc.invalidateQueries({ queryKey: tournamentTeamsKey(t.id) });
+          refresh();
+        },
+        onError: (e) =>
+          toast({
+            title: tx({
+              fr: "Action impossible",
+              en: "Couldn't do that",
+              ar: "تعذر تنفيذ الإجراء",
+            }),
+            description: apiErrorText(e, tx),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
 
   const statusLabel = (s: Status) =>
     ({
@@ -312,6 +367,20 @@ export default function AdminTournaments() {
                       </span>
                     </div>
                   )}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="self-start"
+                    onClick={() => setTeamsOf(t)}
+                    data-testid={`btn-teams-${t.id}`}
+                  >
+                    <UsersIcon />
+                    {tx({
+                      fr: `Équipes inscrites · ${t.registeredTeams ?? 0}`,
+                      en: `Registered teams · ${t.registeredTeams ?? 0}`,
+                      ar: `الفرق المسجلة · ${t.registeredTeams ?? 0}`,
+                    })}
+                  </Button>
                   {(step || (t.status !== "cancelled" && t.status !== "completed")) && (
                     <div className="mt-auto flex flex-wrap gap-2 border-t border-[#E4E8F7] pt-4">
                       {step && (
@@ -342,6 +411,93 @@ export default function AdminTournaments() {
           })}
         </div>
       )}
+
+      <Dialog open={!!teamsOf} onOpenChange={(o) => !o && setTeamsOf(null)}>
+        <DialogContent className="max-w-[560px]">
+          <DialogHeader className="text-start">
+            <DialogTitle>
+              {tx({ fr: "Équipes inscrites", en: "Registered teams", ar: "الفرق المسجلة" })}
+            </DialogTitle>
+            <DialogDescription>
+              {teamsOf?.name}
+              {teamsOf?.maxTeams
+                ? ` · ${teams.data?.length ?? teamsOf.registeredTeams ?? 0}/${teamsOf.maxTeams}`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {teams.isError ? (
+            <ErrorState
+              text={tx({
+                fr: "Les équipes n'ont pas chargé.",
+                en: "The teams didn't load.",
+                ar: "لم يتم تحميل الفرق.",
+              })}
+              onRetry={() => teams.refetch()}
+            />
+          ) : teams.isLoading ? (
+            <Skeleton className="h-28" />
+          ) : !teams.data?.length ? (
+            <p className="m-0 rounded-2xl bg-mist px-4 py-8 text-center text-muted-foreground">
+              {tx({
+                fr: "Aucune équipe inscrite pour l'instant.",
+                en: "No team has registered yet.",
+                ar: "لا فرق مسجلة بعد.",
+              })}
+            </p>
+          ) : (
+            <ol className="m-0 flex list-none flex-col gap-2 p-0" data-testid="tournament-teams">
+              {teams.data.map((team, i) => (
+                <li
+                  key={team.id}
+                  className="flex items-center gap-3 rounded-2xl border border-[#E4E8F7] p-3"
+                >
+                  <span className="disp flex size-9 shrink-0 items-center justify-center rounded-full bg-mist text-court">
+                    {i + 1}
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-extrabold">
+                      {team.teamName || team.member.name}
+                    </span>
+                    <span className="truncate text-sm text-muted-foreground">
+                      {team.teamName ? `${team.member.name} · ` : ""}
+                      {clubDate(team.createdAt, lang, "dayMonth")}
+                    </span>
+                  </span>
+                  {team.member.phone && (
+                    <Button asChild variant="secondary" size="icon-sm">
+                      <a
+                        href={`tel:${team.member.phone.replace(/[^\d+]/g, "")}`}
+                        aria-label={tx({
+                          fr: `Appeler ${team.member.name} au ${team.member.phone}`,
+                          en: `Call ${team.member.name} on ${team.member.phone}`,
+                          ar: `اتصل بـ ${team.member.name} على ${team.member.phone}`,
+                        })}
+                        title={team.member.phone}
+                      >
+                        <PhoneIcon />
+                      </a>
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-destructive"
+                    disabled={removeTeam.isPending}
+                    onClick={() => teamsOf && takeOut(teamsOf, team)}
+                    aria-label={tx({
+                      fr: `Retirer ${team.teamName || team.member.name}`,
+                      en: `Remove ${team.teamName || team.member.name}`,
+                      ar: `إزالة ${team.teamName || team.member.name}`,
+                    })}
+                  >
+                    <TrashIcon />
+                  </Button>
+                </li>
+              ))}
+            </ol>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent className="max-w-[640px]">

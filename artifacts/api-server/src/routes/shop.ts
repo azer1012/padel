@@ -441,12 +441,7 @@ router.patch("/admin/shop/products/:id", requireAdmin, async (req, res) => {
 /** An article that was ever ordered is taken off sale instead of deleted: past orders stay readable. */
 router.delete("/admin/shop/products/:id", requireAdmin, async (req, res) => {
   const id = requireId(req.params.id);
-  const [ordered] = await db
-    .select({ id: shopOrderItemsTable.id })
-    .from(shopOrderItemsTable)
-    .where(eq(shopOrderItemsTable.productId, id))
-    .limit(1);
-  if (ordered) {
+  const archive = async () => {
     const [row] = await db
       .update(shopProductsTable)
       .set({ isActive: false, updatedAt: new Date() })
@@ -454,11 +449,28 @@ router.delete("/admin/shop/products/:id", requireAdmin, async (req, res) => {
       .returning();
     if (row) await logActivity(req, "shop_updated", `Shop article "${row.name}" archived`);
     res.json({ archived: true });
+  };
+  const [ordered] = await db
+    .select({ id: shopOrderItemsTable.id })
+    .from(shopOrderItemsTable)
+    .where(eq(shopOrderItemsTable.productId, id))
+    .limit(1);
+  if (ordered) {
+    await archive();
     return;
   }
-  const [row] = await db.delete(shopProductsTable).where(eq(shopProductsTable.id, id)).returning();
-  if (row) await logActivity(req, "shop_updated", `Shop article "${row.name}" deleted`);
-  res.status(204).end();
+  try {
+    const [row] = await db
+      .delete(shopProductsTable)
+      .where(eq(shopProductsTable.id, id))
+      .returning();
+    if (row) await logActivity(req, "shop_updated", `Shop article "${row.name}" deleted`);
+    res.status(204).end();
+  } catch (err) {
+    // Ordered between the check and the delete: the order keeps its article
+    if (pgCode(err) !== "23503") throw err;
+    await archive();
+  }
 });
 
 // ─── Admin: orders ───────────────────────────────────────────────────────────
@@ -467,7 +479,13 @@ router.get("/admin/shop/orders", requireAdmin, async (req, res) => {
   const q = req.query as Record<string, string>;
   const { page, limit, offset } = paging(q, 30, 100);
   const status = oneOf(q.status, STATUSES);
-  const where = status ? eq(shopOrdersTable.status, status) : undefined;
+  // "open": every order the club still has something to do with
+  const where =
+    q.status === "open"
+      ? inArray(shopOrdersTable.status, ["pending", "confirmed", "shipped"])
+      : status
+        ? eq(shopOrdersTable.status, status)
+        : undefined;
   const [{ total }] = await db.select({ total: count() }).from(shopOrdersTable).where(where);
   const data = await db.query.shopOrdersTable.findMany({
     where,
