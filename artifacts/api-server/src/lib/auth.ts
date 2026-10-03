@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import { supabaseAdmin } from "../config/supabase";
 import { env } from "../config/env";
 import { HttpError } from "./http";
+import { demoAccountOnly, isDemoEmail } from "./demo";
 
 /** A row of public.users: the member behind a request. */
 export type DbUser = typeof usersTable.$inferSelect;
@@ -111,6 +112,8 @@ async function loadDbUser(req: Request) {
     .select()
     .from(usersTable)
     .where(eq(usersTable.supabaseAuthId, authUserId));
+  // The public demo only lets its own invented accounts in (lib/demo.ts)
+  if (user && env.demoMode && !isDemoEmail(user.email)) throw demoAccountOnly();
   if (user) (req as AuthenticatedRequest).dbUser = user;
   return user ?? null;
 }
@@ -134,7 +137,8 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
  */
 export async function loadUser(req: Request, _res: Response, next: NextFunction) {
   try {
-    if (await verify(req).catch(() => null)) await loadDbUser(req);
+    // A refused account (demo mode) browses the public pages as a visitor
+    if (await verify(req).catch(() => null)) await loadDbUser(req).catch(() => null);
     next();
   } catch (err) {
     next(err);

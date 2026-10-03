@@ -2,7 +2,9 @@ import { Router } from "express";
 import { notifyLater } from "../lib/notify";
 import { db, usersTable } from "@workspace/db";
 import { logActivity } from "../lib/activity";
-import { count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or } from "drizzle-orm";
+import { env } from "../config/env";
+import { assertNotDemo, demoAccountOnly, demoPeopleOnly, isDemoEmail } from "../lib/demo";
 import {
   authIdentity,
   currentUser,
@@ -68,6 +70,7 @@ router.patch("/users/me", requireUser, async (req, res) => {
 router.post("/users/sync", requireAuth, async (req, res) => {
   // Never trust an email sent by the browser: use the one Supabase verified for this token.
   const { id: authUserId, email } = authIdentity(req);
+  if (env.demoMode && !isDemoEmail(email)) throw demoAccountOnly();
   const firstName = cleanText(req.body?.firstName, 80);
   const lastName = cleanText(req.body?.lastName, 80);
   const avatar = cleanText(req.body?.imageUrl, 500);
@@ -132,14 +135,17 @@ router.get("/users", requireAdmin, async (req, res) => {
   const q = req.query as Record<string, string>;
   const { page, limit, offset } = paging(q, 20, 200);
   const search = cleanText(q.search, 80)?.replace(/[%_\\]/g, (c) => `\\${c}`);
-  const where = search
-    ? or(
-        ilike(usersTable.email, `%${search}%`),
-        ilike(usersTable.firstName, `%${search}%`),
-        ilike(usersTable.lastName, `%${search}%`),
-        ilike(usersTable.phone, `%${search}%`),
-      )
-    : undefined;
+  const where = and(
+    search
+      ? or(
+          ilike(usersTable.email, `%${search}%`),
+          ilike(usersTable.firstName, `%${search}%`),
+          ilike(usersTable.lastName, `%${search}%`),
+          ilike(usersTable.phone, `%${search}%`),
+        )
+      : undefined,
+    demoPeopleOnly(),
+  );
   const [{ total }] = await db.select({ total: count() }).from(usersTable).where(where);
   const data = await db
     .select()
@@ -155,7 +161,7 @@ router.get("/users/:id", requireAdmin, async (req, res) => {
   const [user] = await db
     .select()
     .from(usersTable)
-    .where(eq(usersTable.id, requireId(req.params.id)));
+    .where(and(eq(usersTable.id, requireId(req.params.id)), demoPeopleOnly()));
   if (!user) throw new HttpError(404, "User not found", "NOT_FOUND");
   res.json(user);
 });
@@ -168,6 +174,8 @@ router.patch("/users/:id", requireAdmin, async (req, res) => {
   const role =
     req.body?.role === undefined ? undefined : oneOf(req.body.role, ["admin", "player"] as const);
   if (role === null) throw new HttpError(400, "Invalid role", "VALIDATION_ERROR");
+  // A visitor promoting or demoting the shared accounts would break the demo for the next
+  if (role !== undefined) assertNotDemo("Changing roles");
   if (role === "player" && id === admin.id)
     throw new HttpError(400, "You can't remove your own admin access", "SELF_DEMOTE");
   const [updated] = await db.transaction(async (tx) => {

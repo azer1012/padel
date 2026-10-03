@@ -18,21 +18,22 @@ Supabase project, domain and keys are only in the environment.
 
 See `.env.example` for the full list with comments. Summary:
 
-| Variable                                              | Where          | Notes                                            |
-| ----------------------------------------------------- | -------------- | ------------------------------------------------ |
-| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`         | website build  | public by design                                 |
-| `VITE_SITE_URL`, `VITE_API_URL`                       | website build  | public                                           |
-| `VITE_AUTH_GOOGLE_ENABLED`, `VITE_AUTH_APPLE_ENABLED` | website build  | show a provider only once it's configured        |
-| `DATABASE_URL`                                        | API            | **secret** (database password)                   |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`           | API            | service role key is **secret**                   |
-| `SUPABASE_JWT_SECRET`                                 | API (optional) | **secret**; local token verification             |
-| `CORS_ORIGIN`, `FRONTEND_URL`, `TRUST_PROXY`          | API            |                                                  |
-| `TZ`, `CLUB_TIMEZONE`, `VITE_CLUB_TIMEZONE`           | API + website  | the club's time zone (IANA, e.g. `Africa/Tunis`) |
-| `CLUB_NAME`, `CLUB_ADDRESS`                           | API            | used in e-mails and push                         |
-| `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`      | API            | API key is **secret**                            |
-| `VAPID_*`                                             | API            | private key is **secret**; one key pair per club |
-| `JOBS_ENABLED`, `CRON_SECRET`                         | API            | cron secret is **secret**                        |
-| `RATE_LIMIT_WRITES_PER_MINUTE`                        | API            |                                                  |
+| Variable                                              | Where          | Notes                                                          |
+| ----------------------------------------------------- | -------------- | -------------------------------------------------------------- |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`         | website build  | public by design                                               |
+| `VITE_SITE_URL`, `VITE_API_URL`                       | website build  | public                                                         |
+| `VITE_AUTH_GOOGLE_ENABLED`, `VITE_AUTH_APPLE_ENABLED` | website build  | show a provider only once it's configured                      |
+| `DATABASE_URL`                                        | API            | **secret** (database password)                                 |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`           | API            | service role key is **secret**                                 |
+| `SUPABASE_JWT_SECRET`                                 | API (optional) | **secret**; local token verification                           |
+| `CORS_ORIGIN`, `FRONTEND_URL`, `TRUST_PROXY`          | API            |                                                                |
+| `TZ`, `CLUB_TIMEZONE`, `VITE_CLUB_TIMEZONE`           | API + website  | the club's time zone (IANA, e.g. `Africa/Tunis`)               |
+| `CLUB_NAME`, `CLUB_ADDRESS`                           | API            | used in e-mails and push                                       |
+| `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`      | API            | API key is **secret**                                          |
+| `VAPID_*`                                             | API            | private key is **secret**; one key pair per club               |
+| `JOBS_ENABLED`, `CRON_SECRET`                         | API            | cron secret is **secret**                                      |
+| `RATE_LIMIT_WRITES_PER_MINUTE`                        | API            |                                                                |
+| `DEMO_MODE`, `DEMO_PASSWORD`, `DEMO_RESET_HOUR`       | API            | public demo only, **never** on a club: see `docs/DEMO_MODE.md` |
 
 The time zone is an installation setting (not in Réglages) because changing it
 would shift every existing booking.

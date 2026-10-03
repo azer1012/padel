@@ -47,6 +47,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Logo } from "@/components/smash/brand";
 import { AmivioCredit } from "@/components/smash/amivio-credit";
+import { DemoBanner } from "@/components/smash/demo";
 import { CountUp, LiveDot } from "@/components/smash/primitives";
 import { cn } from "@/lib/utils";
 import { useI18n, useTx, useDateLocale, type Lang } from "@/lib/i18n";
@@ -184,6 +185,7 @@ function PublicShell({ children }: { children: ReactNode }) {
       >
         {tx({ fr: "Aller au contenu", en: "Skip to content", ar: "انتقل إلى المحتوى" })}
       </a>
+      <DemoBanner />
       <header
         className={cn(
           "on-dark sticky top-0 z-50 flex h-16 items-center justify-between border-b border-white/8 bg-night/90 px-4 text-white backdrop-blur-md lg:h-[76px] lg:px-12",
@@ -860,6 +862,7 @@ function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        <DemoBanner />
         {/* Mobile top bar */}
         <header className="on-dark sticky top-0 z-40 flex h-16 items-center justify-between bg-night/95 px-4 text-white backdrop-blur-md lg:hidden">
           <Logo href={isAdminRoute ? "/admin" : "/dashboard"} compact />

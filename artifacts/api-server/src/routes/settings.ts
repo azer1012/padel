@@ -17,6 +17,7 @@ import { HttpError, cleanText, pgCode, requireId, toMoney, type Body } from "../
 import { getOpeningHours, getSettings, invalidateSettings, publicSettings } from "../lib/settings";
 import { isValidCloseHhmm, isValidHhmm } from "../lib/slots";
 import { addDays, clubParts, isClubDate } from "../lib/club-time";
+import { demoInfo } from "../lib/demo";
 
 const router = Router();
 
@@ -117,6 +118,8 @@ router.get("/settings", async (_req, res) => {
   res.set("Cache-Control", "no-cache");
   res.json({
     ...publicSettings(settings, hours),
+    // Demo mode: the shared accounts the sign-in page offers (null on a real club)
+    demo: demoInfo(),
     tokenPackages: packages.map((p) => ({
       id: p.id,
       name: p.name,

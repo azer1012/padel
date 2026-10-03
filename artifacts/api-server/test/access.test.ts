@@ -35,6 +35,7 @@ const PUBLIC = new Set([
   "GET /push/public-key",
   // Guarded by its own secret (x-cron-secret), checked below
   "POST /internal/jobs/run",
+  "POST /internal/demo/reset",
 ]);
 
 type Layer = {
@@ -148,7 +149,8 @@ describe("every route has the guard it needs", () => {
       /^\/push\/(subscribe|unsubscribe|test)$/,
       /^\/tournaments\/:id\/register$/,
       /^\/shop\/orders(\/:id\/cancel)?$/,
-      /^\/internal\/jobs\/run$/,
+      // The cron's own secret (below); the demo reset also answers only in DEMO_MODE
+      /^\/internal\/(jobs\/run|demo\/reset)$/,
     ];
     const unguarded = (await endpoints())
       .filter((e) => e.method !== "GET")
@@ -166,6 +168,12 @@ describe("every route has the guard it needs", () => {
       headers: { "x-cron-secret": "" },
     });
     assert.equal(res.status, 401, "an empty secret must never match an unset CRON_SECRET");
+    // The demo reset: same secret, and it never answers on a real club (DEMO_MODE off)
+    const reset = await fetch(`${api.base}/internal/demo/reset`, {
+      method: "POST",
+      headers: { "x-cron-secret": "" },
+    });
+    assert.equal(reset.status, 401);
   });
 });
 

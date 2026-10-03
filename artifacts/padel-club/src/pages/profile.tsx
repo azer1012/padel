@@ -19,6 +19,7 @@ import { supabase } from "@/lib/supabase";
 import { authErrorMessage } from "@/lib/auth-errors";
 import { useI18n, useTx, type Lang } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { useDemo } from "@/components/smash/demo";
 
 export default function Profile() {
   const tx = useTx();
@@ -27,6 +28,7 @@ export default function Profile() {
   const qc = useQueryClient();
   const { signOut } = useAuth();
   const { data: user, isLoading } = useGetMe();
+  const demo = useDemo();
   const updateMutation = useUpdateMe();
   const [form, setForm] = useState({
     firstName: "",
@@ -135,14 +137,25 @@ export default function Profile() {
               </span>
             )}
             <div className="flex w-full flex-col gap-2 pt-2">
-              <Button variant="outline-dark" size="sm" onClick={sendReset}>
-                <KeyIcon />
-                {tx({
-                  fr: "Changer le mot de passe",
-                  en: "Change password",
-                  ar: "تغيير كلمة المرور",
-                })}
-              </Button>
+              {demo ? (
+                // A shared demo account: its password is the same for every visitor
+                <p className="m-0 rounded-2xl bg-white/8 px-4 py-3 text-sm text-soft-d">
+                  {tx({
+                    fr: "Compte de démonstration partagé : son mot de passe ne se change pas.",
+                    en: "A shared demo account: its password can't be changed.",
+                    ar: "حساب تجريبي مشترك: لا يمكن تغيير كلمة مروره.",
+                  })}
+                </p>
+              ) : (
+                <Button variant="outline-dark" size="sm" onClick={sendReset}>
+                  <KeyIcon />
+                  {tx({
+                    fr: "Changer le mot de passe",
+                    en: "Change password",
+                    ar: "تغيير كلمة المرور",
+                  })}
+                </Button>
+              )}
               <Button variant="outline-dark" size="sm" onClick={signOut}>
                 <SignOutIcon />
                 {t("signOut")}

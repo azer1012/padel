@@ -25,6 +25,7 @@ import { fullName, publicName } from "../lib/members";
 import { logActivity } from "../lib/activity";
 import { readRateLimit } from "../middleware/rate-limit";
 import { earnLoyalty, loyaltyFor } from "../lib/loyalty";
+import { demoPeopleOnly } from "../lib/demo";
 import { env } from "../config/env";
 
 const router = Router();
@@ -535,6 +536,7 @@ router.get("/members/search", requireUser, readRateLimit(40), async (req, res) =
     .where(
       and(
         ne(usersTable.id, user.id),
+        demoPeopleOnly(),
         or(
           ilike(usersTable.firstName, like),
           ilike(usersTable.lastName, like),

@@ -62,14 +62,15 @@ export async function notify(
 
     const jobs: Promise<unknown>[] = [];
     const realEmail = u.email && !u.email.endsWith("@placeholder.local");
-    if (u.emailNotifications && realEmail) {
+    // The public demo shows notifications in the app only: nothing leaves the site
+    if (u.emailNotifications && realEmail && !env.demoMode) {
       jobs.push(
         sendEmail({ to: u.email, subject: msg.subject, html: msg.html, text: msg.text }).then(() =>
           channels.push("email"),
         ),
       );
     }
-    if (u.pushNotifications) {
+    if (u.pushNotifications && !env.demoMode) {
       jobs.push(
         sendPush(u.id, { ...msg.push, tag: `${event.kind}:${ref}` }).then((n) => {
           if (n) channels.push("push");

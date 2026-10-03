@@ -5,6 +5,8 @@ import { notify } from "../lib/notify";
 import { equipmentFor } from "../lib/equipment";
 import { formatClubDate, formatClubTime } from "../lib/club-time";
 import { getSettings } from "../lib/settings";
+import { resetDemoIfDue } from "../lib/demo-seed";
+import { env } from "../config/env";
 
 const MIN = 60 * 1000;
 
@@ -107,9 +109,11 @@ export async function runJobs() {
   running = true;
   const started = Date.now();
   try {
+    // The public demo goes back to its starting point every night (lib/demo-seed.ts)
+    const demoReset = env.demoMode ? await resetDemoIfDue() : false;
     const [reminders, finished] = [await sendReminders(), await sendMatchFinished()];
-    logger.info({ reminders, finished, ms: Date.now() - started }, "jobs run");
-    return { reminders, finished };
+    logger.info({ reminders, finished, demoReset, ms: Date.now() - started }, "jobs run");
+    return { reminders, finished, demoReset };
   } catch (err) {
     logger.error({ err }, "jobs failed");
     return { error: true };

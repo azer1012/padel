@@ -4,6 +4,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { pool } from "@workspace/db";
 import { startScheduler } from "./jobs";
+import { resetDemoIfDue } from "./lib/demo-seed";
 
 const rawPort = env.port ?? "3001";
 const port = Number(rawPort);
@@ -27,6 +28,12 @@ if (env.nodeEnv === "production") {
 process.on("unhandledRejection", (reason) => {
   logger.error({ err: reason }, "unhandled promise rejection");
 });
+
+// The public demo: a host that slept through the night resets before its first visitor
+if (env.demoMode) {
+  logger.warn("DEMO_MODE is on: this installation is a public demo, reset every night");
+  await resetDemoIfDue().catch((err) => logger.error({ err }, "demo reset failed"));
+}
 
 const server = app.listen(port, (err) => {
   if (err) {

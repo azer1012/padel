@@ -114,6 +114,16 @@ const BY_CODE: Record<string, Copy> = {
     en: "An article in your cart is no longer on sale. Remove it to continue.",
     ar: "أحد منتجات سلتك لم يعد معروضًا. احذفه للمتابعة.",
   },
+  DEMO_LOCKED: {
+    fr: "Cette action est désactivée dans la démo.",
+    en: "This is switched off in the demo.",
+    ar: "هذا الإجراء معطّل في النسخة التجريبية.",
+  },
+  DEMO_ACCOUNT_ONLY: {
+    fr: "Ceci est une démo : utilisez un des comptes de démonstration de la page de connexion.",
+    en: "This is a demo: use one of the demo accounts on the sign-in page.",
+    ar: "هذه نسخة تجريبية: استعمل أحد الحسابات التجريبية في صفحة الدخول.",
+  },
   TOO_MANY_PENDING_ORDERS: {
     fr: "Vous avez déjà 3 commandes en attente d'appel. Le club vous appelle bientôt ; vous pourrez commander à nouveau ensuite.",
     en: "You already have 3 orders waiting for the club's call. The club will call you soon; you can order again after that.",

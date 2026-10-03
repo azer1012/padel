@@ -145,6 +145,50 @@ export async function startAuthStub({ port, databaseUrl, jwtSecret, defaultPassw
     const route = `${req.method} ${url.pathname}`;
 
     try {
+      // ── GoTrue admin API (service role): the demo mode prepares its accounts ──
+      if (url.pathname === "/auth/v1/admin/users" && req.method === "GET") {
+        const { rows } = await pool.query("select email from auth.users order by email");
+        const users = [];
+        for (const r of rows) users.push(userJson(await account(r.email)));
+        return send(200, { users, aud: "authenticated" });
+      }
+      if (url.pathname === "/auth/v1/admin/users" && req.method === "POST") {
+        const email = String(body.email ?? "").toLowerCase();
+        if (await account(email))
+          return fail(
+            422,
+            "email_exists",
+            "A user with this email address has already been registered",
+          );
+        const { rows } = await pool.query(
+          "insert into auth.users (email, raw_user_meta_data) values ($1, $2) returning id",
+          [email, body.user_metadata ?? {}],
+        );
+        const a = {
+          id: rows[0].id,
+          email,
+          password: body.password,
+          confirmed: !!body.email_confirm,
+          banned: false,
+          meta: body.user_metadata ?? {},
+        };
+        accounts.set(email, a);
+        return send(200, userJson(a));
+      }
+      const adminUser = url.pathname.match(/^\/auth\/v1\/admin\/users\/([\w-]+)$/);
+      if (adminUser && req.method === "PUT") {
+        const { rows } = await pool.query("select email from auth.users where id::text = $1", [
+          adminUser[1],
+        ]);
+        const a = rows[0] && (await account(rows[0].email));
+        if (!a) return fail(404, "user_not_found", "User not found");
+        if ("password" in body) a.password = body.password;
+        if (body.email_confirm) a.confirmed = true;
+        if (body.ban_duration === "none") a.banned = false;
+        if (body.user_metadata) a.meta = body.user_metadata;
+        return send(200, userJson(a));
+      }
+
       switch (route) {
         // ── Test controls ────────────────────────────────────────────────────
         case "GET /__test/mail": {

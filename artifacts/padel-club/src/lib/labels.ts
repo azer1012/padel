@@ -132,6 +132,14 @@ export function activityLabel(tx: ReturnType<typeof useTx>, message: string) {
     who ? ` (${tx({ fr: "par", en: "by", ar: "بواسطة" })} ${who})` : "";
   let m: RegExpMatchArray | null;
 
+  // The public demo's nightly reset (lib/demo-seed)
+  if (message === "Demo data reset")
+    return tx({
+      fr: "Démo remise à zéro : données de départ recréées",
+      en: "Demo reset: starting data created again",
+      ar: "أُعيدت التجربة إلى بدايتها",
+    });
+
   // "<what> (by admin@club)": desk actions recorded by lib/activity
   const staff = message.match(/^(.*) \(by ([^()]+)\)$/s);
   const body = staff ? staff[1] : message;

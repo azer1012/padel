@@ -64,6 +64,13 @@ const envSchema = z.object({
   RATE_LIMIT_WRITES_PER_MINUTE: z.coerce.number().int().min(0).default(60),
   // Set when the API runs behind a reverse proxy / load balancer (Render, Fly, Nginx…)
   TRUST_PROXY: z.enum(["true", "false"]).default("false"),
+  // Public demo for prospective clubs (docs/DEMO_MODE.md). NEVER on a real club's
+  // installation: the demo data is wiped and re-created every night.
+  DEMO_MODE: z.enum(["true", "false"]).default("false"),
+  // Password of the demo accounts. Shown to every visitor on the sign-in page.
+  DEMO_PASSWORD: z.union([z.literal(""), z.string().min(8)]).optional(),
+  // Club-local hour of the nightly reset (0-23)
+  DEMO_RESET_HOUR: z.coerce.number().int().min(0).max(23).default(4),
 });
 
 // Normalize environment variables
@@ -99,4 +106,7 @@ export const env = {
   cronSecret: parsed.CRON_SECRET,
   rateLimitWritesPerMinute: parsed.RATE_LIMIT_WRITES_PER_MINUTE,
   trustProxy: parsed.TRUST_PROXY === "true",
+  demoMode: parsed.DEMO_MODE === "true",
+  demoPassword: parsed.DEMO_PASSWORD || undefined,
+  demoResetHour: parsed.DEMO_RESET_HOUR,
 };

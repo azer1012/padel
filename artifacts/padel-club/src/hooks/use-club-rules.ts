@@ -28,6 +28,7 @@ const LOADING: ClubRules = {
   loyaltyRewardTokens: 0.1,
   openingHours: [],
   tokenPackages: [],
+  demo: null,
 };
 
 /** "08:00 – 23:00" from the weekly hours, and whether the club opens every day. */

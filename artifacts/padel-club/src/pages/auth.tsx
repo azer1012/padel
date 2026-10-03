@@ -13,6 +13,8 @@ import { authErrorMessage } from "@/lib/auth-errors";
 import { useAuth } from "@/lib/auth";
 import { PasswordInput, passwordIsStrong } from "@/components/smash/password-input";
 import { cn } from "@/lib/utils";
+import { useClubRules } from "@/hooks/use-club-rules";
+import { DemoSignIn } from "@/components/smash/demo";
 
 /** Same rule as the API (PATCH /users/me). */
 const PHONE_RE = /^[+\d][\d\s().-]{5,29}$/;
@@ -49,11 +51,14 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
   const [awaitingEmail, setAwaitingEmail] = useState(false);
   const [resending, setResending] = useState(false);
   const { isLoaded, isSignedIn } = useAuth();
+  const rules = useClubRules();
+  /** Demo: where the chosen demo account goes once signed in (the admin side for the club). */
+  const [demoTarget, setDemoTarget] = useState<string | null>(null);
 
   // Already signed in (or just confirmed from the e-mail link in this tab): nothing to do here
   useEffect(() => {
-    if (isLoaded && isSignedIn) setLocation(redirect, { replace: true });
-  }, [isLoaded, isSignedIn, redirect, setLocation]);
+    if (isLoaded && isSignedIn) setLocation(demoTarget ?? redirect, { replace: true });
+  }, [isLoaded, isSignedIn, redirect, demoTarget, setLocation]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -353,6 +358,12 @@ export default function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
                 })}
               </Button>
             </div>
+          </div>
+        ) : rules.demo ? (
+          // The public demo: the shared accounts instead of the form (sign-in never waits
+          // for the API, so a real club's form shows at once)
+          <div className="enter mx-auto flex w-full max-w-[440px] flex-1 flex-col justify-center py-10">
+            <DemoSignIn onTarget={setDemoTarget} />
           </div>
         ) : (
           <div className="enter mx-auto flex w-full max-w-[440px] flex-1 flex-col justify-center gap-8 py-10">

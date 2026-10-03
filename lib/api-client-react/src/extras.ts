@@ -378,8 +378,17 @@ export type ClubRules = {
   loyaltyRewardTokens: number;
   openingHours: OpeningHoursDay[];
   tokenPackages: TokenPackage[];
+  /** Public demo (DEMO_MODE): the shared accounts to try it with; null on a real club. */
+  demo: DemoInfo | null;
 };
-export type AdminSettings = Omit<ClubRules, "tokenPackages"> & {
+export type DemoAccount = { email: string; password: string };
+export type DemoInfo = {
+  /** Club-local hour the demo goes back to its starting point every night. */
+  resetHour: number;
+  /** null when the installation has no demo password yet. */
+  accounts: { player: DemoAccount; admin: DemoAccount } | null;
+};
+export type AdminSettings = Omit<ClubRules, "tokenPackages" | "demo"> & {
   bookingConfirmationNotificationsEnabled: boolean;
   remindersEnabled: boolean;
   reminderLeadMinutes: number;

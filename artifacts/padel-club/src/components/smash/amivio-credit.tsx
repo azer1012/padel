@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { EnvelopeSimpleIcon, WhatsappLogoIcon } from "@/components/icons";
 import {
   Dialog,
@@ -23,8 +24,9 @@ const row =
 export function AmivioCredit() {
   const tx = useTx();
   return (
-    <Dialog>
-      <DialogTrigger
+    <AmivioContact>
+      <button
+        type="button"
         data-testid="amivio-credit"
         aria-label={tx({
           fr: "Créé par AmiVio : nous contacter",
@@ -45,7 +47,17 @@ export function AmivioCredit() {
           loading="lazy"
           className="h-6 w-auto"
         />
-      </DialogTrigger>
+      </button>
+    </AmivioContact>
+  );
+}
+
+/** AmiVio's contact details (WhatsApp, e-mail), opened by the element passed as child. */
+export function AmivioContact({ children }: { children: ReactNode }) {
+  const tx = useTx();
+  return (
+    <Dialog>
+      <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="max-w-[420px]">
         <DialogHeader className="text-start">
           <DialogTitle>

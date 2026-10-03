@@ -34,6 +34,7 @@ import { clubDate } from "@/lib/club-time";
 import { memberName, plural, tokensLabel } from "@/lib/labels";
 import { useDebounced } from "@/hooks/use-debounced";
 import { apiErrorText } from "@/lib/api-errors";
+import { useDemo } from "@/components/smash/demo";
 
 const PAGE = 20;
 
@@ -48,6 +49,7 @@ export default function AdminUsers() {
   const { toast } = useToast();
   const updateUser = useAdminUpdateUser();
   const { confirm, dialog } = useConfirm();
+  const demo = useDemo();
 
   async function toggleAdmin(u: User) {
     const promote = u.role !== "admin";
@@ -192,7 +194,8 @@ export default function AdminUsers() {
             <CoinsIcon />
             {tx({ fr: "Tokens", en: "Tokens", ar: "الرصيد" })}
           </Button>
-          {u.id !== me?.id && (
+          {/* The demo's roles are fixed: a visitor can't lock the next ones out */}
+          {u.id !== me?.id && !demo && (
             <Button
               variant="ghost"
               size="icon-sm"

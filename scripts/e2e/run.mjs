@@ -55,7 +55,18 @@ async function admin(sql) {
   }
 }
 
-async function createDatabase() {
+/**
+ * Suites that need the API in another mode. The public demo (DEMO_MODE) starts from
+ * an empty base and creates its own club: no test seed for it.
+ */
+const SUITES = {
+  "demo.e2e.mjs": {
+    seed: false,
+    env: { DEMO_MODE: "true", DEMO_PASSWORD: "Demo-padel-2026", JOBS_ENABLED: "false" },
+  },
+};
+
+async function createDatabase({ seed = true } = {}) {
   await admin(`drop database if exists ${dbName} with (force)`);
   await admin(`create database ${dbName}`);
   const c = new pg.Client({ connectionString: dbUrl });
@@ -67,7 +78,7 @@ async function createDatabase() {
       .filter((f) => f.endsWith(".sql"))
       .sort())
       await c.query(readFileSync(join(dir, f), "utf8"));
-    await c.query(readFileSync(join(here, "seed.sql"), "utf8"));
+    if (seed) await c.query(readFileSync(join(here, "seed.sql"), "utf8"));
   } finally {
     await c.end();
   }
@@ -133,15 +144,19 @@ const apiEnv = {
 
 let stub;
 let api;
-async function startBackend() {
-  await createDatabase();
+async function startBackend(file) {
+  const suite = SUITES[file] ?? {};
+  await createDatabase({ seed: suite.seed !== false });
   stub = await startAuthStub({
     port: PORTS.auth,
     databaseUrl: dbUrl,
     jwtSecret: JWT_SECRET,
     defaultPassword: PASSWORD,
   });
-  api = start("api", join(root, "artifacts/api-server"), ["dist/index.mjs"], apiEnv);
+  api = start("api", join(root, "artifacts/api-server"), ["dist/index.mjs"], {
+    ...apiEnv,
+    ...suite.env,
+  });
   await waitForPort(PORTS.api, "API", api);
 }
 async function stopBackend() {
@@ -183,7 +198,7 @@ try {
   } else {
     for (const file of files) {
       console.log(`\n━━ ${file}`);
-      await startBackend();
+      await startBackend(file);
       // Not spawnSync: the Auth stand-in lives in this process and must keep answering
       const test = spawn(process.execPath, [join(here, file)], {
         stdio: "inherit",
